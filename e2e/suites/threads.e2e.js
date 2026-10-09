@@ -195,7 +195,7 @@ async function openActions(page, text) {
   await step("Bob edits his reply", async () => {
     const message = await openActions(bob.page, `First reply ${stamp}`)
     await message.locator("a.message__edit-btn").click()
-    const editor = message.locator("form lexxy-editor")
+    const editor = message.locator("form lexxy-editor .lexxy-editor__content")
     await editor.waitFor({ timeout: 8000 })
     await editor.click()
     await bob.page.keyboard.press("End")
@@ -340,7 +340,11 @@ async function openActions(page, text) {
     await desktop.waitForTimeout(800)
     await desktop.screenshot({ path: path.join(OUT, "thread-desktop.png") })
     const room = await openPage(alice, roomUrl)
-    await posted(room, parentText).scrollIntoViewIfNeeded()
+    // The room refreshes its messages on connecting, replacing the element mid-scroll: retry.
+    await room.waitForLoadState("networkidle")
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try { await posted(room, parentText).first().scrollIntoViewIfNeeded({ timeout: 5000 }); break } catch (error) { if (attempt === 2) throw error }
+    }
     await room.waitForTimeout(500)
     await room.screenshot({ path: path.join(OUT, "room-desktop.png") })
     const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, storageState: await alice.context.storageState() })
@@ -356,9 +360,7 @@ async function openActions(page, text) {
   await browser.close()
   const failed = results.filter((r) => !r.ok)
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`)
-  // Known limits of headless Chromium, not of the app: Lexxy's edit form doesn't save there, and the
-  // screenshot step races its own scrolling (both fine in a real browser and in the parity runs).
-  const KNOWN = [ "Bob edits his reply", "Alice boosts Bob's reply", "screenshots" ]
+  const KNOWN = []
   fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify({ results, consoleErrors }, null, 2))
   process.exit(failed.some(result => !KNOWN.some(known => result.name.startsWith(known))) ? 1 : 0)
 })()

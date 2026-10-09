@@ -99,6 +99,9 @@ ENV LIBRARY_PATH=/opt/vips/lib \
     LD_LIBRARY_PATH=/opt/vips/lib:/opt/ffmpeg/lib \
     PATH=/opt/ffmpeg/bin:$PATH
 RUN rustup component add clippy && apt-get install --no-install-recommends -y mold
+# Every build in this image links with mold: dev server, tests and deploys alike (the same flags,
+# so they never invalidate each other's build directories).
+ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 
 
 # Build the binary against the libvips above.

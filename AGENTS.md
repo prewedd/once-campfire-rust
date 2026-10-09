@@ -68,10 +68,11 @@ The smallest build, the fewest tests that cover the change, the fastest deploy.
 | You changed | See it | Test it | Ship it |
 |---|---|---|---|
 | CSS / JS in `crates/assets/overrides/` (editing an existing file) | reload the dev page: nothing to build | `e2e/run --affected` (smoke + the suites for those files) | `/root/campfire/deploy-assets.sh` (~1 s, no build) |
-| Rust, templates, a new asset file | `script/dev/server` (~25 s debug build) | `cargo test -p <crate you touched>` + `e2e/run --affected` | commit, `/root/campfire/deploy.sh` |
+| Rust, templates, a new asset file | `script/dev/server` (~17 s after a one-line change) | `cargo test -p <crate you touched>` + `e2e/run --affected` | commit, `/root/campfire/deploy.sh` |
 | Nothing visible (docs, scripts) | — | — | commit; no deploy |
 
-- **Dev server**: `script/dev/server` runs a debug build on http://127.0.0.1:3090 with the overrides
+- **Dev server**: `script/dev/server` runs a debug build (line tables only, mold, via the toolchain
+  image's `RUSTFLAGS`) on http://127.0.0.1:3090 with the overrides
   served from disk, a staging copy of production (`script/dev/staging`: no push subscriptions, no
   webhooks) and its own LiveKit. Restart it only after Rust/template changes, or after adding an
   asset file (the asset manifest is built in).
@@ -91,8 +92,7 @@ The smallest build, the fewest tests that cover the change, the fastest deploy.
   the sidebar/composer markup change (the parity goldens filter this app's own markup: add a
   marker in `crates/views/tests/messages_support/mod.rs` and `parity_a.rs` for new markup).
   `cargo test --workspace --exclude html5ever` only before a release or a schema change.
-- Known, not regressions: `threads` fails "Bob edits his reply"/"screenshots" in headless Chromium
-  (the runner ignores those); two Rust timing tests (`parses_pathological_pages_quickly`,
+- Known, not regressions: two Rust timing tests (`parses_pathological_pages_quickly`,
   `deeply_nested_content_attachments_render_quickly`) fail in debug builds on a busy machine.
 - Never edit an existing asset's imports to a module the running dev server doesn't know (a new
   file) while suites run: restart the dev server first.

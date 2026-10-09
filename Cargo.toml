@@ -92,6 +92,10 @@ codegen-units = 1
 # Deploys (/root/campfire/deploy.sh): built for iteration speed, incrementally, like the dev build:
 # this workspace's crates unoptimized, no LTO, many codegen units, so a one-line change rebuilds in
 # about as long as a dev build. Release builds keep full optimization.
+# Development builds: line tables are enough for backtraces, and much less to generate and link.
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.deploy]
 inherits = "release"
 opt-level = 0
