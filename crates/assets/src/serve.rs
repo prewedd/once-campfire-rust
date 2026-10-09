@@ -414,7 +414,8 @@ mod dev {
         Some(StaticResponse {
             status: 200,
             headers: if *live {
-                vec![("content-type", content_type.to_string()), ("cache-control", "no-cache".to_string()), ("last-modified", last_modified)]
+                // private: Cloudflare overrides a public no-cache with its own browser TTL (4 h), not this.
+                vec![("content-type", content_type.to_string()), ("cache-control", "private, no-cache".to_string()), ("last-modified", last_modified)]
             } else {
                 vec![("content-type", content_type.to_string()), ("cache-control", "no-store".to_string())]
             },
