@@ -28,6 +28,7 @@ fn a_top_level_message_can_be_replied_to_in_a_thread() {
     let html = render(&g, &message);
     let thread = format!("/rooms/{}/threads/{}", message.room_id, message.id);
     assert!(html.contains(&format!(r#"title="Reply in thread" aria-label="Reply in thread" href="{thread}""#)), "{html}");
+    assert!(html.contains(&format!(r#"message__thread-btn--quick" data-turbo-frame="_top" title="Reply in thread" href="{thread}""#)), "one click from the hover toolbar");
     // No replies yet: the summary is there to be replaced, but empty.
     assert!(
         html.contains(&format!(r#"<div id="thread_summary_message_{}" class="message__thread"></div>"#, message.client_message_id)),

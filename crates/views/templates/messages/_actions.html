@@ -1,5 +1,11 @@
 {#- reference/app/views/messages/_actions.html.erb -#}
 <div class="message__actions" data-controller="soft-keyboard">
+  {%- if !message.is_reply() %}
+  <a class="btn message__action-btn message__options-btn message__thread-btn message__thread-btn--quick" data-turbo-frame="_top" title="Reply in thread" href="{{ message.thread_path() }}">
+    <img class="colorize--black" aria-hidden="true" src="{{ ctx.asset("messages-outlined.svg") }}" width="20" height="20" />
+    <span class="for-screen-reader">Reply in thread</span>
+</a>
+  {%- endif %}
   <details class="position-relative" data-controller="popup" data-action="keydown.esc-&gt;popup#close toggle-&gt;popup#toggle click@document-&gt;popup#closeOnClickOutside" data-popup-orientation-top-class="popup-orientation-top">
     <summary class="btn message__action-btn message__options-btn">
       <img class="colorize--black" aria-hidden="true" src="{{ ctx.asset("menu-dots-horizontal.svg") }}" width="20" height="20" />
