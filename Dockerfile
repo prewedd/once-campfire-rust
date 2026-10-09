@@ -105,6 +105,12 @@ RUN rustup component add clippy
 FROM media-base AS build
 COPY --from=vips /opt/vips /opt/vips
 ENV LIBRARY_PATH=/opt/vips/lib
+# mold links the binary in a fraction of the time ld takes.
+RUN apt-get install --no-install-recommends -y mold
+# `release` (the default, as upstream builds it) or `deploy` (Cargo.toml: faster to build).
+ARG CARGO_PROFILE=release
+# Parallel jobs; leave some cores to whatever else the build host runs.
+ARG CARGO_BUILD_JOBS
 # jemalloc bakes the page size in at build time and refuses to start on a kernel with larger pages.
 # arm64 kernels come with 4 or 16 KB pages (the Raspberry Pi 5 uses 16 KB), and built for 16 KB it
 # runs on both.
@@ -119,8 +125,9 @@ COPY reference reference
 RUN --mount=type=cache,id=campfire-rust-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=campfire-rust-target,target=/src/target \
     if [ "$TARGETARCH" = arm64 ]; then export JEMALLOC_SYS_WITH_LG_PAGE=14; fi && \
-    cargo build --release --locked -p campfire && \
-    install -D -m 755 target/release/campfire /out/campfire
+    if [ -n "$CARGO_BUILD_JOBS" ]; then export CARGO_BUILD_JOBS; fi && \
+    RUSTFLAGS="-C link-arg=-fuse-ld=mold" cargo build --profile "$CARGO_PROFILE" --locked -p campfire && \
+    install -D -m 755 "target/$CARGO_PROFILE/campfire" /out/campfire
 
 
 # The shared libraries and executables that go into the runtime, in one directory tree.

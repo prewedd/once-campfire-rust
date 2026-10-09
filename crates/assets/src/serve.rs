@@ -49,6 +49,9 @@ pub fn serve(request: &StaticRequest) -> Option<StaticResponse> {
     if request.method != "GET" && request.method != "HEAD" {
         return None;
     }
+    if let Some(response) = dev::serve(request) {
+        return Some(response);
+    }
     let (body, content_headers) = find_file(request.path, request.accept_encoding.unwrap_or(""))?;
     Some(serve_file(request, body, content_headers))
 }
@@ -366,4 +369,59 @@ fn mime_type(extname: &[u8]) -> Option<&'static str> {
         ".zip" => "application/zip",
         _ => return None,
     })
+}
+
+/// Development only: with `CAMPFIRE_DEV_ASSETS` set to the `overrides/` directory, its files are
+/// served straight from disk under their digested (or logical) paths, uncached, so CSS and JS edits
+/// show on reload without a rebuild. Files new since the build aren't in the importmap yet.
+mod dev {
+    use std::path::PathBuf;
+    use std::sync::LazyLock;
+
+    use super::{StaticRequest, StaticResponse, mime_type};
+    use crate::embedded;
+
+    static DIR: LazyLock<Option<PathBuf>> = LazyLock::new(|| std::env::var_os("CAMPFIRE_DEV_ASSETS").map(PathBuf::from));
+
+    pub(super) fn serve(request: &StaticRequest) -> Option<StaticResponse> {
+        let dir = DIR.as_ref()?;
+        let requested = request.path.strip_prefix("/assets/")?;
+        let logical = embedded::MANIFEST.iter().find(|(_, digested)| *digested == requested).map_or(requested, |(logical, _)| logical);
+        if logical.contains("..") {
+            return None;
+        }
+        let bytes = std::fs::read(dir.join(logical)).ok()?;
+        let extension = logical.rsplit_once('.').map_or("", |(_, extension)| extension);
+        let body = match extension {
+            "css" => rewrite_css(&String::from_utf8_lossy(&bytes), logical).into_bytes(),
+            "js" => rewrite_js(&String::from_utf8_lossy(&bytes)).into_bytes(),
+            _ => bytes,
+        };
+        let content_type = mime_type(format!(".{extension}").as_bytes()).unwrap_or("application/octet-stream");
+        Some(StaticResponse {
+            status: 200,
+            headers: vec![("content-type", content_type.to_string()), ("cache-control", "no-store".to_string())],
+            body: if request.method == "HEAD" { Vec::new().into() } else { body.into() },
+        })
+    }
+
+    /// `url("fonts/x.woff2")` relative to the stylesheet, as an /assets/ path.
+    fn rewrite_css(css: &str, logical: &str) -> String {
+        let base = logical.rsplit_once('/').map_or(String::new(), |(directory, _)| format!("{directory}/"));
+        css.replace("url(\"fonts/", &format!("url(\"/assets/{base}fonts/"))
+    }
+
+    /// `RAILS_ASSET_URL("/x")` as `"/assets/x"`.
+    fn rewrite_js(js: &str) -> String {
+        js.replace("RAILS_ASSET_URL(\"/", "(\"/assets/")
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn rewrites_like_the_build_would_resolve() {
+            assert_eq!(super::rewrite_css(r#"src: url("fonts/a.woff2")"#, "workspace.css"), r#"src: url("/assets/fonts/a.woff2")"#);
+            assert_eq!(super::rewrite_js(r#"const A = RAILS_ASSET_URL("/emoji/data.json")"#), r#"const A = ("/assets/emoji/data.json")"#);
+        }
+    }
 }

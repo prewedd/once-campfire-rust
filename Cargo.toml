@@ -85,3 +85,12 @@ tikv-jemalloc-sys = "0.6"
 [profile.release]
 lto = "fat"
 codegen-units = 1
+
+# What PreWedd deploys (`docker build --build-arg CARGO_PROFILE=deploy`): release, with thin LTO,
+# parallel codegen and incremental builds, so a one-line change rebuilds in a fraction of the
+# time. The difference at runtime doesn't show at a small team's load.
+[profile.deploy]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+incremental = true
