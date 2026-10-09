@@ -60,6 +60,45 @@ async fn message_broadcasts() {
     kevin.assert_silent().await;
 }
 
+/// Threads (plans/threads.md): a reply goes to its thread's list, its parent's summary is
+/// replaced, and only the reply's audience hears the room went unread.
+#[tokio::test]
+async fn reply_broadcasts() {
+    let app = start().await;
+    let unreads = identifier(json!({ "channel": "UnreadRoomsChannel" }));
+    let mut kevin = app.connect("kevin").await;
+    let mut jason = app.connect("jason").await;
+    for client in [&mut kevin, &mut jason] {
+        room_messages(&app, client, "designers").await;
+        client.confirm(&unreads).await;
+    }
+
+    let designers = app.room("designers").await;
+    let parent = app.message("first").await;
+    let reply = campfire_db::Message { id: parent.id + 1_000, client_message_id: "reply".into(), thread_parent_id: Some(parent.id), ..parent.clone() };
+    app.broadcasts.reply_create(&designers, &reply, &parent, &[campfire_db::fixtures::identify("kevin")], &FakePartials);
+
+    for client in [&mut kevin, &mut jason] {
+        assert_eq!(
+            turbo_stream(&client.next_text().await),
+            format!(
+                r#"<turbo-stream action="append" target="thread_messages_{}"><template><div id="message_reply">message {}</div></template></turbo-stream>"#,
+                parent.id, reply.id
+            )
+        );
+        assert_eq!(
+            turbo_stream(&client.next_text().await),
+            format!(
+                r#"<turbo-stream maintain_scroll="true" action="replace" target="thread_summary_message_0001"><template><div>summary {}</div></template></turbo-stream>"#,
+                parent.id
+            )
+        );
+    }
+    assert_eq!(kevin.next_text().await, delivery(&unreads, &format!(r#"{{"roomId":{}}}"#, designers.id)));
+    kevin.assert_silent().await;
+    jason.assert_silent().await;
+}
+
 #[tokio::test]
 async fn boost_broadcasts() {
     let app = start().await;

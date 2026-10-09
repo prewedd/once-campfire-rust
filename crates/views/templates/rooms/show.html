@@ -30,4 +30,4 @@
 </div>
 {%- endblock %}
 
-{%- block footer %}{% let room = &show.room %}{% include "rooms/show/_composer.html" %}{% endblock %}
+{%- block footer %}{% let room = &show.room %}{% let thread_id = crate::threads::NONE %}{% include "rooms/show/_composer.html" %}{% endblock %}

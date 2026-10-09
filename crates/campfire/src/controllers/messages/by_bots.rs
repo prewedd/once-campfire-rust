@@ -7,7 +7,7 @@ use campfire_kit::{Ctx, Param, Response, Result, StatusCode, format, halt, permi
 use campfire_views::messages::json;
 
 use super::{
-    MessageParams, attachment_assignment, broadcast_create, broadcast_replace, create_message, deliver_webhooks_to_bots, destroy_message,
+    MessageParams, attachment_assignment, broadcast_create, thread_parent_id_param, broadcast_replace, create_message, deliver_webhooks_to_bots, destroy_message,
     ensure_can_administer, find_paged_messages, present, set_message, update_message,
 };
 use crate::app::AppCtx;
@@ -100,10 +100,15 @@ fn ensure_body_or_attachment_present(c: &mut Ctx) -> Result<()> {
 fn message_params(c: &Ctx) -> Result<MessageParams> {
     if c.params.get("attachment").is_some_and(|p| !p.is_null()) {
         let permitted = c.params.permit(&permit_keys(&["attachment"]));
-        Ok(MessageParams { attachment: attachment_assignment(&permitted)?, ..MessageParams::default() })
+        Ok(MessageParams { attachment: attachment_assignment(&permitted)?, thread_parent_id: thread_parent_id(c), ..MessageParams::default() })
     } else {
-        Ok(MessageParams { body: Some(raw_request_body(c)), ..MessageParams::default() })
+        Ok(MessageParams { body: Some(raw_request_body(c)), thread_parent_id: thread_parent_id(c), ..MessageParams::default() })
     }
+}
+
+/// `?thread_parent_id=` posts a bot's message into that thread (plans/threads.md).
+fn thread_parent_id(c: &Ctx) -> Option<i64> {
+    thread_parent_id_param(c.param_str("thread_parent_id").map(str::to_string))
 }
 
 /// `RawRequestBody#raw_request_body`: the whole body, as UTF-8.

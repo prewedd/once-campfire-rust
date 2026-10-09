@@ -1,0 +1,88 @@
+/* Threads (plans/threads.md) */
+
+/* A message's thread summary: the latest repliers, the count and when the last reply came in */
+.message__thread {
+  &:not(:has(.message__thread-link)) {
+    display: none;
+  }
+}
+
+.message__thread-link {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 0.5em;
+  color: var(--color-link);
+  display: inline-flex;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  font-weight: 600;
+  gap: 0.3em 0.6em;
+  margin-block-start: 0.4em;
+  margin-inline-start: -0.3em;
+  padding: 0.2em 0.5em 0.2em 0.3em;
+  text-decoration: none;
+
+  @media (any-hover: hover) {
+    &:hover {
+      background-color: var(--color-bg);
+      border-color: var(--color-border-dark);
+
+      .message__thread-last {
+        opacity: 1;
+      }
+    }
+  }
+}
+
+.message__thread-avatars {
+  display: inline-flex;
+  gap: 0.2em;
+}
+
+.message__thread-avatar {
+  block-size: 1.6em;
+  border-radius: 0.35em;
+  inline-size: 1.6em;
+  object-fit: cover;
+}
+
+.message__thread-last {
+  color: var(--color-text);
+  font-weight: 400;
+  opacity: 0.6;
+}
+
+/* The thread view: the parent heads the list, its replies follow */
+.messages--thread {
+  /* Already here: no summary, nor a way into the thread you're in */
+  .message__thread,
+  .message__thread-btn {
+    display: none;
+  }
+
+  > .message:not([data-thread-parent-id]) {
+    border-block-end: 1px solid var(--color-border-dark);
+    padding-block-end: var(--message-space);
+
+    /* The first reply always shows who wrote it, even after its parent's author */
+    + .message {
+      margin-block-start: 0;
+
+      .message__avatar {
+        display: flex;
+      }
+
+      .message__author {
+        display: inline;
+      }
+    }
+  }
+}
+
+.thread--current {
+  .thread__room-name {
+    font-weight: 400;
+    margin-inline-start: 0.5ch;
+    opacity: 0.7;
+  }
+}

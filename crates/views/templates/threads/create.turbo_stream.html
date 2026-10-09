@@ -1,0 +1,2 @@
+{#- Threads (plans/threads.md): messages/create.turbo_stream for a reply. -#}
+<turbo-stream action="append" target="{{ crate::threads::messages_dom_id(*parent_id) }}"><template>{{ crate::messages::cached_message_item(ctx, message) }}</template></turbo-stream>

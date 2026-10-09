@@ -190,6 +190,29 @@ async fn typing_notifications_broadcast_start_and_stop_to_the_room() {
     assert_eq!(typing_stream_name(&designers), stream);
 }
 
+/// Threads (plans/threads.md): typing in a thread is heard in that thread, not in the room or
+/// in other threads.
+#[tokio::test]
+async fn typing_in_a_thread_stays_in_the_thread() {
+    let app = start().await;
+    let room = room_identifier("TypingNotificationsChannel", id("designers"));
+    let thread = |thread_id: i64| identifier(json!({ "channel": "TypingNotificationsChannel", "room_id": id("designers"), "thread_id": thread_id }));
+    let mut typist = app.connect("jz").await;
+    let mut in_the_thread = app.connect("kevin").await;
+    let mut in_the_room = app.connect("jason").await;
+    let mut in_another_thread = app.connect("david").await;
+    typist.confirm(&thread(42)).await;
+    in_the_thread.confirm(&thread(42)).await;
+    in_the_room.confirm(&room).await;
+    in_another_thread.confirm(&thread(43)).await;
+
+    typist.perform(&thread(42), json!({ "action": "start" })).await;
+    let start = format!(r#"{{"action":"start","user":{{"id":{},"name":"JZ"}}}}"#, id("jz"));
+    assert_eq!(in_the_thread.next_text().await, delivery(&thread(42), &start));
+    in_the_room.assert_silent().await;
+    in_another_thread.assert_silent().await;
+}
+
 fn typing_stream_name(room: &campfire_db::Room) -> String {
     campfire_cable::naming::broadcasting_for("TypingNotificationsChannel", &[&room_gid(room).to_param()])
 }

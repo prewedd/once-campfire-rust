@@ -58,12 +58,27 @@ pub async fn index(c: &mut Ctx) -> Result {
     c.redirect_to(&url)
 }
 
-/// `show`, also `GET /rooms/:room_id/@:message_id`.
+/// `show`, also `GET /rooms/:room_id/@:message_id`. A thread reply's permalink is in its thread
+/// now (plans/threads.md), so this one redirects there.
 pub async fn show(c: &mut Ctx) -> Result {
     before_actions(c, Before::default()).await?;
     let room = set_room(c, Scope::All).await?;
+    if let Some(url) = reply_permalink(c, &room).await? {
+        return c.redirect_to(&url);
+    }
     concerns::remember_last_room_visited(c, room.id);
     render_show(c, room).await
+}
+
+/// Where `params[:message_id]` really is, when it's a reply in this room.
+async fn reply_permalink(c: &Ctx, room: &Room) -> Result<Option<String>> {
+    let Some(message_id) = c.param_str("message_id").and_then(cast_integer) else { return Ok(None) };
+    let room_id = room.id;
+    let message = c.app().db.read(move |conn| Message::find_by_id(conn, message_id)).await.map_err(db_error)?;
+    Ok(message
+        .filter(|message| message.room_id == room_id)
+        .and_then(|message| message.thread_parent_id.map(|parent_id| (parent_id, message.id)))
+        .map(|(parent_id, id)| c.url_for(&campfire_routes::room_thread_at_message(room_id, parent_id, id))))
 }
 
 /// `destroy` (RoomsController and `Rooms::DirectsController`).

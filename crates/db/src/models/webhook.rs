@@ -99,9 +99,16 @@ impl Webhook {
         let plain =
             without_recipient_mentions(&message.plain_text_body(conn, rich_text)?, &recipient);
 
+        // A reply also names its thread (plans/threads.md), so a bot can post into it; other
+        // messages are as before.
+        let thread = message
+            .thread_parent_id
+            .map(|id| format!(r#","thread_parent_id":{id}"#))
+            .unwrap_or_default();
+
         // Hash order as written in `Webhook#payload`, encoded like `ActiveSupport::JSON`.
         let body = format!(
-            r#"{{"user":{{"id":{},"name":{}}},"room":{{"id":{},"name":{},"path":{}}},"message":{{"id":{},"body":{{"html":{},"plain":{}}},"path":{}}}}}"#,
+            r#"{{"user":{{"id":{},"name":{}}},"room":{{"id":{},"name":{},"path":{}}},"message":{{"id":{},"body":{{"html":{},"plain":{}}},"path":{}{thread}}}}}"#,
             creator.id,
             json_string(&creator.name),
             room.id,

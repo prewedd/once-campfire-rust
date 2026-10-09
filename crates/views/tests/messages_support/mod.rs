@@ -103,12 +103,12 @@ impl Golden {
         } else {
             expected
         };
-        assert_same(&self.name, &trim_whitespace(expected), &trim_whitespace(tokens(actual_html)));
+        assert_same(&self.name, &trim_whitespace(expected), &trim_whitespace(without_thread_markup(tokens(actual_html))));
     }
 
     pub fn assert_dom(&self, actual_html: &str) {
         let expected = without_forgery_tokens(serde_json::from_value(self.json["expected"].clone()).unwrap());
-        let actual = tokens(actual_html);
+        let actual = without_thread_markup(tokens(actual_html));
         if self.kind == "page" {
             let regions = regions(&expected);
             assert!(!regions.is_empty(), "{}: no regions in reference", self.name);
@@ -120,6 +120,38 @@ impl Golden {
             assert_same(&self.name, &trim_whitespace(expected), &trim_whitespace(actual));
         }
     }
+}
+
+/// Threads are this app's own (plans/threads.md, README "Known differences"): the "Reply in
+/// thread" button and the thread summary under each message are checked by their own tests
+/// (`threads_views.rs`), and taken out of our stream here, with the text around them merged as
+/// if they'd never been there.
+fn without_thread_markup(actual: Vec<String>) -> Vec<String> {
+    let is_thread = |t: &str| t.contains("message__thread-btn") || t.contains(r#"class="message__thread""#);
+    let mut out = Vec::with_capacity(actual.len());
+    let mut tokens = actual.into_iter();
+    while let Some(token) = tokens.next() {
+        if token.starts_with('<') && is_thread(&token) {
+            let name = tag_name(&token);
+            let mut depth = 1usize;
+            for inner in tokens.by_ref() {
+                if inner.starts_with(&format!("<{name} ")) || inner == format!("<{name}>") {
+                    depth += 1;
+                } else if inner == format!("</{name}>") {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        match token.strip_prefix('#') {
+            Some(text) => push_text(&mut out, text),
+            None => out.push(token),
+        }
+    }
+    out
 }
 
 /// The reference's token stream without the CSRF tags and fields Rails renders (this app has none),

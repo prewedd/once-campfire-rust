@@ -45,6 +45,7 @@ fn message(room: &str, creator: &str, body: &str, client_message_id: &str) -> Ne
         client_message_id: Some(client_message_id.into()),
         body: Some(body.into()),
         attachment_blob_id: None,
+        thread_parent_id: None,
     }
 }
 

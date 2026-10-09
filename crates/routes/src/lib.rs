@@ -89,6 +89,11 @@ path!(message_boost(message_id, id), "/messages/{message_id}/boosts/{id}");
 path!(searches, "/searches");
 path!(clear_searches, "/searches/clear");
 path!(unfurl_link, "/unfurl_link");
+// Threads (plans/threads.md): `id` is the thread's top-level message.
+path!(room_thread(room_id, id), "/rooms/{room_id}/threads/{id}");
+path!(room_thread_at_message(room_id, thread_id, message_id), "/rooms/{room_id}/threads/{thread_id}/@{message_id}");
+path!(room_thread_messages(room_id, thread_id), "/rooms/{room_id}/threads/{thread_id}/messages");
+path!(room_thread_refresh(room_id, thread_id), "/rooms/{room_id}/threads/{thread_id}/refresh");
 path!(webmanifest, "/webmanifest");
 path!(service_worker, "/service-worker");
 path!(rails_health_check, "/up");

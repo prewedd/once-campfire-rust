@@ -283,10 +283,11 @@ async fn remove_banned_content(app: App, event: Event) -> anyhow::Result<()> {
     let Event::RemoveBannedContent { user_id } = event else { return Ok(()) };
     let messages = app.db.read(move |conn| campfire_db::Message::by_creator(conn, user_id)).await?;
     for message in messages {
-        let (removed, room_id) = (message.clone(), message.room_id);
-        app.db.write(move |tx| message.destroy(tx)).await?;
+        let room_id = message.room_id;
         let room = app.db.read(move |conn| campfire_db::Room::find(conn, room_id)).await?;
-        app.broadcasts.message_remove(&room, &removed);
+        crate::controllers::messages::destroy_and_broadcast(&app, &room, &message)
+            .await
+            .map_err(|error| anyhow::anyhow!("{error:?}"))?;
     }
     Ok(())
 }

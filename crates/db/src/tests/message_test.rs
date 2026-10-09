@@ -14,6 +14,7 @@ fn create(t: &TestDb, room: &str, creator: &str, body: &str, client_message_id: 
         client_message_id: Some(client_message_id.into()),
         body: Some(body.into()),
         attachment_blob_id: None,
+        thread_parent_id: None,
     };
     t.write(move |tx| Message::create(tx, attributes))
 }
@@ -192,6 +193,7 @@ fn creating_a_blank_message_with_attachment_uses_filename_as_plain_text_body() {
                 client_message_id: Some("message".into()),
                 body: None,
                 attachment_blob_id: Some(blob.id),
+                thread_parent_id: None,
             },
         )
     });

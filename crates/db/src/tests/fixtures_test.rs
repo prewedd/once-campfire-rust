@@ -171,6 +171,7 @@ fn export_database_for_rails() {
                 client_message_id: Some("rust-1".into()),
                 body: Some("Written by <b>Rust</b> hovercraft".into()),
                 attachment_blob_id: None,
+                thread_parent_id: None,
             },
         )?;
         crate::Boost::create(tx, message.id, id("jason"), "🦀")?;

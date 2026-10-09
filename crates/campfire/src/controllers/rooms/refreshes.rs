@@ -42,7 +42,7 @@ pub async fn show(c: &mut Ctx) -> Result {
 }
 
 /// `Time.at(0, params[:since].to_i, :millisecond)`
-fn set_last_updated_at(c: &Ctx) -> Result<Timestamp> {
+pub(crate) fn set_last_updated_at(c: &Ctx) -> Result<Timestamp> {
     let since = match c.param("since") {
         None => 0,
         Some(param) => match param.as_str() {

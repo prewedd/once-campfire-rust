@@ -24,6 +24,8 @@ pub struct Message {
     pub client_message_id: String,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+    /// The top-level message whose thread this is a reply in (plans/threads.md).
+    pub thread_parent_id: Option<i64>,
 }
 
 /// Attributes for `room.messages.create!` / `create_with_attachment!`.
@@ -37,6 +39,110 @@ pub struct NewMessage {
     pub body: Option<String>,
     /// An already-saved blob to attach as `attachment`.
     pub attachment_blob_id: Option<i64>,
+    /// Makes the message a reply in this top-level message's thread.
+    pub thread_parent_id: Option<i64>,
+}
+
+/// What a top-level message's thread summary shows.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThreadSummary {
+    pub reply_count: i64,
+    pub last_reply_at: Timestamp,
+    /// The latest repliers, most recent first, at most [`THREAD_SUMMARY_PARTICIPANTS`].
+    pub participant_ids: Vec<i64>,
+}
+
+pub const THREAD_SUMMARY_PARTICIPANTS: i64 = 3;
+
+/// Which messages a page comes from: a room's timeline (its top-level messages, replies being
+/// in their threads) or a thread (its parent, then its replies).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Timeline {
+    Room(i64),
+    Thread(i64),
+}
+
+impl Timeline {
+    /// The timeline's messages. Its id is `?1`, so plain `?`s after it are `?2` onwards.
+    fn select(self) -> &'static str {
+        match self {
+            Timeline::Room(_) => r#"SELECT "messages".* FROM "messages" WHERE "messages"."room_id" = ?1 AND "messages"."thread_parent_id" IS NULL"#,
+            Timeline::Thread(_) => r#"SELECT "messages".* FROM "messages" WHERE ("messages"."id" = ?1 OR "messages"."thread_parent_id" = ?1)"#,
+        }
+    }
+
+    fn id(self) -> i64 {
+        match self {
+            Timeline::Room(id) | Timeline::Thread(id) => id,
+        }
+    }
+
+    /// The newest page, oldest first.
+    pub fn last_page(self, conn: &Connection) -> Result<Vec<Message>> {
+        let sql = format!(r#"{} ORDER BY "messages"."created_at" DESC LIMIT {PAGE_SIZE}"#, self.select());
+        Ok(reversed(query_all(conn, &sql, [self.id()], Message::from_row)?))
+    }
+
+    pub fn page_before(self, conn: &Connection, message: &Message) -> Result<Vec<Message>> {
+        let sql = format!(r#"{} AND (created_at < ?) ORDER BY "messages"."created_at" DESC LIMIT {PAGE_SIZE}"#, self.select());
+        Ok(reversed(query_all(conn, &sql, params![self.id(), message.created_at], Message::from_row)?))
+    }
+
+    pub fn page_after(self, conn: &Connection, message: &Message) -> Result<Vec<Message>> {
+        let sql = format!(r#"{} AND (created_at > ?) ORDER BY "messages"."created_at" ASC LIMIT {PAGE_SIZE}"#, self.select());
+        query_all(conn, &sql, params![self.id(), message.created_at], Message::from_row)
+    }
+
+    /// Up to a page before, the message, up to a page after.
+    pub fn page_around(self, conn: &Connection, message: &Message) -> Result<Vec<Message>> {
+        let mut page = self.page_before(conn, message)?;
+        page.push(message.clone());
+        page.extend(self.page_after(conn, message)?);
+        Ok(page)
+    }
+
+    pub fn page_created_since(self, conn: &Connection, time: Timestamp) -> Result<Vec<Message>> {
+        let sql = format!(r#"{} AND (created_at > ?) ORDER BY "messages"."created_at" ASC LIMIT {PAGE_SIZE}"#, self.select());
+        query_all(conn, &sql, params![self.id(), time], Message::from_row)
+    }
+
+    /// Messages updated since `time`, other than `excluding`.
+    pub fn page_updated_since(self, conn: &Connection, time: Timestamp, excluding: &[i64]) -> Result<Vec<Message>> {
+        let without = if excluding.is_empty() {
+            String::new()
+        } else {
+            format!(r#" AND "messages"."id" NOT IN ({})"#, placeholders(excluding.len()))
+        };
+        let sql = format!(
+            r#"{}{without} AND (updated_at > ?) ORDER BY "messages"."created_at" DESC LIMIT {PAGE_SIZE}"#,
+            self.select()
+        );
+        let mut values: Vec<rusqlite::types::Value> = vec![self.id().into()];
+        values.extend(excluding.iter().map(|id| rusqlite::types::Value::from(*id)));
+        values.push(time.to_db().into());
+        Ok(reversed(query_all(conn, &sql, rusqlite::params_from_iter(values), Message::from_row)?))
+    }
+
+    pub fn exists_before(self, conn: &Connection, message: &Message) -> Result<bool> {
+        let sql = format!(r#"{} AND (created_at < ?) LIMIT 1"#, self.select());
+        sql::exists(conn, &sql, params![self.id(), message.created_at])
+    }
+
+    pub fn exists_after(self, conn: &Connection, message: &Message) -> Result<bool> {
+        let sql = format!(r#"{} AND (created_at > ?) LIMIT 1"#, self.select());
+        sql::exists(conn, &sql, params![self.id(), message.created_at])
+    }
+
+    /// More than a page.
+    pub fn paged(self, conn: &Connection) -> Result<bool> {
+        let sql = format!(r#"{} LIMIT 1 OFFSET {PAGE_SIZE}"#, self.select());
+        sql::exists(conn, &sql, [self.id()])
+    }
+
+    pub fn count(self, conn: &Connection) -> Result<i64> {
+        let sql = format!(r#"SELECT COUNT(*) FROM ({})"#, self.select());
+        sql::count(conn, &sql, [self.id()])
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +176,7 @@ impl Message {
             client_message_id: row.get("client_message_id")?,
             created_at: row.get("created_at")?,
             updated_at: row.get("updated_at")?,
+            thread_parent_id: row.get("thread_parent_id")?,
         })
     }
 
@@ -121,13 +228,9 @@ impl Message {
         query_one(conn, &sql, [room_id, id], Self::from_row)?.or_not_found("Message")
     }
 
-    /// `room.messages.count`
+    /// `room.messages.count`: the room's timeline, not counting replies.
     pub fn count_in_room(conn: &Connection, room_id: i64) -> Result<i64> {
-        sql::count(
-            conn,
-            r#"SELECT COUNT(*) FROM "messages" WHERE "messages"."room_id" = ?"#,
-            [room_id],
-        )
+        Timeline::Room(room_id).count(conn)
     }
 
     /// `Current.user.reachable_messages.find(id)`
@@ -138,123 +241,123 @@ impl Message {
         query_one(conn, &sql, [user_id, id], Self::from_row)?.or_not_found("Message")
     }
 
-    // Message::Pagination
+    // Message::Pagination, over the room's timeline: replies are paged in their threads.
 
     /// `room.messages.last_page`: the newest 40, oldest first.
     pub fn last_page(conn: &Connection, room_id: i64) -> Result<Vec<Self>> {
-        let sql =
-            format!(r#"{SELECT_IN_ROOM} ORDER BY "messages"."created_at" DESC LIMIT {PAGE_SIZE}"#);
-        Ok(reversed(query_all(conn, &sql, [room_id], Self::from_row)?))
+        Timeline::Room(room_id).last_page(conn)
     }
 
     /// `room.messages.first_page`
     pub fn first_page(conn: &Connection, room_id: i64) -> Result<Vec<Self>> {
-        let sql =
-            format!(r#"{SELECT_IN_ROOM} ORDER BY "messages"."created_at" ASC LIMIT {PAGE_SIZE}"#);
+        let sql = format!(r#"{} ORDER BY "messages"."created_at" ASC LIMIT {PAGE_SIZE}"#, Timeline::Room(room_id).select());
         query_all(conn, &sql, [room_id], Self::from_row)
     }
 
     /// `room.messages.page_before(message)`
     pub fn page_before(conn: &Connection, room_id: i64, message: &Message) -> Result<Vec<Self>> {
-        let sql = format!(
-            r#"{SELECT_IN_ROOM} AND (created_at < ?) ORDER BY "messages"."created_at" DESC LIMIT {PAGE_SIZE}"#
-        );
-        Ok(reversed(query_all(
-            conn,
-            &sql,
-            params![room_id, message.created_at],
-            Self::from_row,
-        )?))
+        Timeline::Room(room_id).page_before(conn, message)
     }
 
     /// `room.messages.page_after(message)`
     pub fn page_after(conn: &Connection, room_id: i64, message: &Message) -> Result<Vec<Self>> {
-        let sql = format!(
-            r#"{SELECT_IN_ROOM} AND (created_at > ?) ORDER BY "messages"."created_at" ASC LIMIT {PAGE_SIZE}"#
-        );
-        query_all(
-            conn,
-            &sql,
-            params![room_id, message.created_at],
-            Self::from_row,
-        )
+        Timeline::Room(room_id).page_after(conn, message)
     }
 
     /// `room.messages.page_around(message)`: up to 40 before, the message, up to 40 after.
     pub fn page_around(conn: &Connection, room_id: i64, message: &Message) -> Result<Vec<Self>> {
-        let mut page = Self::page_before(conn, room_id, message)?;
-        page.push(message.clone());
-        page.extend(Self::page_after(conn, room_id, message)?);
-        Ok(page)
+        Timeline::Room(room_id).page_around(conn, message)
     }
 
     /// `room.messages.page_created_since(time)`
-    pub fn page_created_since(
-        conn: &Connection,
-        room_id: i64,
-        time: Timestamp,
-    ) -> Result<Vec<Self>> {
-        let sql = format!(
-            r#"{SELECT_IN_ROOM} AND (created_at > ?) ORDER BY "messages"."created_at" ASC LIMIT {PAGE_SIZE}"#
-        );
-        query_all(conn, &sql, params![room_id, time], Self::from_row)
+    pub fn page_created_since(conn: &Connection, room_id: i64, time: Timestamp) -> Result<Vec<Self>> {
+        Timeline::Room(room_id).page_created_since(conn, time)
     }
 
     /// `room.messages.without(excluding).page_updated_since(time)`
-    pub fn page_updated_since(
-        conn: &Connection,
-        room_id: i64,
-        time: Timestamp,
-        excluding: &[i64],
-    ) -> Result<Vec<Self>> {
-        let without = if excluding.is_empty() {
-            String::new()
-        } else {
-            format!(
-                r#" AND "messages"."id" NOT IN ({})"#,
-                placeholders(excluding.len())
-            )
-        };
-        let sql = format!(
-            r#"{SELECT_IN_ROOM}{without} AND (updated_at > ?) ORDER BY "messages"."created_at" DESC LIMIT {PAGE_SIZE}"#
-        );
-        let mut values: Vec<rusqlite::types::Value> = vec![room_id.into()];
-        values.extend(excluding.iter().map(|id| rusqlite::types::Value::from(*id)));
-        values.push(time.to_db().into());
-        Ok(reversed(query_all(
-            conn,
-            &sql,
-            rusqlite::params_from_iter(values),
-            Self::from_row,
-        )?))
+    pub fn page_updated_since(conn: &Connection, room_id: i64, time: Timestamp, excluding: &[i64]) -> Result<Vec<Self>> {
+        Timeline::Room(room_id).page_updated_since(conn, time, excluding)
     }
 
     /// `room.messages.before(message).exists?`
     pub fn exists_before(conn: &Connection, room_id: i64, message: &Message) -> Result<bool> {
-        sql::exists(
-            conn,
-            r#"SELECT 1 FROM "messages" WHERE "messages"."room_id" = ? AND (created_at < ?) LIMIT 1"#,
-            params![room_id, message.created_at],
-        )
+        Timeline::Room(room_id).exists_before(conn, message)
     }
 
     /// `room.messages.after(message).exists?`
     pub fn exists_after(conn: &Connection, room_id: i64, message: &Message) -> Result<bool> {
-        sql::exists(
-            conn,
-            r#"SELECT 1 FROM "messages" WHERE "messages"."room_id" = ? AND (created_at > ?) LIMIT 1"#,
-            params![room_id, message.created_at],
-        )
+        Timeline::Room(room_id).exists_after(conn, message)
     }
 
     /// `room.messages.paged?`: more than a page (`count > PAGE_SIZE`). Asks whether a row exists
     /// past the first page rather than counting the whole room, which grows without bound.
     pub fn paged(conn: &Connection, room_id: i64) -> Result<bool> {
-        sql::exists(
+        Timeline::Room(room_id).paged(conn)
+    }
+
+    // Threads (plans/threads.md)
+
+    /// The message that heads this one's thread: its parent, or itself.
+    pub fn thread_root_id(&self) -> i64 {
+        self.thread_parent_id.unwrap_or(self.id)
+    }
+
+    pub fn is_reply(&self) -> bool {
+        self.thread_parent_id.is_some()
+    }
+
+    /// A thread's replies, oldest first.
+    pub fn replies(conn: &Connection, parent_id: i64) -> Result<Vec<Self>> {
+        query_all(
             conn,
-            &format!(r#"SELECT 1 FROM "messages" WHERE "messages"."room_id" = ? LIMIT 1 OFFSET {PAGE_SIZE}"#),
-            [room_id],
+            r#"SELECT "messages".* FROM "messages" WHERE "messages"."thread_parent_id" = ? ORDER BY "messages"."created_at" ASC"#,
+            [parent_id],
+            Self::from_row,
         )
+    }
+
+    /// A top-level message's summary, or `None` while it has no replies.
+    pub fn thread_summary(conn: &Connection, parent_id: i64) -> Result<Option<ThreadSummary>> {
+        let counted: (i64, Option<Timestamp>) = conn.query_row_cached(
+            r#"SELECT COUNT(*), MAX("messages"."created_at") FROM "messages" WHERE "messages"."thread_parent_id" = ?"#,
+            [parent_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let (reply_count, Some(last_reply_at)) = counted else { return Ok(None) };
+        if reply_count == 0 {
+            return Ok(None);
+        }
+        let participant_ids = query_all(
+            conn,
+            &format!(
+                r#"SELECT "messages"."creator_id" FROM "messages" WHERE "messages"."thread_parent_id" = ? GROUP BY "messages"."creator_id" ORDER BY MAX("messages"."created_at") DESC LIMIT {THREAD_SUMMARY_PARTICIPANTS}"#
+            ),
+            [parent_id],
+            |r| r.get(0),
+        )?;
+        Ok(Some(ThreadSummary { reply_count, last_reply_at, participant_ids }))
+    }
+
+    /// Everyone who has posted in a thread: the parent's author, then the repliers.
+    pub fn thread_participant_ids(conn: &Connection, parent_id: i64) -> Result<Vec<i64>> {
+        query_all(
+            conn,
+            r#"SELECT "messages"."creator_id" FROM "messages" WHERE "messages"."id" = ?1 UNION SELECT "messages"."creator_id" FROM "messages" WHERE "messages"."thread_parent_id" = ?1"#,
+            [parent_id],
+            |r| r.get(0),
+        )
+    }
+
+    /// Who a reply is news for: its thread's participants and the room members it mentions,
+    /// other than its author. Empty for a top-level message.
+    pub fn thread_audience_ids(&self, conn: &Connection, rich_text: &dyn RichText) -> Result<Vec<i64>> {
+        let Some(parent_id) = self.thread_parent_id else { return Ok(Vec::new()) };
+        let mut ids = Self::thread_participant_ids(conn, parent_id)?;
+        ids.extend(self.mentionees(conn, rich_text)?.into_iter().map(|user| user.id));
+        ids.sort_unstable();
+        ids.dedup();
+        ids.retain(|id| *id != self.creator_id);
+        Ok(ids)
     }
 
     // Message::Searchable
@@ -299,11 +402,19 @@ impl Message {
     pub fn create(tx: &mut Tx<'_>, attributes: NewMessage) -> Result<Self> {
         let now = tx.now();
         let client_message_id = attributes.client_message_id.unwrap_or_else(sql::uuid);
-        let id: i64 = tx.conn().query_row_cached(
-            r#"INSERT INTO "messages" ("client_message_id", "created_at", "creator_id", "room_id", "updated_at") VALUES (?, ?, ?, ?, ?) RETURNING "id""#,
-            params![client_message_id, now, attributes.creator_id, attributes.room_id, now],
-            |r| r.get(0),
-        )?;
+        let id: i64 = match attributes.thread_parent_id {
+            // Rails' own insert, so a top-level message is written exactly as before.
+            None => tx.conn().query_row_cached(
+                r#"INSERT INTO "messages" ("client_message_id", "created_at", "creator_id", "room_id", "updated_at") VALUES (?, ?, ?, ?, ?) RETURNING "id""#,
+                params![client_message_id, now, attributes.creator_id, attributes.room_id, now],
+                |r| r.get(0),
+            )?,
+            Some(parent_id) => tx.conn().query_row_cached(
+                r#"INSERT INTO "messages" ("client_message_id", "created_at", "creator_id", "room_id", "updated_at", "thread_parent_id") VALUES (?, ?, ?, ?, ?, ?) RETURNING "id""#,
+                params![client_message_id, now, attributes.creator_id, attributes.room_id, now, parent_id],
+                |r| r.get(0),
+            )?,
+        };
         let mut message = Self {
             id,
             room_id: attributes.room_id,
@@ -311,6 +422,7 @@ impl Message {
             client_message_id,
             created_at: now,
             updated_at: now,
+            thread_parent_id: attributes.thread_parent_id,
         };
 
         let mut touched = false;
@@ -325,12 +437,19 @@ impl Message {
         if touched {
             message.updated_at = Self::touch_row(tx, id)?;
         }
+        // The parent's summary changes with it.
+        if let Some(parent_id) = message.thread_parent_id {
+            Self::touch_row(tx, parent_id)?;
+        }
         Room::touch(tx, message.room_id)?;
 
         let committed = message.clone();
         tx.after_commit(move |tx| {
             committed.create_in_index(tx)?;
-            Room::receive(tx, committed.room_id, &committed)
+            match committed.thread_parent_id {
+                None => Room::receive(tx, committed.room_id, &committed),
+                Some(_) => Room::receive_reply(tx, committed.room_id, &committed),
+            }
         });
         Ok(message)
     }
@@ -388,8 +507,23 @@ impl Message {
     }
 
     /// `destroy`: its attachment (blob purged later), boosts and body, then the message, and
-    /// the room is touched. The search index entry goes after commit.
+    /// the room is touched. The search index entry goes after commit. A thread goes with its
+    /// parent; a reply's parent is touched, as its summary changes.
     pub fn destroy(&self, tx: &mut Tx<'_>) -> Result<()> {
+        match self.thread_parent_id {
+            None => {
+                for reply in Self::replies(tx.conn(), self.id)? {
+                    reply.destroy_row(tx)?;
+                }
+            }
+            Some(parent_id) => {
+                Self::touch_row(tx, parent_id)?;
+            }
+        }
+        self.destroy_row(tx)
+    }
+
+    fn destroy_row(&self, tx: &mut Tx<'_>) -> Result<()> {
         if let Some(attachment) =
             Attachment::find_for(tx.conn(), RECORD_TYPE, self.id, "attachment")?
         {

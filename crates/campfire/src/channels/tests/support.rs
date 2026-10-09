@@ -170,6 +170,9 @@ impl Partials for FakePartials {
     fn direct_room(&self, membership: &Membership) -> String {
         format!("<li>direct {}</li>", membership.id)
     }
+    fn thread_summary(&self, parent: &Message) -> String {
+        format!("<div>summary {}</div>", parent.id)
+    }
 }
 
 pub fn identifier(value: Value) -> String {

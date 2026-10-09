@@ -1,0 +1,9 @@
+{#- Threads (plans/threads.md): rooms/refreshes/show.turbo_stream for a thread. -#}
+{%- if !refresh.new_messages.is_empty() -%}
+<turbo-stream action="append" target="{{ crate::threads::messages_dom_id(*refresh.parent_id) }}"><template>
+  {% for message in refresh.new_messages %}{{ crate::messages::cached_message_item(ctx, message) }}{% endfor %}
+</template></turbo-stream>
+{%- endif %}
+{% for message in refresh.updated_messages -%}
+{{ "  " }}<turbo-stream action="replace" target="{{ message.dom_id("") }}"><template>{{ crate::messages::cached_message_item(ctx, message) }}</template></turbo-stream>
+{% endfor -%}

@@ -14,6 +14,7 @@ pub mod welcome;
 pub mod pwa;
 pub mod autocompletable;
 pub mod rooms;
+pub mod threads;
 pub mod messages;
 pub mod searches;
 

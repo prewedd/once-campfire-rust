@@ -1,0 +1,13 @@
+{#- Threads (plans/threads.md): a top-level message's replies, under it. Always rendered, empty
+    until there are replies, so a new reply can replace it in place. -#}
+<div id="{{ message.dom_id("thread_summary") }}" class="message__thread">
+  {%- if let Some(thread) = message.thread %}
+  <a class="message__thread-link" data-turbo-frame="_top" href="{{ message.thread_path() }}">
+    <span class="message__thread-avatars">
+      {%- for user in thread.participants %}<img class="message__thread-avatar" aria-hidden="true" src="{{ user.avatar_url }}" width="24" height="24" title="{{ user.name }}" />{% endfor -%}
+    </span>
+    <span class="message__thread-count">{{ thread.replies_label() }}</span>
+    <span class="message__thread-last">Last reply <time datetime="{{ thread.last_reply_at_iso() }}" data-local-time-target="datetime"></time></span>
+  </a>
+  {%- endif -%}
+</div>

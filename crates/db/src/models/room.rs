@@ -300,7 +300,10 @@ impl Room {
             r#"DELETE FROM "memberships" WHERE "memberships"."room_id" = ?"#,
             [self.id],
         )?;
-        for message in Message::for_room(tx.conn(), self.id)? {
+        // Replies first, so no thread is left to go with its parent.
+        let mut messages = Message::for_room(tx.conn(), self.id)?;
+        messages.sort_by_key(|message| !message.is_reply());
+        for message in messages {
             message.destroy(tx)?;
         }
         tx.conn()
@@ -386,6 +389,35 @@ impl Room {
     /// unread, then enqueues the push.
     pub(crate) fn receive(tx: &mut Tx<'_>, room_id: i64, message: &Message) -> Result<()> {
         Self::unread_memberships(tx, room_id, message)?;
+        tx.emit_after_commit(Event::PushMessage {
+            room_id,
+            message_id: message.id,
+        });
+        Ok(())
+    }
+
+    /// `receive` for a thread reply: the room only goes unread for the reply's audience (its
+    /// thread's participants and the members it mentions), and the push job decides who hears
+    /// about it the same way.
+    pub(crate) fn receive_reply(tx: &mut Tx<'_>, room_id: i64, message: &Message) -> Result<()> {
+        let audience = message.thread_audience_ids(tx.conn(), tx.rich_text())?;
+        if !audience.is_empty() {
+            let now = tx.now();
+            let sql = format!(
+                r#"UPDATE "memberships" SET "unread_at" = ?, "updated_at" = ? WHERE "memberships"."room_id" = ? AND "memberships"."involvement" != ? AND ("memberships"."connected_at" IS NULL OR "memberships"."connected_at" < ?) AND "memberships"."user_id" IN ({})"#,
+                crate::sql::placeholders(audience.len())
+            );
+            let mut values: Vec<rusqlite::types::Value> = vec![
+                message.created_at.to_db().into(),
+                now.to_db().into(),
+                room_id.into(),
+                "invisible".to_string().into(),
+                Membership::connection_cutoff(now).to_db().into(),
+            ];
+            values.extend(audience.iter().map(|id| rusqlite::types::Value::from(*id)));
+            tx.conn()
+                .execute(&sql, rusqlite::params_from_iter(values))?;
+        }
         tx.emit_after_commit(Event::PushMessage {
             room_id,
             message_id: message.id,

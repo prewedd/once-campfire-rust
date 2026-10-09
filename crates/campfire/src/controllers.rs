@@ -40,6 +40,7 @@ pub mod qr_code;
 pub mod rooms;
 pub mod searches;
 pub mod sessions;
+pub mod threads;
 pub mod unfurl_links;
 pub mod users;
 pub mod welcome;
@@ -221,6 +222,11 @@ static ROUTES: LazyLock<Vec<Route>> = LazyLock::new(|| {
         patch("/rooms/:room_id/:bot_key/messages/:id(.:format)", "messages/by_bots#update", messages::by_bots::update).defaults(BOT_DEFAULTS),
         put("/rooms/:room_id/:bot_key/messages/:id(.:format)", "messages/by_bots#update", messages::by_bots::update).defaults(BOT_DEFAULTS),
         delete("/rooms/:room_id/:bot_key/messages/:id(.:format)", "messages/by_bots#destroy", messages::by_bots::destroy).defaults(BOT_DEFAULTS),
+        // Threads (plans/threads.md)
+        get("/rooms/:room_id/threads/:thread_id/messages(.:format)", "threads#messages", threads::messages),
+        get("/rooms/:room_id/threads/:thread_id/refresh(.:format)", "threads#refresh", threads::refresh),
+        get("/rooms/:room_id/threads/:id/@:message_id(.:format)", "threads#show", threads::show),
+        get("/rooms/:room_id/threads/:id(.:format)", "threads#show", threads::show),
         get("/rooms/:room_id/refresh(.:format)", "rooms/refreshes#show", rooms::refreshes::show),
         get("/rooms/:room_id/settings(.:format)", "rooms/settings#show", missing_controller),
         get("/rooms/:room_id/involvement(.:format)", "rooms/involvements#show", rooms::involvements::show),
@@ -501,11 +507,15 @@ mod tests {
     /// Controllers the reference routes to but doesn't define (recognize_path raises for them).
     const MISSING_CONTROLLERS: &[&str] = &["rooms/settings"];
 
+    /// Controllers this app adds to the Rails routes (README, Known differences).
+    const ADDED_CONTROLLERS: &[&str] = &["threads"];
+
     #[test]
     fn the_table_is_rails_routes_in_order() {
         let rails = vectors().routes;
-        let ours = routes();
-        for (i, (rails, ours)) in rails.iter().zip(ours).enumerate() {
+        let ours: Vec<_> =
+            routes().iter().filter(|route| !ADDED_CONTROLLERS.iter().any(|c| route.endpoint.starts_with(&format!("{c}#")))).collect();
+        for (i, (rails, ours)) in rails.iter().zip(&ours).enumerate() {
             let defaults: std::collections::BTreeMap<String, String> =
                 ours.defaults.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
             assert_eq!(

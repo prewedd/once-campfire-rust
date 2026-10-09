@@ -72,11 +72,9 @@ pub async fn bare(c: &mut Ctx, status: StatusCode, template: Format, render: imp
     Ok(c.render(status, template, html))
 }
 
-/// Renders with the `ViewContext` `ApplicationController.render` has: no request, no
-/// `Current.user`, no CSRF tokens, and the renderer's default host (`http://example.org`).
-pub fn render_detached<T>(app: &App, account: Option<&Account>, render: impl FnOnce(&ViewContext) -> T) -> T {
-    render_detached_at(app, account, "http://example.org", render)
-}
+/// The renderer's default host (`http://example.org`): what [`render_detached_at`] renders URLs
+/// with outside a request, as `ApplicationController.render` does.
+pub const DETACHED_BASE_URL: &str = "http://example.org";
 
 /// The base of the URLs in a [`render_detached_at`] during a request. `SetCurrentRequest`'s
 /// `default_url_options` only carries `request.host` and `request.protocol`, so the port comes
@@ -87,8 +85,10 @@ pub fn renderer_base_url(c: &Ctx) -> String {
     format!("{}{}", c.request.protocol(), c.request.host())
 }
 
-/// [`render_detached`] during a request: URLs get the request's host through
-/// `default_url_options` (`SetCurrentRequest`), see [`renderer_base_url`].
+/// Renders with the `ViewContext` `ApplicationController.render` has: no request, no
+/// `Current.user`, no CSRF tokens. During a request, URLs get the request's host through
+/// `default_url_options` (`SetCurrentRequest`, see [`renderer_base_url`]); outside one, pass
+/// [`DETACHED_BASE_URL`].
 pub fn render_detached_at<T>(app: &App, account: Option<&Account>, base_url: &str, render: impl FnOnce(&ViewContext) -> T) -> T {
     let asset_path = |path: &str| campfire_assets::asset_path(path);
     let stylesheets = crate::controllers::presenters::view_context::stylesheet_tags();
@@ -124,6 +124,8 @@ pub struct Rendered {
     pub shared_room: Option<String>,
     /// `users/sidebars/rooms/_direct`, per membership id.
     pub direct_rooms: Vec<(i64, String)>,
+    /// `messages/_thread_summary` for a reply's parent.
+    pub thread_summary: Option<String>,
 }
 
 impl Partials for Rendered {
@@ -145,6 +147,10 @@ impl Partials for Rendered {
 
     fn direct_room(&self, membership: &Membership) -> String {
         self.direct_rooms.iter().find(|(id, _)| *id == membership.id).map(|(_, html)| html.clone()).unwrap_or_default()
+    }
+
+    fn thread_summary(&self, _: &Message) -> String {
+        self.thread_summary.clone().unwrap_or_default()
     }
 }
 

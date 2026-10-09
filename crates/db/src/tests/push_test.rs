@@ -16,6 +16,7 @@ fn deliveries(t: &TestDb, room: &str, body: String) -> usize {
         client_message_id: Some("earth".into()),
         body: Some(body),
         attachment_blob_id: None,
+        thread_parent_id: None,
     };
     let message = t.write(move |tx| Message::create(tx, attributes));
     let now = t.now();

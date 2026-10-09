@@ -150,12 +150,27 @@ fn compiled_files_are_byte_identical_to_the_reference_precompile() {
     );
 }
 
+/// The reference's stylesheets, as it links them, plus the ones the overrides add (threads.css,
+/// plans/threads.md), each linked and preloaded the same way.
 #[test]
 fn stylesheet_link_tag_all_matches_the_reference() {
     let tags = campfire_assets::stylesheet_link_tag_all(&[("data-turbo-track", "reload")]);
-    assert_eq!(tags.html, fixture("stylesheet_link_tag_all.html"));
+    let added: Vec<String> = added()
+        .into_iter()
+        .filter(|logical| logical.ends_with(".css"))
+        .map(|logical| campfire_assets::stylesheet_path(&logical))
+        .collect();
+    assert!(!added.is_empty());
+    let is_added = |href: &str| added.iter().any(|path| href.contains(&format!("\"{path}\"")) || href.contains(&format!("<{path}>")));
+
+    let html: Vec<&str> = tags.html.lines().filter(|line| !is_added(line)).collect();
+    assert_eq!(html.len() + added.len(), tags.html.lines().count(), "every added stylesheet is linked");
+    assert_eq!(as_reference(&html.join("\n")), fixture("stylesheet_link_tag_all.html"));
+
+    let header = campfire_assets::append_preload_links("", &tags.preload_links);
+    let preloads: Vec<&str> = header.split(',').filter(|link| !is_added(link)).collect();
     assert_eq!(
-        campfire_assets::append_preload_links("", &tags.preload_links),
+        as_reference(&preloads.join(",")),
         fixture("link_header.txt")
     );
 }

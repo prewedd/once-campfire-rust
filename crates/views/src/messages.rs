@@ -81,6 +81,34 @@ pub struct MessageView {
     /// `message.boosts.ordered`.
     #[serde(default)]
     pub boosts: Vec<BoostView>,
+    /// The top-level message whose thread this replies in (plans/threads.md).
+    #[serde(default)]
+    pub thread_parent_id: Option<i64>,
+    /// A top-level message's thread, once it has replies.
+    #[serde(default)]
+    pub thread: Option<ThreadView>,
+}
+
+/// A thread's summary under its top-level message.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct ThreadView {
+    pub reply_count: i64,
+    pub last_reply_at: Timestamp,
+    /// The latest repliers, most recent first.
+    pub participants: Vec<UserView>,
+}
+
+impl ThreadView {
+    pub fn last_reply_at_iso(&self) -> String {
+        iso8601(self.last_reply_at)
+    }
+
+    pub fn replies_label(&self) -> String {
+        match self.reply_count {
+            1 => "1 reply".to_string(),
+            count => format!("{count} replies"),
+        }
+    }
 }
 
 /// `Message#content_type` with what each presentation needs.
@@ -252,8 +280,21 @@ impl MessageView {
         epoch_ms(self.updated_at)
     }
 
+    /// The message's permalink: in its room, or for a reply, in its thread.
     pub fn at_path(&self) -> String {
-        routes::room_at_message(self.room_id, self.id)
+        match self.thread_parent_id {
+            None => routes::room_at_message(self.room_id, self.id),
+            Some(parent_id) => routes::room_thread_at_message(self.room_id, parent_id, self.id),
+        }
+    }
+
+    pub fn is_reply(&self) -> bool {
+        self.thread_parent_id.is_some()
+    }
+
+    /// The thread the message heads, or replies in.
+    pub fn thread_path(&self) -> String {
+        routes::room_thread(self.room_id, self.thread_parent_id.unwrap_or(self.id))
     }
 
     pub fn path(&self) -> String {

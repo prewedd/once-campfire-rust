@@ -22,7 +22,7 @@ pub use ban::Ban;
 pub use boost::Boost;
 pub use first_run::FirstRun;
 pub use membership::{Involvement, Membership};
-pub use message::{ContentType, Message, NewMessage};
+pub use message::{ContentType, Message, NewMessage, ThreadSummary, Timeline};
 pub use push_subscription::{MAX_PAYLOAD_BODY_BYTES, MAX_PAYLOAD_TITLE_BYTES, PushPayload, PushSubscription};
 pub use rich_text_record::RichTextRecord;
 pub use room::{Room, RoomType};

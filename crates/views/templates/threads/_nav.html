@@ -1,0 +1,12 @@
+{#- Threads (plans/threads.md): back to the room, at the thread's parent. -#}
+  <a class="btn" data-turbo-action="advance" href="{{ show.room_at_parent_path() }}">
+    <img aria-hidden="true" src="{{ ctx.asset("arrow-left.svg") }}" width="20" height="20" />
+    <span class="for-screen-reader">Back to {{ show.room.display_name }}</span>
+</a>
+
+  <span class="btn btn--reversed btn--faux room--current thread--current">
+    <h1 class="room__contents txt-medium overflow-ellipsis">
+      <span>Thread</span>
+      <span class="thread__room-name">{% if show.room.is_direct() %}with{% else %}in{% endif %} {{ show.room.display_name }}</span>
+    </h1>
+</span>

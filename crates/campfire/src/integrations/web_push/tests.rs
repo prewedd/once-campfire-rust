@@ -314,6 +314,7 @@ async fn pushes_messages_and_destroys_expired_subscriptions() {
             client_message_id: Some("earth".into()),
             body: Some("Hey @kevin".into()),
             attachment_blob_id: None,
+            thread_parent_id: None,
         };
         t.db.write(move |tx| Message::create(tx, attributes)).await.unwrap()
     };

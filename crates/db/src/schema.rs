@@ -38,6 +38,13 @@ pub const MIGRATION_VERSIONS: &[&str] = &[
 /// SHA1 of `reference/db/schema.rb`, which `db:schema:load` records in `ar_internal_metadata`.
 pub const SCHEMA_SHA1: &str = "f75da8dad38bfb179ffd757bd7a7c2b3f818bc29";
 
+/// Columns this app adds to the Rails schema, as (table, column, definition), added on boot when
+/// missing. Nullable and without constraints, so the Rails image (which ignores them) still runs.
+pub const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
+    // Threads (plans/threads.md): a reply's top-level message.
+    ("messages", "thread_parent_id", "integer"),
+];
+
 /// Indexes this app adds to the Rails schema, created on boot when missing (new and existing
 /// databases alike). Additive only, so the database still works with the Rails image.
 pub const ADDITIONS: &[&str] = &[
@@ -45,6 +52,8 @@ pub const ADDITIONS: &[&str] = &[
     // with only `index_messages_on_room_id` every room page sorted the room's whole history:
     // 60 ms at 236k messages, against 0.02 ms with this index.
     r#"CREATE INDEX IF NOT EXISTS "index_messages_on_room_id_and_created_at" ON "messages" ("room_id", "created_at")"#,
+    // A thread's replies, paged like a room's, and counted for its parent's summary.
+    r#"CREATE INDEX IF NOT EXISTS "index_messages_on_thread_parent_id_and_created_at" ON "messages" ("thread_parent_id", "created_at")"#,
 ];
 
 /// `timeout: 5000` in `config/database.yml`.
@@ -87,10 +96,29 @@ pub fn prepare(conn: &mut Connection, environment: &str, clock: &dyn Clock) -> R
         load_schema(conn, environment, clock)?;
         Prepared::Loaded
     };
+    add_missing_columns(conn)?;
     for addition in ADDITIONS {
         conn.execute_batch(addition)?;
     }
     Ok(prepared)
+}
+
+/// [`ADDED_COLUMNS`] that aren't there yet.
+fn add_missing_columns(conn: &Connection) -> Result<()> {
+    for (table, column, definition) in ADDED_COLUMNS {
+        if !column_exists(conn, table, column)? {
+            conn.execute_batch(&format!(
+                r#"ALTER TABLE "{table}" ADD COLUMN "{column}" {definition}"#
+            ))?;
+        }
+    }
+    Ok(())
+}
+
+fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    Ok(conn
+        .prepare("SELECT 1 FROM pragma_table_info(?) WHERE name = ?")?
+        .exists([table, column])?)
 }
 
 pub fn pending_migrations(conn: &Connection) -> Result<Vec<&'static str>> {
@@ -252,6 +280,45 @@ mod tests {
         assert!(query_plan(&conn, last_page).contains("TEMP B-TREE"));
         assert_eq!(prepare(&mut conn, "production", &SystemClock).unwrap(), Prepared::UpToDate);
         assert!(!query_plan(&conn, last_page).contains("TEMP B-TREE"));
+    }
+
+    #[test]
+    fn prepare_adds_the_thread_column_to_databases_the_rails_app_made() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        load_schema(&mut conn, "production", &SystemClock).unwrap();
+        assert!(!column_exists(&conn, "messages", "thread_parent_id").unwrap());
+        conn.execute_batch(
+            r#"PRAGMA foreign_keys = OFF;
+               INSERT INTO "rooms" ("id", "created_at", "creator_id", "type", "updated_at") VALUES (1, '2026-01-01', 1, 'Rooms::Open', '2026-01-01');
+               INSERT INTO "messages" ("client_message_id", "created_at", "creator_id", "room_id", "updated_at") VALUES ('a', '2026-01-01', 1, 1, '2026-01-01');"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            prepare(&mut conn, "production", &SystemClock).unwrap(),
+            Prepared::UpToDate
+        );
+        assert!(column_exists(&conn, "messages", "thread_parent_id").unwrap());
+        let parent: Option<i64> = conn
+            .query_row(r#"SELECT "thread_parent_id" FROM "messages""#, [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(parent, None);
+        let plan = query_plan(
+            &conn,
+            r#"SELECT * FROM "messages" WHERE "thread_parent_id" = 1 ORDER BY "created_at""#,
+        );
+        assert!(
+            plan.contains("index_messages_on_thread_parent_id_and_created_at"),
+            "{plan}"
+        );
+
+        // And again on the next boot, without complaint.
+        assert_eq!(
+            prepare(&mut conn, "production", &SystemClock).unwrap(),
+            Prepared::UpToDate
+        );
     }
 
     #[test]

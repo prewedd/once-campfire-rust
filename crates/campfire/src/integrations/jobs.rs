@@ -5,16 +5,14 @@
 
 use anyhow::{Context as _, anyhow};
 use campfire_db::{Database, Event, Message, NewMessage, PushSubscription, Room, User, Webhook};
-use campfire_views::messages as views;
 
 use super::net::Network;
 use super::web_push::{self, VapidConfig, VapidError};
 use super::webhook::{self, WebhookReply};
 use crate::app::App;
 use crate::config::Config;
-use crate::controllers::presenters::page::{self, Rendered};
+use crate::controllers::presenters::page;
 use crate::controllers::messages::{canonicalize_body, process_attachment, save_staged};
-use crate::controllers::presenters::Presenter;
 use crate::jobs::{JobKind, Registry};
 
 /// Registers the handlers for `Event::PushMessage` and `Event::DeliverWebhook`.
@@ -69,7 +67,7 @@ pub fn web_push_pool(config: &Config, db: &Database) -> Option<web_push::Pool> {
 async fn deliver_webhook(app: App, event: Event) -> anyhow::Result<()> {
     let Event::DeliverWebhook { bot_id, message_id } = event else { return Ok(()) };
     let db = app.db.clone();
-    let (bot, room, url, payload) = app
+    let (bot, room, url, payload, thread_parent_id) = app
         .db
         .read(move |conn| {
             let bot = User::find(conn, bot_id)?;
@@ -81,9 +79,9 @@ async fn deliver_webhook(app: App, event: Event) -> anyhow::Result<()> {
                 &*db.env().rich_text,
                 &message,
                 &campfire_routes::room_bot_messages(room.id, bot.bot_key()),
-                &campfire_routes::room_at_message(room.id, message.id),
+                &message_at_path(&message),
             )?;
-            Ok(Some((bot, room, webhook.url, payload)))
+            Ok(Some((bot, room, webhook.url, payload, message.thread_parent_id)))
         })
         .await?
         .context("undefined method 'deliver' for nil (the bot has no webhook)")?;
@@ -91,21 +89,21 @@ async fn deliver_webhook(app: App, event: Event) -> anyhow::Result<()> {
     let delivery = webhook::deliver(&Network::system(), url.as_deref().unwrap_or(""), payload).await?;
     let message = match delivery.reply {
         WebhookReply::None => return Ok(()),
-        WebhookReply::Text(text) => create_text_reply(&app, &room, &bot, text).await?,
-        WebhookReply::Attachment(attachment) => create_attachment_reply(&app, &room, &bot, attachment).await?,
+        WebhookReply::Text(text) => create_text_reply(&app, &room, &bot, text, thread_parent_id).await?,
+        WebhookReply::Attachment(attachment) => create_attachment_reply(&app, &room, &bot, attachment, thread_parent_id).await?,
     };
     broadcast_create(&app, &room, &message).await
 }
 
 /// `room.messages.create!(body: text, creator: user)`: the text is assigned to the rich text
 /// body, which stores it canonicalized (as `MessagesController` does; there's no request host
-/// in a job).
-async fn create_text_reply(app: &App, room: &Room, bot: &User, text: String) -> anyhow::Result<Message> {
+/// in a job). A bot answering a thread reply answers in the thread.
+async fn create_text_reply(app: &App, room: &Room, bot: &User, text: String, thread_parent_id: Option<i64>) -> anyhow::Result<Message> {
     let (room_id, creator_id) = (room.id, bot.id);
     let body = canonicalize_body(app, text, None).await.map_err(|e| anyhow!("{e:?}"))?;
     let message = app
         .db
-        .write(move |tx| Message::create(tx, NewMessage { room_id, creator_id, client_message_id: None, body: Some(body), attachment_blob_id: None }))
+        .write(move |tx| Message::create(tx, NewMessage { room_id, creator_id, client_message_id: None, body: Some(body), attachment_blob_id: None, thread_parent_id }))
         .await?;
     Ok(message)
 }
@@ -113,7 +111,7 @@ async fn create_text_reply(app: &App, room: &Room, bot: &User, text: String) -> 
 /// `ActiveStorage::Blob.create_and_upload!` (its own save), then
 /// `room.messages.create_with_attachment!(attachment:, creator: user)`, which processes the
 /// attachment.
-async fn create_attachment_reply(app: &App, room: &Room, bot: &User, attachment: webhook::Attachment) -> anyhow::Result<Message> {
+async fn create_attachment_reply(app: &App, room: &Room, bot: &User, attachment: webhook::Attachment, thread_parent_id: Option<i64>) -> anyhow::Result<Message> {
     let storage = app.storage.clone();
     let staged = tokio::task::spawn_blocking(move || attachment.stage_blob(&storage)).await??;
     let blob = app.db.write(move |tx| save_staged(tx, staged)).await?;
@@ -121,7 +119,7 @@ async fn create_attachment_reply(app: &App, room: &Room, bot: &User, attachment:
     let (room_id, creator_id, blob_id) = (room.id, bot.id, blob.id);
     let message = app
         .db
-        .write(move |tx| Message::create(tx, NewMessage { room_id, creator_id, client_message_id: None, body: None, attachment_blob_id: Some(blob_id) }))
+        .write(move |tx| Message::create(tx, NewMessage { room_id, creator_id, client_message_id: None, body: None, attachment_blob_id: Some(blob_id), thread_parent_id }))
         .await?;
     process_attachment(app, blob).await.map_err(|e| anyhow!("{e:?}"))?;
     let id = message.id;
@@ -132,14 +130,16 @@ async fn create_attachment_reply(app: &App, room: &Room, bot: &User, attachment:
 async fn broadcast_create(app: &App, room: &Room, message: &Message) -> anyhow::Result<()> {
     let (app, room, message) = (app.clone(), room.clone(), message.clone());
     let db = app.db.clone();
-    db.read(move |conn| {
-        let presenter = Presenter::new(conn, &app, None);
-        let view = presenter.message(&message)?;
-        let account = campfire_db::Account::first(conn)?;
-        let html = page::render_detached(&app, account.as_ref(), |ctx| views::message(ctx, &view));
-        let partials = Rendered { message: Some(html), ..Rendered::default() };
-        app.broadcasts.message_create(conn, &room, &message, &partials)
-    })
-    .await?;
+    db.read(move |conn| crate::controllers::messages::broadcast_create_on(conn, &app, &room, &message, page::DETACHED_BASE_URL))
+        .await?;
     Ok(())
+}
+
+/// The message's permalink, as the webhook payload gives it: in its room, or for a reply, in
+/// its thread (plans/threads.md).
+fn message_at_path(message: &Message) -> String {
+    match message.thread_parent_id {
+        None => campfire_routes::room_at_message(message.room_id, message.id),
+        Some(parent_id) => campfire_routes::room_thread_at_message(message.room_id, parent_id, message.id),
+    }
 }

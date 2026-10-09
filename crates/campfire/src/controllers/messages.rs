@@ -7,7 +7,7 @@ pub mod boosts;
 pub mod by_bots;
 
 use askama::Template;
-use campfire_db::{Message, NewMessage, Role, Room, Status, User};
+use campfire_db::{Message, NewMessage, Role, Room, Status, Timeline, User};
 use campfire_kit::format;
 use campfire_kit::{Ctx, Error, Freshness, Param, Result, StatusCode, halt, permit_keys};
 use campfire_richtext::Content;
@@ -80,8 +80,11 @@ pub async fn create(c: &mut Ctx) -> Result {
             let presenter = Presenter::new(conn, &app, None);
             let item = campfire_views::fragment_cache::with(&app.fragment_cache, || presenter.message_item(&message))?;
             let account = campfire_db::Account::first(conn)?;
-            page::render_detached_at(&app, account.as_ref(), &base_url, |ctx| views::CreateStream { ctx, message: &item, room_kind: kind }.render())
-                .map_err(|e| campfire_db::Error::Other(e.to_string()))
+            page::render_detached_at(&app, account.as_ref(), &base_url, |ctx| match message.thread_parent_id {
+                None => views::CreateStream { ctx, message: &item, room_kind: kind }.render(),
+                Some(parent_id) => campfire_views::threads::CreateStream { ctx, message: &item, parent_id }.render(),
+            })
+            .map_err(|e| campfire_db::Error::Other(e.to_string()))
         })
         .await
         .map_err(db_error)?;
@@ -165,18 +168,28 @@ pub(crate) struct MessageParams {
     /// `attachment=`: `None` when the key wasn't given.
     pub attachment: Option<Assignment>,
     pub client_message_id: Option<String>,
+    /// The message whose thread this is a reply in (plans/threads.md).
+    pub thread_parent_id: Option<i64>,
 }
 
-/// `params.require(:message).permit(:body, :attachment, :client_message_id)`
+/// `params.require(:message).permit(:body, :attachment, :client_message_id)`, plus the thread
+/// a reply goes in: `message[thread_parent_id]`, or `thread_parent_id` in the query, which is
+/// how the thread composer's uploads (posted without the form's fields) carry it.
 fn message_params(c: &Ctx) -> Result<MessageParams> {
     let message = c.params.require("message")?;
-    let permitted = message.permit(&permit_keys(&["body", "attachment", "client_message_id"]));
+    let permitted = message.permit(&permit_keys(&["body", "attachment", "client_message_id", "thread_parent_id"]));
     let text = |key: &str| permitted.get(key).and_then(Param::as_str).map(str::to_string);
     Ok(MessageParams {
         body: text("body"),
         attachment: attachment_assignment(&permitted)?,
         client_message_id: text("client_message_id"),
+        thread_parent_id: thread_parent_id_param(text("thread_parent_id").or_else(|| c.param_str("thread_parent_id").map(str::to_string))),
     })
+}
+
+/// A blank thread id is no thread; anything else must be an id.
+pub(crate) fn thread_parent_id_param(value: Option<String>) -> Option<i64> {
+    value.as_deref().map(str::trim).filter(|value| !value.is_empty()).and_then(cast_integer)
 }
 
 /// What assigning the permitted `attachment` does: an upload replaces the attachment, nil or ""
@@ -190,21 +203,26 @@ pub(crate) fn attachment_assignment(permitted: &campfire_kit::ParamMap) -> Resul
 
 /// `@room.messages.find(params[:before])` and friends (`find_paged_messages`).
 pub(crate) async fn find_paged_messages(c: &Ctx, room: &Room) -> Result<Vec<Message>> {
+    find_paged(c, room.id, Timeline::Room(room.id)).await
+}
+
+/// The page of `timeline` before `params[:before]`, after `params[:after]`, or its last page.
+/// The anchor can be any message in the room.
+pub(crate) async fn find_paged(c: &Ctx, room_id: i64, timeline: Timeline) -> Result<Vec<Message>> {
     let present = |key: &str| c.params.get(key).filter(|p| p.is_present()).map(|p| p.as_str().and_then(cast_integer));
     let (before, after) = (present("before"), present("after"));
-    let room_id = room.id;
     c.app()
         .db
         .read(move |conn| match (before, after) {
             (Some(before), _) => {
                 let message = Message::find_in_room(conn, room_id, before.ok_or(campfire_db::Error::RecordNotFound("Message"))?)?;
-                Message::page_before(conn, room_id, &message)
+                timeline.page_before(conn, &message)
             }
             (None, Some(after)) => {
                 let message = Message::find_in_room(conn, room_id, after.ok_or(campfire_db::Error::RecordNotFound("Message"))?)?;
-                Message::page_after(conn, room_id, &message)
+                timeline.page_after(conn, &message)
             }
-            (None, None) => Message::last_page(conn, room_id),
+            (None, None) => timeline.last_page(conn),
         })
         .await
         .map_err(db_error)
@@ -227,10 +245,13 @@ pub(crate) async fn create_message(c: &Ctx, room: &Room, attributes: MessagePara
         Some(body) => Some(canonicalize_body(c.app(), body, Some(c.request.host())).await?),
         None => None,
     };
+    let requested_parent_id = attributes.thread_parent_id;
     let (message, blob) = c
         .app()
         .db
         .write(move |tx| {
+            // Checked in the write, so the parent can't go between the check and the insert.
+            let thread_parent_id = requested_parent_id.map(|id| thread_root_id(tx.conn(), room_id, id)).transpose()?;
             let blob = attachment.map(|staged| save_staged(tx, staged)).transpose()?;
             let message = Message::create(
                 tx,
@@ -240,6 +261,7 @@ pub(crate) async fn create_message(c: &Ctx, room: &Room, attributes: MessagePara
                     client_message_id: attributes.client_message_id,
                     body,
                     attachment_blob_id: blob.as_ref().map(|blob| blob.id),
+                    thread_parent_id,
                 },
             )?;
             Ok((message, blob))
@@ -251,6 +273,12 @@ pub(crate) async fn create_message(c: &Ctx, room: &Room, attributes: MessagePara
     }
     let id = message.id;
     c.app().db.read(move |conn| Message::find(conn, id)).await.map_err(db_error)
+}
+
+/// The thread a reply to `message_id` goes in: the message's own, or the one it heads (threads
+/// are one level deep). It must be in the room, or the reply is a 404.
+pub(crate) fn thread_root_id(conn: &campfire_db::Connection, room_id: i64, message_id: i64) -> campfire_db::Result<i64> {
+    Ok(Message::find_in_room(conn, room_id, message_id)?.thread_root_id())
 }
 
 /// Inserts a staged blob's row, keeping its file once the transaction commits.
@@ -362,9 +390,29 @@ pub(crate) async fn update_message(c: &Ctx, message: Message, attributes: Messag
 
 /// `@message.destroy` then `@message.broadcast_remove`.
 pub(crate) async fn destroy_message(c: &Ctx, room: &Room, message: &Message) -> Result<()> {
+    destroy_and_broadcast(c.app(), room, message).await
+}
+
+/// [`destroy_message`] outside a request (`remove_banned_content` uses it too). A parent's
+/// replies go with it, and their removal is broadcast; a reply's parent gets its new summary.
+pub(crate) async fn destroy_and_broadcast(app: &App, room: &Room, message: &Message) -> Result<()> {
     let destroyed = message.clone();
-    c.app().db.write(move |tx| destroyed.destroy(tx)).await.map_err(db_error)?;
-    c.app().broadcasts.message_remove(room, message);
+    let replies = app
+        .db
+        .write(move |tx| {
+            let replies = if destroyed.is_reply() { Vec::new() } else { Message::replies(tx.conn(), destroyed.id)? };
+            destroyed.destroy(tx)?;
+            Ok(replies)
+        })
+        .await
+        .map_err(db_error)?;
+    app.broadcasts.message_remove(room, message);
+    for reply in &replies {
+        app.broadcasts.message_remove(room, reply);
+    }
+    if let Some(parent_id) = message.thread_parent_id {
+        broadcast_thread_summary(app, room, parent_id).await?;
+    }
     Ok(())
 }
 
@@ -374,18 +422,47 @@ pub(crate) async fn destroy_message(c: &Ctx, room: &Room, message: &Message) -> 
 pub(crate) async fn broadcast_create(c: &Ctx, room: &Room, message: &Message) -> Result<()> {
     let (app, room, message) = (c.app().clone(), room.clone(), message.clone());
     let base_url = page::renderer_base_url(c);
-    c.app()
-        .db
+    c.app().db.read(move |conn| broadcast_create_on(conn, &app, &room, &message, &base_url)).await.map_err(db_error)
+}
+
+/// [`broadcast_create`] on a reader, with URLs at `base_url`; webhook replies use it too. A
+/// reply goes to its thread instead (plans/threads.md).
+pub(crate) fn broadcast_create_on(conn: &campfire_db::Connection, app: &App, room: &Room, message: &Message, base_url: &str) -> campfire_db::Result<()> {
+    let presenter = Presenter::new(conn, app, None);
+    let view = presenter.message(message)?;
+    let account = campfire_db::Account::first(conn)?;
+    let html = page::render_detached_at(app, account.as_ref(), base_url, |ctx| views::message(ctx, &view));
+    let Some(parent_id) = message.thread_parent_id else {
+        let partials = Rendered { message: Some(html), ..Rendered::default() };
+        return app.broadcasts.message_create(conn, room, message, &partials);
+    };
+    let parent = Message::find(conn, parent_id)?;
+    let audience = message.thread_audience_ids(conn, &*app.db.env().rich_text)?;
+    let partials = Rendered { message: Some(html), thread_summary: Some(thread_summary_html(&presenter, &parent)?), ..Rendered::default() };
+    app.broadcasts.reply_create(room, message, &parent, &audience, &partials);
+    Ok(())
+}
+
+/// Replaces a thread's summary under its parent, after a reply went. Nothing to do when the
+/// parent went too.
+pub(crate) async fn broadcast_thread_summary(app: &App, room: &Room, parent_id: i64) -> Result<()> {
+    let (app, room) = (app.clone(), room.clone());
+    let read = app.clone();
+    read.db
         .read(move |conn| {
+            let Some(parent) = Message::find_by_id(conn, parent_id)? else { return Ok(()) };
             let presenter = Presenter::new(conn, &app, None);
-            let view = presenter.message(&message)?;
-            let account = campfire_db::Account::first(conn)?;
-            let html = page::render_detached_at(&app, account.as_ref(), &base_url, |ctx| views::message(ctx, &view));
-            let partials = Rendered { message: Some(html), ..Rendered::default() };
-            app.broadcasts.message_create(conn, &room, &message, &partials)
+            let partials = Rendered { thread_summary: Some(thread_summary_html(&presenter, &parent)?), ..Rendered::default() };
+            app.broadcasts.thread_summary_replace(&room, &parent, &partials);
+            Ok(())
         })
         .await
         .map_err(db_error)
+}
+
+fn thread_summary_html(presenter: &Presenter, parent: &Message) -> campfire_db::Result<String> {
+    let view = presenter.message(parent)?;
+    campfire_views::threads::SummaryPartial { message: &view }.render().map_err(|e| campfire_db::Error::Other(e.to_string()))
 }
 
 /// `broadcast_replace_to @room, :messages, target: [ @message, :presentation ], partial:

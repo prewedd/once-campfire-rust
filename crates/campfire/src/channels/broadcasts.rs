@@ -24,6 +24,10 @@ pub trait Partials: Send + Sync {
     fn shared_room(&self, room: &Room) -> String;
     /// `users/sidebars/rooms/_direct` with `membership:`.
     fn direct_room(&self, membership: &Membership) -> String;
+    /// `messages/_thread_summary` for a thread's parent (plans/threads.md).
+    fn thread_summary(&self, _parent: &Message) -> String {
+        String::new()
+    }
 }
 
 /// `dom_id(record, prefix)`.
@@ -99,15 +103,42 @@ impl Broadcasts {
 
     /// `broadcast_unread_room`: `{ roomId: }` to each member's `user_<id>_unreads`.
     pub fn unread_room(&self, conn: &Connection, room: &Room) -> campfire_db::Result<()> {
+        for membership in Membership::for_room(conn, room.id)? {
+            self.unread_room_for(membership.user_id, room);
+        }
+        Ok(())
+    }
+
+    fn unread_room_for(&self, user_id: i64, room: &Room) {
         #[derive(Serialize)]
         struct UnreadRoom {
             #[serde(rename = "roomId")]
             room_id: i64,
         }
-        for membership in Membership::for_room(conn, room.id)? {
-            self.server.broadcast(&unread_rooms::stream_name_for(membership.user_id), &UnreadRoom { room_id: room.id });
+        self.server.broadcast(&unread_rooms::stream_name_for(user_id), &UnreadRoom { room_id: room.id });
+    }
+
+    // Threads (plans/threads.md). Their broadcasts go out on the room's message stream too, so
+    // they reach exactly the room's members.
+
+    /// A reply: appended to its thread's list (only the thread view has it), its parent's
+    /// summary replaced wherever the parent is shown, and the unread pings for the reply's
+    /// audience (`Message#thread_audience_ids`) rather than the whole room.
+    pub fn reply_create(&self, room: &Room, message: &Message, parent: &Message, audience: &[i64], partials: &dyn Partials) {
+        let html = partials.message(message);
+        let target = campfire_views::threads::messages_dom_id(parent.id);
+        self.to(&Self::room_messages(room), Action::Append, &target, Some(&html), &[]);
+        self.thread_summary_replace(room, parent, partials);
+        for user_id in audience {
+            self.unread_room_for(*user_id, room);
         }
-        Ok(())
+    }
+
+    /// The parent's summary, after its thread gained or lost a reply.
+    pub fn thread_summary_replace(&self, room: &Room, parent: &Message, partials: &dyn Partials) {
+        let html = partials.thread_summary(parent);
+        let target = message_dom_id(parent, Some("thread_summary"));
+        self.to(&Self::room_messages(room), Action::Replace, &target, Some(&html), MAINTAIN_SCROLL);
     }
 
     /// `message.broadcast_remove`: MessagesController#destroy and `User#remove_banned_content`.

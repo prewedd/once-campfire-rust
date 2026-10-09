@@ -21,7 +21,7 @@ use campfire_storage::{Storage, Variation};
 use campfire_views::messages::json::{BoostJson, BoostMessageJson, IdJson, MessageBodyJson, MessageJson, UserJson};
 use campfire_views::messages::support::json_time;
 use campfire_views::messages::{
-    AttachmentPreview, AttachmentView, BoostView, MessageContent, MessageItem, MessageView, RoomKind, SoundImage, SoundView, UserView,
+    AttachmentPreview, AttachmentView, BoostView, MessageContent, MessageItem, MessageView, RoomKind, SoundImage, SoundView, ThreadView, UserView,
 };
 use campfire_views::messages::support::RubyNumber;
 use campfire_views::fragment_cache;
@@ -216,6 +216,8 @@ impl<'a> Presenter<'a> {
                 all_emoji: false,
                 content: MessageContent::Unrenderable,
                 boosts: Vec::new(),
+                thread_parent_id: message.thread_parent_id,
+                thread: None,
             }),
             rendered => rendered,
         }
@@ -234,7 +236,23 @@ impl<'a> Presenter<'a> {
             all_emoji: all_emoji(&plain_text),
             content: self.content(message, &plain_text)?,
             boosts: self.boosts(message)?,
+            thread_parent_id: message.thread_parent_id,
+            thread: self.thread(message)?,
         })
+    }
+
+    /// A top-level message's thread summary, once it has replies (plans/threads.md).
+    pub fn thread(&self, message: &Message) -> Result<Option<ThreadView>> {
+        if message.is_reply() {
+            return Ok(None);
+        }
+        let Some(summary) = Message::thread_summary(self.conn, message.id)? else { return Ok(None) };
+        let participants = summary
+            .participant_ids
+            .iter()
+            .filter_map(|id| self.user_view(*id).ok())
+            .collect();
+        Ok(Some(ThreadView { reply_count: summary.reply_count, last_reply_at: summary.last_reply_at.jiff(), participants }))
     }
 
     /// `message.boosts.ordered`.

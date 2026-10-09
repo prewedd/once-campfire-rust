@@ -31,6 +31,7 @@ fn creating_a_message_touches_the_room_marks_disconnected_members_unread_and_ind
         client_message_id: Some("abc".into()),
         body: Some("Hello <b>there</b>".into()),
         attachment_blob_id: None,
+        thread_parent_id: None,
     };
     let message = t.write(move |tx| Message::create(tx, attributes));
 

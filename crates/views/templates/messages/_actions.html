@@ -23,6 +23,11 @@
 </a>      </div>
 
       <div class="flex flex-wrap border-top margin-block-start-half pad-block-start-half message__actions-grid">
+        {%- if !message.is_reply() %}
+          <a class="btn message__action-btn center full-width message__thread-btn" data-turbo-frame="_top" title="Reply in thread" aria-label="Reply in thread" href="{{ message.thread_path() }}">
+            <img class="colorize--black" aria-hidden="true" src="{{ ctx.asset("messages-outlined.svg") }}" width="20" height="20" />
+</a>
+        {%- endif %}
         {%- if let Some(attachment) = message.attachment() %}
           <a class="btn message__action-btn center full-width hide-in-ios-pwa" title="Download" aria-label="Download" href="{{ attachment.download_path }}">
             <img class="colorize--black" aria-hidden="true" src="{{ ctx.asset("download.svg") }}" width="20" height="20" />

@@ -318,6 +318,17 @@ bench/results/pi-100k-20260928/run100k.sh BIN LABEL        # 100,000 cable clien
 
 Deliberate:
 
+- **Threads.** Any top-level message can be replied to in a thread of its own, as in Slack
+  ([`plans/threads.md`](plans/threads.md)). Replies live at `/rooms/:room_id/threads/:id`, stay
+  out of the room's timeline (its pages, refreshes and the bot API's index), and show under their
+  parent as a summary of repliers, count and last reply. A reply makes the room unread, and is
+  pushed, only for the thread's participants and the members it mentions (unless they muted the
+  room); its permalink is in its thread, and `/rooms/:room_id/@:id` for a reply redirects there.
+  Bots mentioned in a reply get `thread_parent_id` in the webhook payload and their response is
+  posted into the thread; the bot API posts into one with `?thread_parent_id=`. The data is one
+  nullable column, `messages.thread_parent_id`, added on boot; the Rails image ignores it and
+  shows replies in the room. The parity goldens leave the thread markup out
+  (`crates/views/tests/messages_support`), and its own tests cover it.
 - **Compressed WebSocket frames.** The app accepts the `permessage-deflate` compression browsers
   offer (without context takeover, so each broadcast is compressed once for all of its
   subscribers); Rails' Action Cable doesn't negotiate it. The frames decode to the same messages.

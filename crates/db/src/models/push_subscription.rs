@@ -217,6 +217,15 @@ impl PushSubscription {
     ) -> Result<PushPayload> {
         let creator = message.creator(conn)?;
         let body = message.plain_text_body(conn, rich_text)?;
+        if let Some(parent_id) = message.thread_parent_id {
+            return Ok(Self::reply_payload(
+                room,
+                message,
+                parent_id,
+                creator.name,
+                body,
+            ));
+        }
         let path = format!("/rooms/{}", room.id);
         let (title, body) = if room.direct() {
             (creator.name, body)
@@ -231,6 +240,59 @@ impl PushSubscription {
             body: truncate_json_string(body, MAX_PAYLOAD_BODY_BYTES),
             path,
         })
+    }
+
+    /// A thread reply's notification (plans/threads.md): it says it's from a thread, and opens
+    /// the thread at the reply.
+    fn reply_payload(
+        room: &Room,
+        message: &Message,
+        parent_id: i64,
+        sender: String,
+        body: String,
+    ) -> PushPayload {
+        let path = format!("/rooms/{}/threads/{parent_id}/@{}", room.id, message.id);
+        let (title, body) = if room.direct() {
+            (format!("{sender} in a thread"), body)
+        } else {
+            (
+                format!("Thread in {}", room.name.as_deref().unwrap_or_default()),
+                format!("{sender}: {body}"),
+            )
+        };
+        PushPayload {
+            title: truncate_json_string(title, MAX_PAYLOAD_TITLE_BYTES),
+            body: truncate_json_string(body, MAX_PAYLOAD_BODY_BYTES),
+            path,
+        }
+    }
+
+    /// A reply's audience (its thread's participants and the members it mentions), unless
+    /// they've muted the room or are looking at it.
+    pub fn for_thread_audience(
+        conn: &Connection,
+        room_id: i64,
+        user_ids: &[i64],
+        now: Timestamp,
+    ) -> Result<Vec<Self>> {
+        if user_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let sql = format!(
+            r#"SELECT "push_subscriptions".* FROM "push_subscriptions" INNER JOIN "memberships" ON "memberships"."user_id" = "push_subscriptions"."user_id" WHERE ("memberships"."connected_at" IS NULL OR "memberships"."connected_at" < ?) AND "memberships"."room_id" = ? AND "memberships"."involvement" IN ('mentions', 'everything') AND "push_subscriptions"."user_id" IN ({})"#,
+            placeholders(user_ids.len())
+        );
+        let mut values: Vec<rusqlite::types::Value> = vec![
+            Membership::connection_cutoff(now).to_db().into(),
+            room_id.into(),
+        ];
+        values.extend(user_ids.iter().map(|id| rusqlite::types::Value::from(*id)));
+        query_all(
+            conn,
+            &sql,
+            rusqlite::params_from_iter(values),
+            Self::from_row,
+        )
     }
 
     /// `push_subscriptions_for_users_involved_in_everything`
@@ -291,6 +353,11 @@ impl PushSubscription {
     ) -> Result<(PushPayload, Vec<Self>, Vec<Self>)> {
         let room = Room::find(conn, message.room_id)?;
         let payload = Self::payload_for(conn, rich_text, &room, message)?;
+        if message.is_reply() {
+            let audience = message.thread_audience_ids(conn, rich_text)?;
+            let subscriptions = Self::for_thread_audience(conn, room.id, &audience, now)?;
+            return Ok((payload, subscriptions, Vec::new()));
+        }
         let everything =
             Self::for_users_involved_in_everything(conn, room.id, message.creator_id, now)?;
         let mentionee_ids: Vec<i64> = message
