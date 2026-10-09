@@ -1,0 +1,15 @@
+// What's at a point: node tour/at.js <base> <path> <width> <height> <x> <y>  (signs in as the tour's phone user)
+const [, , BASE, PATH, W, H, X, Y] = process.argv
+const { chromium } = require("playwright")
+;(async () => {
+  const b = await chromium.launch()
+  const p = await (await b.newContext({ viewport: { width: +W, height: +H } })).newPage()
+  await p.goto(`${BASE}/session/new`)
+  await p.fill('input[name="email_address"]', "tour-phone@x.test")
+  await p.fill('input[name="password"]', "tour-password-1234")
+  await p.evaluate(() => document.querySelector('input[name="password"]').form.requestSubmit())
+  await p.waitForURL(/rooms\/\d+/)
+  await p.goto(BASE + PATH); await p.waitForTimeout(1500)
+  console.log(await p.evaluate(([x, y]) => { let e = document.elementFromPoint(x, y), out = []; for (let i = 0; e && i < 4; i++, e = e.parentElement) out.push(e.outerHTML.slice(0, 300)); return out.join("\n---\n") }, [+X, +Y]))
+  await b.close()
+})()

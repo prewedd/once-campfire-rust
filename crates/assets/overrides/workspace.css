@@ -445,6 +445,19 @@ body {
   }
 }
 
+/* Slack's header: the channel's name on the left, its actions on the right (huddle, notifications, ⋯) */
+#nav:has(> .room--current) {
+  > .huddle-btn { order: 1; margin-inline-start: auto; }
+  > span:has(.button_to_change_notifying) { order: 2; }
+  > a[data-room-id] { order: 3; }
+  &:not(:has(> .huddle-btn)) > span:has(.button_to_change_notifying) { margin-inline-start: auto; }
+}
+
+/* Phones: room on the right for the menu button */
+@media (max-width: 100ch) {
+  .sidebar #nav:has(> .room--current) { padding-inline-end: 52px; }
+}
+
 #nav .account-logo {
   border-radius: var(--ws-radius);
 
@@ -752,11 +765,16 @@ body {
 }
 
 /* The menu button sits on the page while the sidebar is closed, on the sidebar once it's open */
-#sidebar .sidebar__toggle img {
+.sidebar__toggle {
+  --btn-background: transparent;
+  --btn-border-color: transparent;
+}
+
+#sidebar .sidebar__toggle.btn:not(.avatar) img:not([class]) {
   filter: var(--ws-ink-filter);
 }
 
-#sidebar.open .sidebar__toggle img {
+#sidebar.open .sidebar__toggle.btn:not(.avatar) img:not([class]) {
   filter: var(--ws-side-icon-filter);
 }
 
