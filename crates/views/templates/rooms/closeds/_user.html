@@ -1,25 +1,16 @@
 {#- reference/app/views/rooms/closeds/_user.html.erb -#}
-<li class="flex align-center gap margin-none" data-value="{{ user.name.to_lowercase() }}">
-  <figure class="avatar flex-item-no-shrink" style="--avatar-size: 4ch;">
-    <a title="{{ user.title }}" class="btn avatar" data-turbo-frame="_top" href="{{ user.path() }}"><img aria-hidden="true" loading="lazy" src="{{ user.avatar_url }}" width="48" height="48" /></a>
-  </figure>
-
-  <div class="min-width">
-    <div class="overflow-ellipsis fill-shade"><strong>{{ user.name }}</strong></div>
-  </div>
-
-  <hr class="separator" aria-hidden="true">
-
-  {%- if form.can_administer %}
-    {%- if user.id == form.current_user_id && form.room.id.is_none() %}
-      <input type="hidden" name="user_ids[]" value="{{ user.id }}" />
-      <img class="colorize--black flex-item-no-shrink" aria-hidden="true" src="{{ ctx.asset("check.svg") }}" width="20" height="20" />
-    {%- else %}
-      <label class="switch flex-item-no-shrink">
-        <input type="checkbox" name="user_ids[]" value="{{ user.id }}" class="switch__input"{% if selected %} checked="checked"{% endif %} />
-        <span class="switch__btn round"></span>
-        <span class="for-screen-reader">Give {{ user.name }} access to this room</span>
-      </label>
-    {%- endif %}
+<li class="ws-row" data-value="{{ user.name.to_lowercase() }}">
+  {%- if form.can_administer && !(user.id == form.current_user_id && form.room.id.is_none()) %}
+  <label class="ws-row__main ws-row__check">
+    <input type="checkbox" name="user_ids[]" value="{{ user.id }}"{% if selected %} checked="checked"{% endif %} />
+    <img class="ws-row__avatar" aria-hidden="true" loading="lazy" src="{{ user.avatar_url }}" width="32" height="32" />
+    <span class="ws-row__name">{{ user.name }}</span>
+  </label>
+  {%- else %}
+  <span class="ws-row__main ws-row__check">
+    {%- if form.can_administer %}<input type="hidden" name="user_ids[]" value="{{ user.id }}" /><input type="checkbox" checked disabled aria-label="You" />{% endif %}
+    <img class="ws-row__avatar" aria-hidden="true" loading="lazy" src="{{ user.avatar_url }}" width="32" height="32" />
+    <span class="ws-row__name">{{ user.name }}{% if user.id == form.current_user_id %} <span class="ws-row__you">(you)</span>{% endif %}</span>
+  </span>
   {%- endif %}
 </li>

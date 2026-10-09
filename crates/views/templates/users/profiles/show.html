@@ -1,92 +1,76 @@
+{#- reference/app/views/users/profiles/show.html.erb, laid out as Slack's "Edit profile" (plans/redesign.md) -#}
 {% extends "layouts/application.html" %}
 {%- block head %}{% endblock %}
 
 {% block nav %}  <div class="flex-item-justify-start">
     {{ h::link_back(ctx) }}
   </div>
-
-  <div class="flex-item-justify-end">
-{% let form = h::form_with(h::routes::session()).method("delete").data("controller", "sessions") %}    {% filter form_with(form) %}
-      {{ h::hidden_field_tag("push_subscription_endpoint", None, h::attrs().data("sessions_target", "pushSubscriptionEndpoint")) }}
-
-      <button class="btn" data-action="sessions#logout:prevent">
-        {{ h::image_tag(ctx, "logout.svg", h::attrs().aria_hidden()) }}
-        <span class="for-screen-reader">Log out</span>
-      </button>
-{% endfilter %}  </div>
 {% endblock %}
-{% block content %}<section class="panel flex flex-column gap" style="view-transition-name: avatar-{{ user.id }}">
+{% block content %}<section class="panel ws-settings" style="view-transition-name: avatar-{{ user.id }}">
+  <h1 class="ws-settings__title">Edit your profile</h1>
+
+  <div class="ws-profile">
+    <div class="ws-profile__photo" data-controller="upload-preview">
+      <span class="ws-field__label">Profile photo</span>
+      {{ h::image_tag(ctx, user.avatar_path.as_str(), h::attrs().class("ws-profile__image").aria_hidden().size(160).data("upload_preview_target", "image")) }}
+{% let form = self.profile_form() %}      {% filter form_with(form) %}
+        <label class="ws-btn ws-btn--block input--file">
+          Upload photo
+          {{ form.file_field("avatar", h::attrs().id("file").class("input").accept("image/*").data("upload_preview_target", "input").data("action", "upload-preview#previewImage change->form#submit")) }}
+        </label>
+{% endfilter %}
+{% if avatar_attached %}      {% filter button_to(h::routes::user_avatar(user.id), h::attrs().method("delete").class("ws-btn ws-btn--link ws-btn--block")) %}Remove photo{% endfilter %}
+{% endif %}    </div>
+
+{% let form = self.profile_form() %}    {% filter form_with(form) %}
+      <div class="ws-profile__fields">
+        <label class="ws-field">
+          <span class="ws-field__label">Full name</span>
+          {{ form.text_field("name", Some(user.name.as_str()), h::attrs().class("ws-input").autocomplete("name").placeholder("Your name").autofocus().required(true).data("1p-ignore", true)) }}
+        </label>
+
+        <label class="ws-field">
+          <span class="ws-field__label">Email</span>
+          {{ form.email_field("email_address", None, h::attrs().class("ws-input").attr_opt("value", user.email_address.as_deref()).autocomplete("username").placeholder("name@example.com").required(false)) }}
+        </label>
+
+        <label class="ws-field">
+          <span class="ws-field__label">About me</span>
+          {{ form.text_area("bio", user.bio.as_deref(), h::attrs().class("ws-input").placeholder("Your role, what you work on, where you are…").maxlength(200).rows(3).required(false)) }}
+          <span class="ws-hint">Shown on your profile. Up to 200 characters.</span>
+        </label>
+
+        <label class="ws-field">
+          <span class="ws-field__label">New password</span>
+          {{ form.password_field("password", h::attrs().class("ws-input").autocomplete("new-password").placeholder("Leave blank to keep your current password").required(false).maxlength(72)) }}
+        </label>
+
+        <div class="ws-actions">
+          <button type="submit" class="ws-btn ws-btn--primary">Save changes</button>
+        </div>
+      </div>
+{% endfilter %}  </div>
+
+{% if !shared_memberships.is_empty() || !direct_memberships.is_empty() %}  <section class="ws-section">
+    <h2 class="ws-section__title">Notifications</h2>
+    <p class="ws-hint">What each conversation notifies you about.</p>
+    <menu class="ws-rows">
+      {% for membership in shared_memberships %}{% include "users/profiles/_membership.html" %}{% endfor %}
+      {% for membership in direct_memberships %}{% include "users/profiles/_membership.html" %}{% endfor %}    </menu>
+  </section>
+{% endif %}
+  {% include "users/profiles/_transfer.html" %}
+
   {% include "pwa/_install_instructions.html" %}
 
-  <div class="align-center center avatar__form gap" data-controller="upload-preview">
-{% let form = self.profile_form().class("txt-medium") %}    {% filter form_with(form) %}
-      <label class="btn input--file">
-        {{ h::image_tag(ctx, "camera.svg", h::attrs().aria_hidden().size(20)) }}
-        {{ form.file_field("avatar", h::attrs().id("file").class("input").accept("image/*").data("upload_preview_target", "input").data("action", "upload-preview#previewImage change->form#submit")) }}
-        <span class="for-screen-reader">Upload avatar</span>
-      </label>
-{% endfilter %}
-{% let form = self.profile_form() %}    {% filter form_with(form) %}
-      <label class="btn avatar input--file txt-xx-large">
-        {{ h::image_tag(ctx, user.avatar_path.as_str(), h::attrs().aria_hidden().size(300).data("upload_preview_target", "image")) }}
-        {{ form.file_field("avatar", h::attrs().id("file").class("input").accept("image/*").data("upload_preview_target", "input").data("action", "upload-preview#previewImage change->form#submit")) }}
-        <span class="for-screen-reader">Avatar</span>
-      </label>
-{% endfilter %}
-{% if avatar_attached %}      {% filter button_to(h::routes::user_avatar(user.id), h::attrs().method("delete").class("btn btn--negative txt-small avatar__delete-btn")) %}
-        {{ h::image_tag(ctx, "minus.svg", h::attrs().aria_hidden().size(20)) }}
-        <span class="for-screen-reader">Delete avatar</span>
-{% endfilter %}{% endif %}  </div>
-
-{% let form = self.profile_form() %}  {% filter form_with(form) %}
-    <div class="flex flex-column gap">
-      <div class="flex align-center gap">
-        {{ h::translation_button(ctx, "user_name") }}
-
-        <label class="flex align-center gap flex-item-grow input input--actor">
-          {{ form.text_field("name", Some(user.name.as_str()), h::attrs().class("input txt-large ").autocomplete("name").placeholder("Enter your name").autofocus().required(true).data("1p-ignore", true)) }}
-          {{ h::image_tag(ctx, "person.svg", h::attrs().aria_hidden().size(24).class("colorize--black")) }}
-        </label>
-      </div>
-
-      <div class="flex align-center gap">
-        {{ h::translation_button(ctx, "email_address") }}
-
-        <label class="flex align-center gap flex-item-grow input input--actor">
-          {{ form.email_field("email_address", None, h::attrs().class("input txt-large").attr_opt("value", user.email_address.as_deref()).autocomplete("username").placeholder("Enter your email address").required(false)) }}
-          {{ h::image_tag(ctx, "email.svg", h::attrs().aria_hidden().size(24).class("colorize--black")) }}
-        </label>
-      </div>
-
-      <div class="flex align-center gap">
-        {{ h::translation_button(ctx, "update_password") }}
-
-        <label class="flex align-center gap flex-item-grow input input--actor">
-          {{ form.password_field("password", h::attrs().class("input txt-large").autocomplete("new-password").placeholder("Change password").required(false).maxlength(72)) }}
-          {{ h::image_tag(ctx, "password.svg", h::attrs().aria_hidden().size(24).class("colorize--black")) }}
-        </label>
-      </div>
-
-      <div class="flex align-start gap">
-        {{ h::translation_button(ctx, "bio") }}
-
-        <label class="flex align--center gap flex-item--grow input input--actor">
-          {{ form.text_area("bio", user.bio.as_deref(), h::attrs().class("input txt-large").placeholder("A few words about yourself…").maxlength(200).rows(3).required(false)) }}
-          {{ h::image_tag(ctx, "bio.svg", h::attrs().aria_hidden().size(24).class("colorize--black")) }}
-        </label>
-      </div>
-
-      {{ h::profile_form_submit_button(ctx) }}
+  <section class="ws-section ws-section--split">
+    <div>
+      <h2 class="ws-section__title">Sign out</h2>
+      <p class="ws-hint">Sign out of Campfire on this device.</p>
     </div>
-{% endfilter %}
-  <div class="margin-block pad-inline pad-block fill-shade border-radius">
-    <menu class="flex flex-column gap margin-none pad">
-      {% for membership in shared_memberships %}{% include "users/profiles/_membership.html" %}{% endfor %}
-{% if !direct_memberships.is_empty() && !shared_memberships.is_empty() %}        <hr class="separator full-width" style="--border-style: solid">
-{% endif %}
-      {% for membership in direct_memberships %}{% include "users/profiles/_membership.html" %}{% endfor %}    </menu>
-  </div>
-
-  {% include "users/profiles/_transfer.html" %}
+{% let form = h::form_with(h::routes::session()).method("delete").data("controller", "sessions") %}    {% filter form_with(form) %}
+      {{ h::hidden_field_tag("push_subscription_endpoint", None, h::attrs().data("sessions_target", "pushSubscriptionEndpoint")) }}
+      <button class="ws-btn ws-btn--danger" data-action="sessions#logout:prevent">Sign out</button>
+{% endfilter %}  </section>
 </section>
 {% endblock %}

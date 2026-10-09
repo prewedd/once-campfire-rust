@@ -325,6 +325,12 @@ Deliberate:
   dots (`OnlineChannel`) and a right-hand panel for threads and profiles. Mostly in
   `crates/assets/overrides` plus a few added elements in templates, which the parity goldens leave
   out.
+- **Slack-style settings pages.** Your profile, workspace settings and the channel forms are laid
+  out as Slack's: labelled fields and text buttons in place of Campfire's icon-only ones, the photo
+  beside the fields, a Members list with Make admin and Remove, Public/Private as two choices and
+  members as a checklist. Their parity cases became tests of what they offer (`parity_a.rs`,
+  `rooms_views.rs`); the sign-in link and the invite link are taken out of the other pages'
+  comparisons. The translate (globe) buttons are gone from these pages.
 - **Huddles.** Drop-in voice and video calls in any room or DM, as Slack's huddles
   ([`plans/huddles.md`](plans/huddles.md)), on a LiveKit server beside the app (`LIVEKIT_URL`,
   `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`; without them there are no huddle buttons). Campfire signs

@@ -19,7 +19,7 @@ const ROOM = [ "everything", "mentions", "nothing", "invisible" ]
 
 function bellForm(target) {
   const form = target.closest?.('form[action*="/involvement"]')
-  return form?.closest("#nav") ? form : null
+  return form?.closest("#nav, .ws-involvement") ? form : null
 }
 
 function current(form) {
@@ -56,7 +56,8 @@ function openMenu(form) {
   const anchor = button.getBoundingClientRect()
   menu.style.top = `${anchor.bottom + 6}px`
   menu.style.left = `${Math.max(8, Math.min(anchor.left, innerWidth - 300))}px`
-  document.body.append(menu)
+  // In a modal, the menu goes in it: a <dialog> sits above everything else on the page.
+  ;(form.closest("dialog") ?? document.body).append(menu)
   button.dataset.involvementOpen = ""
   button.setAttribute("aria-expanded", "true")
   menu.querySelector('[aria-checked="true"]')?.focus()

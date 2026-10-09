@@ -301,17 +301,12 @@ impl ClosedsEdit<'_> {
 /// `button_to_delete_room(room)`.
 pub fn button_to_delete_room(ctx: &ViewContext, room_id: i64, display_name: &str) -> h::Html {
     let url = ctx.url(&campfire_routes::room(room_id));
-    let content = format!(
-        r#"<img aria-hidden="true" src="{}" width="20" height="20" /><span class="overflow-ellipsis">{}</span>"#,
-        h::escape(&ctx.asset("trash.svg")),
-        h::escape(display_name)
-    );
     let options = h::attrs()
         .method("delete")
-        .class("btn btn--negative max-width")
+        .class("ws-btn ws-btn--danger")
         .aria("label", format!("Delete {display_name}"))
         .data("turbo_confirm", "Are you sure you want to delete this room and all messages in it? This can’t be undone.");
-    h::button_to(&url, options, &content)
+    h::button_to(&url, options, "Delete channel")
 }
 
 /// `rooms/layouts/_form`, the form wrapped around the open and closed room forms' fields.

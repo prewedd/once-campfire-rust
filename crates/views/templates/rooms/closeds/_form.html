@@ -1,49 +1,33 @@
 {#- reference/app/views/rooms/closeds/_form.html.erb -#}
 {%- filter room_form(ctx, form.room, form.can_administer, crate::messages::RoomKind::Closed) %}
+  {%- if form.can_administer %}
+  <fieldset class="ws-choices" role="radiogroup" aria-label="Visibility">
+    <span class="ws-field__label">Visibility</span>
+    <a class="ws-choice" data-turbo-action="replace" href="{{ type_change_path }}">
+      <input type="radio" name="room_type" id="room_type" tabindex="-1">
+      <span><strong>Public</strong><small>Everyone in the workspace is a member, including people who join later.</small></span>
+    </a>
+    <label class="ws-choice ws-choice--selected">
+      <input type="radio" name="room_type" checked="checked">
+      <span><strong>Private</strong><small>Only the people you choose can see and join it.</small></span>
+    </label>
+  </fieldset>
+  {%- endif %}
+
+  <section class="ws-field room-access">
+    <span class="ws-field__label">{% if form.room.id.is_some() %}Members · {{ form.selected_users.len() }}{% else %}Add members{% endif %}</span>
 {%- filter user_filter_menu_tag %}
-    {%- if form.can_administer %}
-      <li class="flex align-center gap margin-none">
-        <figure class="avatar flex-item-no-shrink" style="--avatar-border-radius: 0; --avatar-size: 4ch;">
-          <img aria-hidden="true" class="colorize--black" style="background-color: transparent" src="{{ ctx.asset("everyone.svg") }}" />
-          <span class="for-screen-reader">Everyone</span>
-        </figure>
-
-        <div class="min-width">
-          <div class="overflow-ellipsis fill-shade"><strong>Everyone</strong></div>
-        </div>
-
-        <hr class="separator" aria-hidden="true">
-
-        <a class="btn--faux flex-inline" tabindex="-1" data-turbo-action="replace" href="{{ type_change_path }}">
-          <label for="room_type" class="switch">
-            <input type="checkbox" id="room_type" class="switch__input">
-            <span class="switch__btn round"></span>
-            <span class="for-screen-reader">Give everyone access to this room</span>
-          </label>
-</a>
-      </li>
-
-      <hr class="separator full-width" style="--border-style: solid">
-    {%- endif %}
-
-    {%- if form.selected_users.len() + form.unselected_users.len() > 20 %}
     {{ h::user_filter_search_tag() }}
-    {%- endif %}
-
     <div data-filter-target="list" contents>
       {%- let selected = true %}
       {%- for user in form.selected_users %}
       {% include "rooms/closeds/_user.html" %}
       {%- endfor %}
-
-      {%- if !form.selected_users.is_empty() && !form.unselected_users.is_empty() %}
-        <hr class="separator full-width" style="--border-style: solid">
-      {%- endif %}
-
       {%- let selected = false %}
       {%- for user in form.unselected_users %}
       {% include "rooms/closeds/_user.html" %}
       {%- endfor %}
     </div>
 {% endfilter %}
+  </section>
 {%- endfilter %}

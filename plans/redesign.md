@@ -73,3 +73,26 @@ PreWedd's UI kit (zinc neutrals, rose `#F63D68` for what's ours or needs you).
 - **One heartbeat per page** (`controllers/refresh_room_controller.js`): a thread in the panel
   used to subscribe to `HeartbeatChannel` a second time, never got confirmed, and after 5 seconds
   disabled every composer on the page as "offline".
+
+## Settings pages, Slack's way (2026-10-10)
+
+Campfire's settings were centered cards of icon-only buttons, globe "translate" buttons and dotted
+leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-settings`,
+`.ws-section`, `.ws-field`, `.ws-input`, `.ws-btn`, `.ws-rows`/`.ws-row`, `.ws-choice`):
+
+- **Edit your profile** (`users/profiles/show.html`): Full name, Email, About me and New password
+  as labelled fields, the photo on the right with Upload photo / Remove photo, Save changes; then
+  Notifications (each channel with its setting by name, opening the notifications menu), Sign in on
+  another device (Copy link, QR code), installing the app, and Sign out.
+- **Workspace settings** (`accounts/edit.html`): the icon and name, Invite people (Copy link, QR
+  code, Reset link), "Only admins can create channels", Members (email for admins, an Admin badge,
+  Make admin / Remove admin, Remove), Integrations (Bots, Custom styles).
+- **Create a channel / Channel settings** (`rooms/layouts/_form.html`, `opens`/`closeds`): a
+  `#`-prefixed name, Visibility as Public / Private choices (they still switch between the open
+  and closed forms), members as a checklist with a filter for private channels, Create channel /
+  Save changes, and Delete this channel. A name typed in the modal survives the switch.
+- Fixes: a modal form that redirects elsewhere (creating a channel) goes there instead of being
+  overridden by the refresh of the page behind; the notifications menu opens inside a modal rather
+  than behind it.
+- `e2e/suites/channels.e2e.js` covers them; `e2e/tour/run` screenshots every main screen (desktop,
+  dark, phone) into `e2e/out/tour-*.png` for review.

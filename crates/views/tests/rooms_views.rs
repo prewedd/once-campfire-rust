@@ -37,11 +37,25 @@ fn show_room_around_message() {
     show("rooms_show_at_message");
 }
 
+/// The channel forms are laid out as Slack's (plans/redesign.md, README "Known differences"), so
+/// they're checked for what they offer rather than against the reference's markup.
+fn assert_channel_form(name: &str, html: &str, private: bool) {
+    let administer = !name.ends_with("_member");
+    assert_eq!(html.contains(r#"name="room[name]""#), administer, "{name}: only those who administer it rename a channel");
+    assert_eq!(html.contains(r#"class="ws-choices""#), administer, "{name}: the public/private choice");
+    assert_eq!(html.contains(r#"name="user_ids[]""#), private && administer, "{name}: private channels pick their members");
+    if administer {
+        let submit = if name.contains("_new") { "Create channel" } else { "Save changes" };
+        assert!(html.contains(submit), "{name}: no {submit:?}");
+        assert_eq!(html.contains("Delete channel"), name.contains("_edit"), "{name}");
+    }
+}
+
 #[test]
 fn new_open_room() {
     let g = golden("rooms_opens_new");
     let form: OpenFormView = g.input();
-    g.assert_dom(&g.render(|ctx| rooms::OpensNew { ctx, form: &form }.render().unwrap()));
+    assert_channel_form(&g.name, &g.render(|ctx| rooms::OpensNew { ctx, form: &form }.render().unwrap()), false);
 }
 
 #[test]
@@ -49,7 +63,7 @@ fn edit_open_room() {
     for name in ["rooms_opens_edit", "rooms_opens_edit_member"] {
         let g = golden(name);
         let form: OpenFormView = g.input();
-        g.assert_dom(&g.render(|ctx| rooms::OpensEdit { ctx, form: &form }.render().unwrap()));
+        assert_channel_form(name, &g.render(|ctx| rooms::OpensEdit { ctx, form: &form }.render().unwrap()), false);
     }
 }
 
@@ -57,7 +71,7 @@ fn edit_open_room() {
 fn new_closed_room() {
     let g = golden("rooms_closeds_new");
     let form: ClosedFormView = g.input();
-    g.assert_dom(&g.render(|ctx| rooms::ClosedsNew { ctx, form: &form }.render().unwrap()));
+    assert_channel_form(&g.name, &g.render(|ctx| rooms::ClosedsNew { ctx, form: &form }.render().unwrap()), true);
 }
 
 #[test]
@@ -65,7 +79,7 @@ fn edit_closed_room() {
     for name in ["rooms_closeds_edit", "rooms_closeds_edit_member"] {
         let g = golden(name);
         let form: ClosedFormView = g.input();
-        g.assert_dom(&g.render(|ctx| rooms::ClosedsEdit { ctx, form: &form }.render().unwrap()));
+        assert_channel_form(name, &g.render(|ctx| rooms::ClosedsEdit { ctx, form: &form }.render().unwrap()), true);
     }
 }
 

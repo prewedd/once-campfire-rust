@@ -1,28 +1,24 @@
-{#- reference/app/views/rooms/layouts/_form.html.erb: used as the `room_form` filter block -#}
-<form action="{{ room.action(*kind) }}" accept-charset="UTF-8" method="post">
+{#- reference/app/views/rooms/layouts/_form.html.erb, laid out as Slack's channel form: used as the `room_form` filter block -#}
+<form action="{{ room.action(*kind) }}" accept-charset="UTF-8" method="post" class="ws-channel-form">
 {%- if room.id.is_some() %}<input type="hidden" name="_method" value="patch" />{% else %}{% endif %}
-  <div class="flex align-center gap">
-    {%- if can_administer %}
-      {{ h::translation_button(ctx, "room_name") }}
+  {%- if can_administer %}
+  <label class="ws-field">
+    <span class="ws-field__label">Name</span>
+    <span class="ws-input ws-input--prefixed">
+      <span class="ws-input__prefix" aria-hidden="true">#</span>
+      <input name="room[name]" id="room_name" required="required" autofocus="autofocus" placeholder="e.g. plan-budget" data-turbo-permanent="true" data-action="keydown.enter-&gt;form#submit:prevent" type="text"{% if let Some(name) = room.name %} value="{{ name }}"{% endif %} />
+    </span>
+    <span class="ws-hint">Channels are where conversations happen around a topic. Use a name that's easy to find.</span>
+  </label>
+  {%- else %}
+  <h2 class="ws-channel-form__name"><span class="ws-row__hash">#</span>{{ room.display_name() }}</h2>
+  {%- endif %}
 
-      <label class="flex-item-grow txt-large">
-        <input name="room[name]" id="room_name" class="input full-width" required="required" autofocus="autofocus" placeholder="Name the room" data-turbo-permanent="true" data-action="keydown.enter-&gt;form#submit:prevent" type="text"{% if let Some(name) = room.name %} value="{{ name }}"{% endif %} />
-        <span class="for-screen-reader">Name this room</span>
-      </label>
-    {%- else %}
-      <h1 class="flex-item-grow txt-x-large">
-        {{ room.display_name() }}
-      </h1>
-    {%- endif %}
-  </div>
-
-  <hr class="margin-block borderless">
-
-  <section class="room-access margin-block pad-inline fill-shade border-radius">
-    {{ content|safe }}
-  </section>
+  {{ content|safe }}
 
   {%- if can_administer %}
-  <button name="button" type="submit" class="btn btn--reversed txt-large center"><img aria-hidden="true" src="{{ ctx.asset("check.svg") }}" width="20" height="20" /><span class="for-screen-reader">Save</span></button>
+  <div class="ws-actions">
+    <button name="button" type="submit" class="ws-btn ws-btn--primary">{% if room.id.is_some() %}Save changes{% else %}Create channel{% endif %}</button>
+  </div>
   {%- endif %}
 </form>

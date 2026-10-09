@@ -1,34 +1,13 @@
 {% let url = ctx.url(h::routes::session_transfer(transfer_id).as_str()) %}
-<fieldset>
-  <legend class="gap">
-    {{ h::image_tag(ctx, "laptop.svg", h::attrs().aria_hidden().size(36).class("colorize--black")) }}
-    {{ h::image_tag(ctx, "transfer.svg", h::attrs().aria_hidden().size(36).class("colorize--black")) }}
-    {{ h::image_tag(ctx, "mobile-phone.svg", h::attrs().aria_hidden().size(36).class("colorize--black")) }}
-  </legend>
-
-
-  <div class="flex flex-column gap">
-{% if !ctx.is_current_user(user.id) %}      <div class="flex align-center gap justify-center">
-        {{ h::image_tag(ctx, "crown.svg", h::attrs().size(16).aria_hidden().class("flex-item-no-shrink colorize--black")) }}
-        <label for="session_transfer_url">Share to get them back into their account</label>
-      </div>
-{% else %}      <label for="session_transfer_url" class="for-screen-reader">Use this link to login automatically on another device</label>
+<section class="ws-section">
+{% if !ctx.is_current_user(user.id) %}  <h2 class="ws-section__title"><label for="session_transfer_url">Sign-in link</label></h2>
+  <p class="ws-hint">Share it to get them back into their account.</p>
+{% else %}  <h2 class="ws-section__title"><label for="session_transfer_url">Sign in on another device</label></h2>
+  <p class="ws-hint">Open this link, or scan its QR code, on your phone or another computer to sign in there. It's yours alone: don't share it.</p>
 {% endif %}
-    <input type="text" class="input" value="{{ url }}" id="session_transfer_url" readonly>
-
-    <div class="flex align-center center gap">
-      {% filter link_to_zoom_qr_code(url) %}
-        <span class="for-screen-reader">Show auto-login QR code</span>
-        {{ h::image_tag(ctx, "qr-code.svg", h::attrs().aria_hidden().size(20).class("colorize--black")) }}
-{% endfilter %}
-      {% filter button_to_copy_to_clipboard(url) %}
-        <span class="for-screen-reader">Copy auto-login link</span>
-        {{ h::image_tag(ctx, "copy-paste.svg", h::attrs().aria_hidden().size(20).class("flex-item-no-shrink colorize--black")) }}
-{% endfilter %}
-      {% filter web_share_session_button(url, "Your sign-in link", "This is your own private sign-in URL, DO NOT SHARE IT. Use it to sign-in on another device or if you get locked out.") %}
-        <span class="for-screen-reader">Share auto-login link</span>
-        {{ h::image_tag(ctx, "share.svg", h::attrs().aria_hidden().size(20).class("flex-item-no-shrink colorize--black")) }}
-{% endfilter %}    </div>
+  <div class="ws-inline">
+    <input type="text" class="ws-input" value="{{ url }}" id="session_transfer_url" readonly>
+    {% filter button_to_copy_to_clipboard(url) %}Copy link{% endfilter %}
+    {% filter link_to_zoom_qr_code(url) %}QR code{% endfilter %}
   </div>
-</fieldset>
-
+</section>

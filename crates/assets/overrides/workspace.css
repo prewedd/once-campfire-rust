@@ -3038,3 +3038,218 @@ body:has(.thread-list) .sidebar__shortcut[data-open-threads] img { filter: inver
 .huddle__invitee small { color: var(--ws-muted); font-size: 12px; }
 .huddle__invitee button { height: 28px; padding: 0 12px; border-radius: var(--ws-radius-sm); background: var(--ws-online); color: #fff; font: 600 12.5px var(--ws-font); cursor: pointer; }
 .huddle__invitee button:disabled { opacity: 0.6; cursor: default; }
+
+/* ── Settings pages: profile, workspace, channels (Slack's forms) ───────────────────────────── */
+
+.ws-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: stretch;
+  gap: 28px;
+  inline-size: min(680px, 100% - 32px);
+  max-width: none;
+  margin: 24px auto 48px;
+  padding: 28px 32px;
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-radius-lg);
+  background: var(--ws-bg-raised);
+  color: var(--ws-ink);
+  font-family: var(--ws-font);
+  font-size: 15px;
+  text-align: start;
+}
+
+.ws-settings__title { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
+.ws-modal .ws-settings { gap: 24px; inline-size: 100%; }
+.panel.ws-settings > *, .panel.ws-settings form > * { max-inline-size: none; margin-inline: 0; }
+.ws-modal .ws-settings__title { display: none; }
+
+.ws-section { display: grid; gap: 10px; margin: 0; padding: 20px 0 0; border: 0; border-top: 1px solid var(--ws-border); }
+.ws-section__title { margin: 0; font-size: 15px; font-weight: 700; }
+.ws-section__title label { cursor: default; }
+.ws-section--split { grid-template-columns: 1fr auto; align-items: center; }
+.ws-section--split > div { display: grid; gap: 4px; }
+.ws-hint { margin: 0; color: var(--ws-muted); font-size: 13px; line-height: 1.45; }
+
+.ws-field { display: grid; gap: 6px; }
+.ws-field__label { font-size: 14px; font-weight: 700; color: var(--ws-ink); }
+
+.ws-input {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid var(--ws-border-strong);
+  border-radius: var(--ws-radius);
+  background: var(--ws-bg);
+  color: var(--ws-ink);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.4;
+  box-shadow: none;
+}
+
+textarea.ws-input { resize: vertical; }
+.ws-input::placeholder { color: var(--ws-faint); }
+.ws-input:focus { outline: none; border-color: var(--ws-accent); box-shadow: var(--ws-ring); }
+.ws-input[readonly] { background: var(--ws-bg-subtle); color: var(--ws-ink-soft); }
+
+.ws-inline { display: flex; gap: 8px; align-items: center; }
+.ws-inline .ws-input { flex: 1; min-width: 0; }
+
+.ws-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Buttons: text, not icons. Campfire's own helpers render .btn; inside settings they look alike. */
+.ws-btn, .ws-settings :is(.ws-inline, .ws-section) > .btn, .ws-settings .ws-inline > form > .btn {
+  --hover-size: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  position: relative;
+  min-height: 34px;
+  inline-size: auto;
+  block-size: auto;
+  aspect-ratio: auto;
+  padding: 6px 14px;
+  border: 1px solid var(--ws-border-strong);
+  border-radius: var(--ws-radius);
+  background: var(--ws-bg-raised);
+  color: var(--ws-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: var(--ws-shadow-sm);
+  transition: background 100ms, border-color 100ms;
+}
+
+.ws-btn:hover, .ws-settings .ws-inline .btn:hover { background: var(--ws-bg-hover); }
+.ws-btn:focus-visible { outline: none; box-shadow: var(--ws-ring); }
+.ws-btn--primary { border-color: var(--ws-accent); background: var(--ws-accent); color: var(--ws-on-accent); }
+.ws-btn--primary:hover { background: var(--ws-accent-hover); }
+.ws-btn--danger { color: var(--color-negative); }
+.ws-btn--danger:hover { border-color: var(--color-negative); background: color-mix(in srgb, var(--color-negative) 8%, transparent); }
+.ws-btn--link { border-color: transparent; background: none; box-shadow: none; color: var(--ws-accent-ink); }
+.ws-btn--link:hover { background: var(--ws-bg-hover); }
+.ws-btn--block { width: 100%; }
+.ws-settings .btn--success { border-color: var(--ws-online); color: var(--ws-online); }
+.ws-settings .button_to:has(.ws-btn--block) { width: 100%; }
+
+/* A file input under a button-looking label */
+.ws-btn.input--file input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border-radius: inherit; }
+
+/* Profile: fields on the left, the photo on the right */
+.ws-profile { display: grid; grid-template-columns: 1fr 176px; gap: 28px; align-items: start; }
+.ws-profile > form { grid-column: 1; grid-row: 1; }
+.ws-profile__fields { display: grid; gap: 18px; }
+.ws-profile__photo { grid-column: 2; display: grid; gap: 8px; }
+.ws-profile__image { display: block; width: 176px; height: 176px; border-radius: var(--ws-radius-lg); object-fit: cover; background: var(--ws-bg-subtle); }
+
+/* Lists of rows: channels, people */
+.ws-rows { display: grid; margin: 0; padding: 0; border: 1px solid var(--ws-border); border-radius: var(--ws-radius); list-style: none; overflow: hidden; }
+.ws-row { display: flex; align-items: center; gap: 12px; min-height: 48px; margin: 0; padding: 6px 12px; border-top: 1px solid var(--ws-border); }
+.ws-row:first-child { border-top: 0; }
+.ws-row:hover { background: var(--ws-bg-hover); }
+.ws-row__main { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; color: var(--ws-ink); text-decoration: none; }
+.ws-row__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.ws-row__hash { margin-inline-end: 4px; color: var(--ws-muted); font-weight: 400; }
+.ws-row__sub { display: block; color: var(--ws-muted); font-size: 13px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-row__text { display: grid; min-width: 0; }
+.ws-row__avatar { flex: none; width: 32px; height: 32px; border-radius: var(--ws-radius-sm); object-fit: cover; }
+.ws-row__actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.ws-row__actions .ws-btn { min-height: 28px; padding: 3px 10px; font-size: 13px; box-shadow: none; }
+.ws-badge { flex: none; padding: 1px 7px; border-radius: 999px; background: var(--ws-bg-subtle); color: var(--ws-ink-soft); font-size: 12px; font-weight: 600; }
+.ws-badge--accent { background: var(--ws-accent-soft-strong); color: var(--ws-accent-ink); }
+
+/* A notification setting, as its name with the bell (lib/workspace/involvement.js opens the menu) */
+.ws-involvement .btn {
+  --hover-size: 0;
+  display: inline-flex;
+  flex-direction: row;
+  white-space: nowrap;
+  block-size: auto;
+  inline-size: auto;
+  aspect-ratio: auto;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-radius);
+  background: var(--ws-bg-raised);
+  color: var(--ws-ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+.ws-involvement .btn img { width: 16px; height: 16px; filter: var(--ws-ink-filter); }
+.ws-involvement .btn::after { content: "▾"; color: var(--ws-faint); font-size: 11px; }
+.ws-involvement .btn.everything::before { content: "All messages"; order: 1; }
+.ws-involvement .btn.mentions::before { content: "Mentions"; order: 1; }
+.ws-involvement .btn.nothing::before { content: "Off"; order: 1; }
+.ws-involvement .btn.invisible::before { content: "Off and hidden"; order: 1; }
+.ws-involvement .btn::after { order: 2; }
+
+/* Workspace settings: the icon and name, the toggles */
+.ws-workspace { display: grid; grid-template-columns: 64px 1fr; gap: 6px 16px; align-items: center; }
+.ws-workspace__logo { grid-row: span 2; width: 64px; height: 64px; border-radius: var(--ws-radius-lg); object-fit: cover; background: var(--ws-bg-subtle); }
+.ws-workspace__title { margin: 0; font-size: 20px; font-weight: 800; }
+.ws-workspace__logo-actions { display: flex; gap: 6px; }
+.ws-workspace .ws-workspace__name { align-self: end; }
+.ws-toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; grid-column: 1 / -1; }
+.ws-toggle__text { display: grid; gap: 4px; }
+.ws-row__you { color: var(--ws-muted); font-weight: 400; }
+.ws-rows__frame { display: contents; }
+.ws-rows__frame > turbo-frame { display: flex; justify-content: center; padding: 8px; }
+.ws-row.banned .ws-row__name { color: var(--ws-muted); text-decoration: line-through; }
+.ws-settings__footer { text-align: center; }
+#system_welcome .ws-section { border: 0; padding: 0; text-align: start; }
+
+/* Channel form: "# name", the visibility choice, the member checklist */
+.ws-channel-form { display: grid; gap: 22px; }
+.ws-channel-form__name { margin: 0; font-size: 20px; font-weight: 800; }
+.ws-input--prefixed { display: flex; align-items: center; gap: 6px; padding-block: 0; }
+.ws-input--prefixed:focus-within { border-color: var(--ws-accent); box-shadow: var(--ws-ring); }
+.ws-input__prefix { color: var(--ws-muted); font-size: 17px; }
+.ws-input--prefixed input { flex: 1; min-width: 0; min-height: 36px; padding: 0; border: 0; outline: 0; background: none; color: inherit; font: inherit; box-shadow: none; }
+.ws-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; padding: 0; border: 0; max-inline-size: none; }
+.ws-choices > .ws-field__label { grid-column: 1 / -1; margin-bottom: -2px; }
+.ws-choice { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--ws-border-strong); border-radius: var(--ws-radius); color: var(--ws-ink); text-decoration: none; cursor: pointer; }
+.ws-choice:hover { background: var(--ws-bg-hover); }
+.ws-choice--selected { border-color: var(--ws-accent); background: var(--ws-accent-soft); box-shadow: inset 0 0 0 1px var(--ws-accent); }
+.ws-choice input { flex: none; position: static; width: 16px; height: 16px; margin: 2px 0 0; opacity: 1; appearance: auto; -webkit-appearance: radio; accent-color: var(--ws-accent); pointer-events: none; }
+.ws-choice span { display: grid; gap: 2px; }
+.ws-choice strong { font-size: 14px; }
+.ws-choice small { color: var(--ws-muted); font-size: 13px; line-height: 1.4; }
+.room-access { margin: 0; padding: 0; background: none; }
+.room-access > menu { display: grid; gap: 0; max-height: 320px; margin: 0; padding: 0; border: 1px solid var(--ws-border); border-radius: var(--ws-radius); overflow-y: auto; }
+.room-access > menu > #search { position: sticky; top: 0; z-index: 1; min-height: 40px; padding: 8px 12px; border: 0; border-bottom: 1px solid var(--ws-border); border-radius: 0; background: var(--ws-bg-raised); color: var(--ws-ink); font: inherit; font-size: 14px; }
+.room-access > menu > #search:focus { outline: none; box-shadow: inset 0 -2px 0 var(--ws-accent); }
+.room-access .ws-row { border-top: 0; border-bottom: 1px solid var(--ws-border); }
+.room-access .ws-row:last-child { border-bottom: 0; }
+.ws-row__check { cursor: pointer; }
+.ws-row__check input[type="checkbox"] { flex: none; position: static; width: 16px; height: 16px; margin: 0; opacity: 1; appearance: auto; -webkit-appearance: checkbox; accent-color: var(--ws-accent); }
+
+/* Install as an app: a quiet section */
+.ws-settings .pwa__instructions { margin: 0; padding-top: 20px; border-top: 1px solid var(--ws-border); }
+.ws-settings .pwa__instructions summary.btn {
+  --hover-size: 0;
+  inline-size: auto; aspect-ratio: auto; justify-content: flex-start; gap: 8px;
+  padding: 0; border: 0; background: none; font-size: 15px;
+}
+
+@media (max-width: 640px) {
+  .ws-settings { inline-size: 100%; margin: var(--navbar-height, 48px) 0 0; padding: 12px 16px 32px; border: 0; border-radius: 0; box-shadow: none; }
+  .ws-modal .ws-settings { margin: 0; padding: 0; }
+  .ws-profile { grid-template-columns: 1fr; }
+  .ws-profile > form, .ws-profile__photo { grid-column: 1; grid-row: auto; }
+  .ws-profile__photo { grid-template-columns: 96px 1fr; align-items: center; }
+  .ws-profile__photo .ws-field__label { grid-column: 1 / -1; }
+  .ws-profile__image { width: 96px; height: 96px; grid-row: span 2; }
+  .ws-inline { flex-wrap: wrap; }
+  .ws-section--split { grid-template-columns: 1fr; }
+  .ws-choices { grid-template-columns: 1fr; }
+  .ws-inline .ws-input { flex-basis: 100%; }
+  .ws-row:has(.ws-row__actions > *) { flex-wrap: wrap; row-gap: 4px; padding-block: 8px; }
+  .ws-row:has(.ws-row__actions > *) .ws-row__main { flex-basis: 60%; }
+  .ws-row__actions:has(> *) { flex-basis: 100%; justify-content: flex-end; }
+}

@@ -1,29 +1,11 @@
-<div class="flex flex-column align-center gap">
 {% let url = ctx.url(h::routes::join(join_code).as_str()) %}
-  <label class="flex flex-column gap full-width" style="--row-gap: 0.5em">
-    <strong id="invite_label" class="invite-label">Share to invite more people</strong>
-    <span class="flex align-center gap input input--actor fill-white">
-      {{ h::image_tag(ctx, "person-add.svg", h::attrs().aria_hidden().size(20).class("colorize--black")) }}
-      <input type="text" class="input" id="invite_url" value="{{ url }}" aria-labelledby="invite_label" readonly>
-    </span>
-  </label>
-
-  <div class="flex align-center gap">
-    {% filter link_to_zoom_qr_code(url) %}
-      <span class="for-screen-reader">Show join link QR code</span>
-      {{ h::image_tag(ctx, "qr-code.svg", h::attrs().aria_hidden().size(20).class("colorize--black")) }}
-{% endfilter %}
-    {% filter button_to_copy_to_clipboard(url) %}
-      <span class="for-screen-reader">Copy join link</span>
-      {{ h::image_tag(ctx, "copy-paste.svg", h::attrs().aria_hidden().size(20).class("colorize--black")) }}
-{% endfilter %}
-    {% filter web_share_session_button(url, "Link to join Campfire", "Hit this link to join me in Campfire and start chatting.") %}
-      <span class="for-screen-reader">Share join link</span>
-      {{ h::image_tag(ctx, "share.svg", h::attrs().aria_hidden().size(20).class("colorize--black")) }}
-{% endfilter %}
-{% if ctx.can_administer() %}      {% filter button_to(h::routes::account_join_code(), h::attrs().class("btn btn--regenerate")) %}
-        {{ h::image_tag(ctx, "refresh.svg", h::attrs().aria_hidden().size(20).class("colorize--black")) }}
-        <span class="for-screen-reader">Regenerate join link</span>
-{% endfilter %}{% endif %}  </div>
-</div>
-
+<section class="ws-section">
+  <h2 class="ws-section__title"><label for="invite_url" id="invite_label">Invite people</label></h2>
+  <p class="ws-hint">Anyone with this link can join the workspace.{% if ctx.can_administer() %} Reset it to stop the old one working.{% endif %}</p>
+  <div class="ws-inline">
+    <input type="text" class="ws-input" id="invite_url" value="{{ url }}" aria-labelledby="invite_label" readonly>
+    {% filter button_to_copy_to_clipboard(url) %}Copy link{% endfilter %}
+    {% filter link_to_zoom_qr_code(url) %}QR code{% endfilter %}
+{% if ctx.can_administer() %}    {% filter button_to(h::routes::account_join_code(), h::attrs().class("ws-btn ws-btn--link btn--regenerate").data("turbo_confirm", "Reset the invite link? The current one will stop working.")) %}Reset link{% endfilter %}
+{% endif %}  </div>
+</section>

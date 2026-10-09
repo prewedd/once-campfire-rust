@@ -101,7 +101,7 @@ impl Golden {
     /// Asserts DOM parity for a template rendered without a layout against a reference page:
     /// the page's main content (or a frame layout's body) is compared with the whole render.
     pub fn assert_content(&self, actual_html: &str) {
-        let expected = without_forgery_tokens(serde_json::from_value(self.json["expected"].clone()).unwrap());
+        let expected = without_forgery_tokens(without_replaced(serde_json::from_value(self.json["expected"].clone()).unwrap()));
         let expected = if self.kind == "page" {
             let regions = regions_named(&expected, &["main"]);
             regions.into_iter().next().map(|(_, tokens)| tokens).unwrap_or_default()
@@ -112,7 +112,7 @@ impl Golden {
     }
 
     pub fn assert_dom(&self, actual_html: &str) {
-        let expected = without_forgery_tokens(serde_json::from_value(self.json["expected"].clone()).unwrap());
+        let expected = without_forgery_tokens(without_replaced(serde_json::from_value(self.json["expected"].clone()).unwrap()));
         let actual = without_port_markup(tokens(actual_html));
         if self.kind == "page" {
             let regions = regions(&expected);
@@ -148,24 +148,14 @@ fn without_port_markup(actual: Vec<String>) -> Vec<String> {
         r#"<lexxy-prompt trigger=":""#,
         r#"<div id="huddle""#,
         "huddle-btn",
+        r#"<section class="ws-section">"#,
     ];
     let is_added = |t: &str| ADDED.iter().any(|marker| t.contains(marker));
     let mut out = Vec::with_capacity(actual.len());
     let mut tokens = actual.into_iter();
     while let Some(token) = tokens.next() {
         if token.starts_with('<') && is_added(&token) {
-            let name = tag_name(&token);
-            let mut depth = 1usize;
-            for inner in tokens.by_ref() {
-                if inner.starts_with(&format!("<{name} ")) || inner == format!("<{name}>") {
-                    depth += 1;
-                } else if inner == format!("</{name}>") {
-                    depth -= 1;
-                    if depth == 0 {
-                        break;
-                    }
-                }
-            }
+            skip_element(&token, &mut tokens);
             continue;
         }
         match token.strip_prefix('#') {
@@ -174,6 +164,38 @@ fn without_port_markup(actual: Vec<String>) -> Vec<String> {
         }
     }
     out
+}
+
+/// The reference's markup for what the redesign replaced (README "Known differences"): the invite
+/// link, now a settings section (`accounts/_invite.html`, checked in `parity_a.rs`).
+fn without_replaced(expected: Vec<String>) -> Vec<String> {
+    const REPLACED: &[&str] = &[r#"<div class="flex flex-column align-center gap">"#];
+    let mut out = Vec::with_capacity(expected.len());
+    let mut tokens = expected.into_iter();
+    while let Some(token) = tokens.next() {
+        if REPLACED.contains(&token.as_str()) {
+            skip_element(&token, &mut tokens);
+        } else {
+            out.push(token);
+        }
+    }
+    out
+}
+
+/// Consumes the rest of the element `start` opened, through its end tag.
+fn skip_element(start: &str, tokens: &mut impl Iterator<Item = String>) {
+    let name = tag_name(start);
+    let mut depth = 1usize;
+    for inner in tokens {
+        if inner.starts_with(&format!("<{name} ")) || inner == format!("<{name}>") {
+            depth += 1;
+        } else if inner == format!("</{name}>") {
+            depth -= 1;
+            if depth == 0 {
+                break;
+            }
+        }
+    }
 }
 
 fn without_placeholder(token: String) -> String {

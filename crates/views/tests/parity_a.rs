@@ -12,8 +12,8 @@ use support::dom::{diff, normalize_html};
 use support::facts::*;
 
 fn assert_parity(name: &str, ext: &str, rendered: String) {
-    let expected = normalize_html(&golden(name, ext));
-    let actual = normalize_html(&without_port_markup(&rendered));
+    let expected = normalize_html(&without_block(&golden(name, ext), "<fieldset>", "</fieldset>", "session_transfer_url"));
+    let actual = normalize_html(&without_block(&without_port_markup(&rendered), r#"<section class="ws-section">"#, "</section>", "session_transfer_url"));
     if let Some(report) = diff(&expected, &actual) {
         let out = golden_dir().join("../../../../../target/views-a/out");
         std::fs::create_dir_all(&out).ok();
@@ -25,6 +25,19 @@ fn assert_parity(name: &str, ext: &str, rendered: String) {
 /// The sidebar's workspace header, the theme picker, the layout's theme boot script and the
 /// presence dots are this app's own (README "Known differences", the workspace redesign; `workspace_views.rs` and the
 /// tests below cover them), so they're left out of the comparison.
+/// The sign-in link (`users/profiles/_transfer`) is laid out as this app's settings sections (README
+/// "Known differences"); the redesigned pages' tests below cover it. Removes the block that contains `marker`.
+fn without_block(html: &str, open: &str, close: &str, marker: &str) -> String {
+    let mut html = html.to_string();
+    let mut from = 0;
+    while let Some(start) = html[from..].find(open).map(|i| from + i) {
+        let Some(length) = html[start..].find(close) else { break };
+        let end = start + length + close.len();
+        if html[start..end].contains(marker) { html.replace_range(start..end, "") } else { from = end }
+    }
+    html
+}
+
 fn without_port_markup(html: &str) -> String {
     let mut html = html.to_string();
     for (open, close) in [
@@ -122,6 +135,8 @@ fn account_fact(name: &str, key: &str) -> serde_json::Value {
     case(name)["account"][key].clone()
 }
 
+/// Workspace settings are laid out as Slack's (plans/redesign.md, README "Known differences"), so
+/// they're checked for what they offer rather than against the reference's markup.
 #[test]
 fn accounts_edit() {
     for (name, notice) in [
@@ -133,7 +148,7 @@ fn accounts_edit() {
         ("account_edit_with_logo_member", None),
     ] {
         let request = Request { flash_notice: notice.map(Into::into), ..Default::default() };
-        let html = with_context(name, request, |ctx| {
+        let (html, admin) = with_context(name, request, |ctx| {
             // AccountsController#account_users
             let visible: Vec<_> = ordered_users(name)
                 .into_iter()
@@ -141,7 +156,7 @@ fn accounts_edit() {
                 .filter(|user| if ctx.can_administer() { user.active() || user.banned() } else { user.active() })
                 .collect();
             let (administrators, members) = visible.into_iter().partition(|user| user.administrator());
-            accounts::Edit {
+            let page = accounts::Edit {
                 ctx,
                 account_id: account_fact(name, "id").as_i64().unwrap(),
                 join_code: account_fact(name, "join_code").as_str().unwrap().into(),
@@ -149,11 +164,13 @@ fn accounts_edit() {
                 administrators,
                 members,
                 next_page: (name == "account_edit_paginated").then(|| "2".to_string()),
-            }
-            .render()
-            .unwrap()
+            };
+            (page.render().unwrap(), ctx.can_administer())
         });
-        assert_parity(name, "html", html);
+        assert!(html.contains("Invite people") && html.contains("Copy link") && html.contains(r#"<turbo-frame id="account_users""#), "{name}: {html}");
+        assert_eq!(html.contains("Workspace name"), admin, "{name}: only administrators rename the workspace");
+        assert_eq!(html.contains("Make admin") || html.contains("Remove admin"), admin, "{name}: only administrators change roles");
+        assert_eq!(html.contains("next_page_container"), name == "account_edit_paginated", "{name}");
     }
 }
 
@@ -306,6 +323,7 @@ fn profile_memberships(list: &serde_json::Value) -> Vec<users::ProfileMembership
         .collect()
 }
 
+/// The profile is laid out as Slack's "Edit profile" (plans/redesign.md).
 #[test]
 fn users_profiles_show() {
     for ua in ["chrome_mac", "chrome_windows", "safari_mac", "safari_ios", "chrome_android", "firefox_mac", "firefox_android", "edge_windows", "kevin", "with_avatar"] {
@@ -324,7 +342,11 @@ fn users_profiles_show() {
             .render()
             .unwrap()
         });
-        assert_parity(name, "html", html);
+        for label in ["Full name", "Email", "About me", "New password", "Save changes", "Notifications", "Sign in on another device", "Sign out"] {
+            assert!(html.contains(label), "{name}: no {label:?}");
+        }
+        assert!(html.contains(r#"name="user[name]""#) && html.contains(r#"name="user[avatar]""#), "{name}: {html}");
+        assert_eq!(html.contains("Remove photo"), ua == "with_avatar", "{name}");
     }
 }
 
@@ -509,7 +531,8 @@ fn accounts_users_index_turbo_stream() {
         let users = case(name)["page_users"].as_array().unwrap().iter().map(|n| named(name, n.as_str().unwrap())).collect();
         accounts::UsersIndexTurboStream { ctx, users, next_page: None }.render().unwrap()
     });
-    assert_parity(name, "turbo_stream.html", html);
+    // The next page of members, as the redesigned workspace settings' rows.
+    assert!(html.starts_with(r#"<turbo-stream action="replace" target="next_page_container"><template><li class="ws-row"#), "{html}");
 }
 
 #[test]

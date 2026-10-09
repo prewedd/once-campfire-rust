@@ -9,13 +9,18 @@
 {%- endblock %}
 
 {%- block content %}
-<section class="panel txt-align-center" style="view-transition-name: edit-room-{{ self.room_id() }}">
+<section class="panel ws-settings" style="view-transition-name: edit-room-{{ self.room_id() }}">
+  <h1 class="ws-settings__title">Channel settings</h1>
   {% block room_form %}{% endblock %}
-</section>
 
 {%- if form.can_administer %}
-  <section class="panel txt-align-center">
+  <section class="ws-section ws-section--split">
+    <div>
+      <h2 class="ws-section__title">Delete this channel</h2>
+      <p class="ws-hint">Deletes the channel and every message in it, for everyone. This can't be undone.</p>
+    </div>
     {{ crate::rooms::button_to_delete_room(ctx, self.room_id(), form.room.display_name()) }}
   </section>
 {%- endif %}
+</section>
 {%- endblock %}

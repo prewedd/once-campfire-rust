@@ -14,7 +14,7 @@ REPO=$(dirname "$E2E")
 BASE=${BASE:-http://127.0.0.1:3090}
 DB=${CAMPFIRE_DEV_HOME:-/root/campfire-dev}/storage/db/production.sqlite3
 IMAGE=mcr.microsoft.com/playwright:v1.47.2-noble
-ALL="smoke huddle huddle-browsers screen ui3 ui4 workspace threads threadsview schedule"
+ALL="smoke huddle huddle-browsers screen ui3 ui4 workspace threads threadsview schedule channels"
 
 # Which suites cover which files (first match wins per file; everything also gets smoke).
 affected() {
@@ -26,7 +26,8 @@ affected() {
       *huddle*|*livekit*) echo huddle screen huddle-browsers ;;
       *schedul*) echo schedule ;;
       *thread*|*refresh_room*|*scroll_manager*|*composer*|*messages_controller*) echo threads threadsview ui3 ;;
-      *modal*|*involvement*|*reorder*|*sorted_list*|users/pane*|*sidebars*|*memberships*) echo ui4 ;;
+      *modal*|*involvement*|*reorder*|*sorted_list*|users/pane*|*sidebars*|*memberships*) echo ui4 channels ;;
+      */rooms/opens/*|*/rooms/closeds/*|*/rooms/layouts/*|*/accounts/*|*/users/profiles/*) echo channels ;;
       *emoji*|*boost*|*reaction*|*initializers/workspace.js) echo workspace ui3 ;;
       *online*|*presence*|*theme*) echo ui3 ;;
       crates/assets/overrides/*.css) echo ui3 ;;

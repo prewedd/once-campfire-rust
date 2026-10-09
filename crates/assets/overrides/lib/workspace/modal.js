@@ -92,6 +92,7 @@ async function show(response) {
     return
   }
   if (!isModalPath(response.url)) {
+    changed = false // the visit below shows the change; refreshing the page behind would cancel it
     closeModal()
     return Turbo.visit(response.url)
   }
@@ -102,7 +103,10 @@ async function show(response) {
   const title = TITLES.find(([ pattern ]) => pattern.test(path))?.[1] ?? (main?.querySelector("h1, h2")?.textContent.trim() || page.title)
   dialog.querySelector(".ws-modal__title").textContent = title
   dialog.querySelector(".ws-modal__actions").replaceChildren(...(page.querySelector("#nav .flex-item-justify-end")?.childNodes ?? []))
+  // What's typed in a permanent field (a new channel's name) survives switching between screens, as with Turbo.
+  const kept = [ ...dialog.querySelectorAll(".ws-modal__body input[data-turbo-permanent][id]") ].map(input => [ input.id, input.value ])
   dialog.querySelector(".ws-modal__body").replaceChildren(...(main?.childNodes ?? []))
+  kept.forEach(([ id, value ]) => { const input = dialog.querySelector(`.ws-modal__body input[data-turbo-permanent]#${CSS.escape(id)}`); if (input && value) input.value = value })
   dialog.querySelectorAll("[style*='view-transition-name']").forEach(element => element.style.removeProperty("view-transition-name"))
   if (stack[stack.length - 1] !== response.url) stack[stack.length - 1] = response.url
   dialog.classList.remove("ws-modal--loading")
