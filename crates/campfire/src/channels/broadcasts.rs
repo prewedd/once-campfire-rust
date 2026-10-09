@@ -143,6 +143,11 @@ impl Broadcasts {
         Ok(())
     }
 
+    /// Asks one person to join a huddle (`huddles#ring`), on their own huddles stream.
+    pub fn huddle_ring(&self, user_id: i64, ring: &serde_json::Value) {
+        self.server.broadcast(&super::huddles::stream_name_for(user_id), ring);
+    }
+
     /// The parent's summary, after its thread gained or lost a reply.
     pub fn thread_summary_replace(&self, room: &Room, parent: &Message, partials: &dyn Partials) {
         let html = partials.thread_summary(parent);

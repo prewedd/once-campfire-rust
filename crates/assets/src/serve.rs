@@ -359,6 +359,8 @@ fn mime_type(extname: &[u8]) -> Option<&'static str> {
         ".png" => "image/png",
         ".svg" => "image/svg+xml",
         ".ttf" => "font/ttf",
+        // Rack::Mime has it too; the huddle background blur (MediaPipe) streams it.
+        ".wasm" => "application/wasm",
         ".txt" => "text/plain",
         ".wav" => "audio/x-wav",
         ".webm" => "video/webm",

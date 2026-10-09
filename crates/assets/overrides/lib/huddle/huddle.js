@@ -8,6 +8,8 @@
 import { cable } from "@hotwired/turbo-rails"
 
 const LIVEKIT_URL = RAILS_ASSET_URL("/livekit/livekit-client.esm.js")
+// MediaPipe for the background blur, from this server (crates/assets/overrides/livekit/mediapipe).
+const BLUR = { tasksVisionFileSet: "/assets/livekit/mediapipe", modelAssetPath: "/assets/livekit/mediapipe/selfie_segmenter.tflite" }
 const PREFS_KEY = "huddle-prefs"
 const VOLUMES_KEY = "huddle-volumes"
 const REACTIONS = [ "👍", "❤️", "😂", "🎉", "👏", "🙌" ]
@@ -25,6 +27,8 @@ const ICONS = {
   collapse: '<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/>',
   leave: '<path d="M10.7 13.3a16 16 0 0 0 3.4 2.6l1.3-1.3a2 2 0 0 1 2.1-.5 13 13 0 0 0 2.8.7 2 2 0 0 1 1.7 2v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1M5.2 13.4A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9M22 2 2 22"/>',
   link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
+  addPerson: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',
+  thread: '<path d="M21 12a8 8 0 0 1-11.9 7L4 20l1-4.6A8 8 0 1 1 21 12Z"/><path d="M8 10h8M8 14h5"/>',
   volume: '<path d="M11 5 6 9H2v6h4l5 4V5ZM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
 }
 
@@ -80,7 +84,8 @@ class Huddle extends EventTarget {
   #room
   #startedAt
   #timer
-  #prefs = load(PREFS_KEY, { noiseSuppression: true, echoCancellation: true, autoGainControl: true, audioinput: "", audiooutput: "", videoinput: "" })
+  #prefs = load(PREFS_KEY, { noiseSuppression: true, echoCancellation: true, autoGainControl: true, blur: false, audioinput: "", audiooutput: "", videoinput: "" })
+  #threadUrl = null
   #volumes = load(VOLUMES_KEY, {})
   #reactions = new Map()
   #status = ""
@@ -101,7 +106,8 @@ class Huddle extends EventTarget {
     this.#render()
 
     try {
-      const [ lk, { url, token } ] = await Promise.all([ this.#livekit(), this.#token(roomId) ])
+      const [ lk, { url, token, thread_url } ] = await Promise.all([ this.#livekit(), this.#token(roomId) ])
+      this.#threadUrl = thread_url
       const room = new lk.Room({
         adaptiveStream: true,
         dynacast: true,
@@ -179,11 +185,83 @@ class Huddle extends EventTarget {
     if (!local) return
     try {
       await local.setCameraEnabled(!local.isCameraEnabled)
-      if (local.isCameraEnabled) this.expand(true)
+      if (local.isCameraEnabled) {
+        await this.#applyBlur()
+        this.expand(true)
+      }
     } catch {
       this.#flash("Your camera is blocked or busy")
     }
     this.#render()
+  }
+
+  // Blur behind you on camera (Slack's "Blur background"), remembered on this device.
+  async setBlur(enabled) {
+    this.#prefs.blur = enabled
+    save(PREFS_KEY, this.#prefs)
+    await this.#applyBlur()
+  }
+
+  async #applyBlur() {
+    const track = this.#room?.localParticipant.getTrackPublication("camera")?.track
+    if (!track) return
+    try {
+      if (this.#prefs.blur) {
+        const lk = await this.#livekit()
+        if (!lk.supportsBackgroundProcessors()) return this.#flash("This browser can’t blur your background")
+        await track.setProcessor(lk.BackgroundProcessor({ mode: "background-blur", blurRadius: 14, assetPaths: BLUR }))
+      } else if (track.getProcessor?.()) {
+        await track.stopProcessor()
+      }
+    } catch (error) {
+      console.warn("huddle blur:", error)
+      this.#flash("Couldn’t blur your background")
+    }
+  }
+
+  // The huddle's chat: the thread of the room's "started a huddle" message, in the side panel.
+  openThread() {
+    const frame = document.getElementById("flexpane")
+    if (!this.#threadUrl) return this.#flash("This huddle has no thread: it started before the app was last updated")
+    if (!frame || String(window.Current?.room?.id) !== String(this.roomId)) return Turbo.visit(this.#threadUrl)
+    frame.closest(".flexpane").hidden = false
+    document.body.classList.add("flexpane-open")
+    frame.src = this.#threadUrl
+    this.expand(false)
+  }
+
+  async #renderPeople(popover) {
+    popover.innerHTML = `<p class="huddle__hint">Loading…</p>`
+    try {
+      const response = await fetch(`/rooms/${this.roomId}/huddle/people`, { headers: { Accept: "application/json" } })
+      const people = await response.json()
+      popover.innerHTML = `<p class="huddle__popover-title">Add people</p>` + (people.length ? people.map(person => `
+        <div class="huddle__invitee">
+          <img src="${escapeHTML(person.avatar_url)}" alt="" width="24" height="24">
+          <span>${escapeHTML(person.name)}</span>
+          ${person.in_huddle ? `<small>In the huddle</small>` : `<button type="button" data-huddle-ring="${person.id}">Ring</button>`}
+        </div>`).join("") : `<p class="huddle__hint">Everyone here is already in the huddle.</p>`)
+    } catch {
+      popover.innerHTML = `<p class="huddle__hint">Couldn’t load the room’s people</p>`
+    }
+  }
+
+  async ring(userId, button) {
+    button.disabled = true
+    button.textContent = "Ringing…"
+    try {
+      const response = await fetch(`/rooms/${this.roomId}/huddle/ring`, {
+        method: "POST",
+        headers: { Accept: "application/json", "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content ?? "" },
+        body: new URLSearchParams({ user_id: userId }),
+      })
+      if (!response.ok) throw new Error(response.status)
+      setTimeout(() => { button.disabled = false; button.textContent = "Ring again" }, 4000)
+    } catch {
+      button.disabled = false
+      button.textContent = "Ring"
+      this.#flash("Couldn’t ring them")
+    }
   }
 
   async toggleScreen() {
@@ -462,6 +540,11 @@ class Huddle extends EventTarget {
           <button type="button" class="huddle__control" data-huddle-control="camera"></button>
           <button type="button" class="huddle__control" data-huddle-control="screen"></button>
           <div class="huddle__menu">
+            <button type="button" class="huddle__control" data-huddle-open="people" title="Add people" aria-label="Add people">${icon("addPerson")}</button>
+            <div class="huddle__popover huddle__people-list" data-huddle-popover="people" hidden></div>
+          </div>
+          <button type="button" class="huddle__control" data-huddle-thread title="Huddle thread" aria-label="Huddle thread">${icon("thread")}</button>
+          <div class="huddle__menu">
             <button type="button" class="huddle__control" data-huddle-open="reactions" title="React" aria-label="React">${icon("smile")}</button>
             <div class="huddle__popover huddle__reactions" data-huddle-popover="reactions" hidden>
               ${REACTIONS.map(emoji => `<button type="button" data-huddle-react="${emoji}">${emoji}</button>`).join("")}
@@ -496,6 +579,8 @@ class Huddle extends EventTarget {
     else if (target.dataset.huddleLeave !== undefined) this.leave()
     else if (target.dataset.huddleOpen) this.#togglePopover(target.dataset.huddleOpen)
     else if (target.dataset.huddleCopy !== undefined) this.copyLink()
+    else if (target.dataset.huddleThread !== undefined) this.openThread()
+    else if (target.dataset.huddleRing) this.ring(target.dataset.huddleRing, target)
   }
 
   #input = (event) => {
@@ -509,6 +594,7 @@ class Huddle extends EventTarget {
     const field = event.target
     if (field.dataset.device) this.setDevice(field.dataset.device, field.value)
     if (field.dataset.processing) this.setProcessing(field.dataset.processing, field.checked)
+    if (field.dataset.blur !== undefined) this.setBlur(field.checked)
   }
 
   async #togglePopover(name) {
@@ -517,6 +603,7 @@ class Huddle extends EventTarget {
     this.#element.querySelectorAll("[data-huddle-popover]").forEach(other => { other.hidden = true })
     popover.hidden = !open
     if (open && name === "settings") await this.#renderSettings(popover)
+    if (open && name === "people") await this.#renderPeople(popover)
   }
 
   async #renderSettings(popover) {
@@ -537,6 +624,7 @@ class Huddle extends EventTarget {
       [ "autoGainControl", "Automatic volume" ],
     ].map(([ name, label ]) => `
       <label class="huddle__toggle"><input type="checkbox" data-processing="${name}"${this.#prefs[name] ? " checked" : ""}> ${label}</label>`).join("") +
+      (lk.supportsBackgroundProcessors?.() ? `<label class="huddle__toggle"><input type="checkbox" data-blur${this.#prefs.blur ? " checked" : ""}> Blur my background</label>` : "") +
       `<p class="huddle__hint">⌘⇧Space (Ctrl+Shift+Space) mutes and unmutes.</p>`
     this.#meter(popover)
   }
@@ -597,6 +685,10 @@ export async function trackHuddles() {
   if (huddlesChannel || !window.Current?.user) return
   huddlesChannel = await cable.subscribeTo({ channel: "HuddlesChannel" }, {
     received(data) {
+      if (data.ring) {
+        ringFrom(data.ring)
+        return
+      }
       if (data.huddles) {
         huddles.clear()
         Object.entries(data.huddles).forEach(([ roomId, participants ]) => huddles.set(roomId, participants))
@@ -639,6 +731,20 @@ function invite(roomId, starter) {
     try { new Notification(pending.text, { tag: `huddle-${roomId}`, icon: starter.avatar_url }) } catch {}
   }
   setTimeout(() => { if (pending?.roomId === roomId) { pending = null; showInvite() } }, 30_000)
+}
+
+// Someone asked you to join their huddle ("Add people").
+function ringFrom({ room_id, room_name, direct, from }) {
+  const roomId = String(room_id)
+  if (huddle.roomId === roomId) return
+  const roomName = direct ? room_name : `#${room_name}`
+  pending = { roomId, text: `${from.name} is asking you to join the huddle${direct ? "" : ` in ${roomName}`}`, roomName, link: true }
+  for (let ring = 0; ring < 3; ring++) setTimeout(() => pending?.roomId === roomId && chime(true), ring * 1500)
+  if (document.hidden && window.Notification?.permission === "granted") {
+    try { new Notification(pending.text, { tag: `huddle-${roomId}`, icon: from.avatar_url }) } catch {}
+  }
+  setTimeout(() => { if (pending?.roomId === roomId) { pending = null; showInvite() } }, 30_000)
+  showInvite()
 }
 
 export function showInvite() {

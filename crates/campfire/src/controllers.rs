@@ -227,6 +227,8 @@ static ROUTES: LazyLock<Vec<Route>> = LazyLock::new(|| {
         delete("/rooms/:room_id/:bot_key/messages/:id(.:format)", "messages/by_bots#destroy", messages::by_bots::destroy).defaults(BOT_DEFAULTS),
         // Huddles (plans/huddles.md)
         post("/rooms/:room_id/huddle(.:format)", "huddles#join", huddles::join),
+        get("/rooms/:room_id/huddle/people(.:format)", "huddles#people", huddles::people),
+        post("/rooms/:room_id/huddle/ring(.:format)", "huddles#ring", huddles::ring),
         post("/livekit/webhook(.:format)", "huddles#webhook", huddles::webhook),
         // Threads (plans/threads.md)
         get("/rooms/:room_id/threads/:thread_id/messages(.:format)", "threads#messages", threads::messages),

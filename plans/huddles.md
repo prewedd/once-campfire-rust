@@ -28,7 +28,11 @@ imported only when someone joins.
   `#huddle` (`data-turbo-permanent`). The bar: mute (⌘/Ctrl+Shift+Space), camera, screen share,
   reactions, raised hand, settings (devices, noise suppression, echo cancellation, automatic
   gain, a live microphone level), leave. The stage: a tile per person and per shared screen, who's
-  talking, each person's volume (0–200%, Web Audio, remembered per listener). Others get a ring
+  talking, each person's volume (0–200%, Web Audio, remembered per listener). Also as in Slack: Add
+  people (rings one person: `POST /rooms/:id/huddle/ring`, a toast and three chimes wherever they
+  are), the huddle's thread (the "started a huddle" message's, opened in the side panel), and
+  background blur (`@livekit/track-processors` + MediaPipe, bundled into the vendored LiveKit
+  client and served from `overrides/livekit/mediapipe/`, never from a CDN). Others get a ring
   (three for a DM) and a "Join" toast; `/rooms/:id#huddle` links offer to join.
 
 ## Deployment (team.prewedd.com)

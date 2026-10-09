@@ -272,6 +272,11 @@ pub fn announced(room_id: i64, message_id: i64, now: i64) {
     session.message_id = Some(message_id);
 }
 
+/// The room's "started a huddle" message for the huddle going on: its thread is the huddle's chat.
+pub fn announcement(room_id: i64) -> Option<i64> {
+    SESSIONS.lock().unwrap().get(&room_id).and_then(|session| session.message_id)
+}
+
 /// Follows a room's huddle as people come and go; the session once it's over.
 pub fn track(room_id: i64, participants: &[Participant], now: i64) -> Option<Session> {
     let mut sessions = SESSIONS.lock().unwrap();

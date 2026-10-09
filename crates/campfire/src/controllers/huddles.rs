@@ -28,8 +28,64 @@ pub async fn join(c: &mut Ctx) -> Result {
     }
 
     c.respond_to(&[&format::JSON])?;
-    let body = json!({ "url": settings.url, "token": token, "participants": participants }).to_string();
+    let thread_url = huddles::announcement(room.id).map(|message_id| campfire_routes::room_thread(room.id, message_id));
+    let body = json!({ "url": settings.url, "token": token, "participants": participants, "thread_url": thread_url }).to_string();
     Ok(c.render(StatusCode::OK, &format::JSON, body))
+}
+
+/// `GET /rooms/:room_id/huddle/people`: the room's other people, for "Add people" in a huddle.
+pub async fn people(c: &mut Ctx) -> Result {
+    before_actions(c, Before::default()).await?;
+    let (_, room) = concerns::set_room(c).await?;
+    let me = require_current_user(c)?.id;
+    let in_huddle: Vec<i64> = huddles::participants(room.id).iter().map(|person| person.user_id).collect();
+    let app = c.app().clone();
+    let room_id = room.id;
+    let people = c
+        .app()
+        .db
+        .read(move |conn| {
+            let mut people = Vec::new();
+            for membership in campfire_db::Membership::for_room(conn, room_id)? {
+                let Ok(user) = campfire_db::User::find(conn, membership.user_id) else { continue };
+                if user.id == me || user.role == campfire_db::Role::Bot || user.status != campfire_db::Status::Active {
+                    continue;
+                }
+                people.push(json!({ "id": user.id, "name": user.name, "avatar_url": avatar_path(&app.secrets, &user), "in_huddle": in_huddle.contains(&user.id) }));
+            }
+            people.sort_by_key(|person| person["name"].as_str().unwrap_or_default().to_lowercase());
+            Ok(people)
+        })
+        .await
+        .map_err(db_error)?;
+    Ok(c.render(StatusCode::OK, &format::JSON, serde_json::Value::from(people).to_string()))
+}
+
+/// `POST /rooms/:room_id/huddle/ring`: asks one of the room's people (`user_id`) to join its
+/// huddle, as Slack's "Add people" does: they get a ring and a Join button, wherever they are.
+pub async fn ring(c: &mut Ctx) -> Result {
+    before_actions(c, Before::default()).await?;
+    let (_, room) = concerns::set_room(c).await?;
+    let caller = require_current_user(c)?.clone();
+    let Some(user_id) = c.param_str("user_id").and_then(concerns::cast_integer) else { return Err(Error::NotFound) };
+    let (app, room_id) = (c.app().clone(), room.id);
+    let avatar_url = avatar_path(&c.app().secrets, &caller);
+    let rung = c
+        .app()
+        .db
+        .read(move |conn| {
+            let Some(_) = campfire_db::Membership::find_by_room_and_user(conn, room_id, user_id)? else { return Ok(false) };
+            let them = campfire_db::User::find(conn, user_id)?;
+            let room_name = crate::controllers::presenters::accounts::room_display_name(conn, &room, &them)?;
+            app.broadcasts.huddle_ring(user_id, &json!({ "ring": { "room_id": room_id, "room_name": room_name, "direct": room.direct(), "from": { "name": caller.name, "avatar_url": avatar_url } } }));
+            Ok(true)
+        })
+        .await
+        .map_err(db_error)?;
+    if !rung {
+        return Err(Error::NotFound);
+    }
+    Ok(concerns::head(StatusCode::NO_CONTENT))
 }
 
 async fn announce_start(c: &Ctx, room: &Room, creator_id: i64) -> Result<()> {
