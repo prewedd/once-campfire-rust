@@ -7,6 +7,7 @@
 // - The room you're in is marked in the sidebar.
 // - Presence: who's online or away (OnlineChannel), on everything marked `data-presence-user`.
 // - The right-hand panel: threads and profiles open beside the conversation, as in Slack.
+// - The sidebar's folding sections and workspace menu (lib/workspace/sidebar.js).
 
 import { cable } from "@hotwired/turbo-rails"
 import { addBoost } from "lib/emoji/boosts"
@@ -14,6 +15,7 @@ import { offerFromLink, showHuddles, showInvite, trackHuddles } from "lib/huddle
 import { closeModal } from "lib/workspace/modal"
 import { addTooltips } from "lib/workspace/involvement"
 import { enableReordering } from "lib/workspace/reorder"
+import { enhanceSidebar } from "lib/workspace/sidebar"
 import "lib/workspace/schedule"
 import "lib/workspace/threads"
 
@@ -235,6 +237,7 @@ function refresh() {
     trackPresence()
     addTooltips()
     enableReordering()
+    enhanceSidebar()
     showHuddles()
     showInvite()
     trackHuddles()

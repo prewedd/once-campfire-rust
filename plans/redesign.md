@@ -96,3 +96,13 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
   than behind it.
 - `e2e/suites/channels.e2e.js` covers them; `e2e/tour/run` screenshots every main screen (desktop,
   dark, phone) into `e2e/out/tour-*.png` for review.
+
+## Sidebar and header, Slack's way (2026-10-10)
+
+- **Folding sections** (`lib/workspace/sidebar.js`): "Channels" and "Direct messages" are buttons
+  that fold their section, remembered per device; folded, the room you're in and unread ones stay.
+- **Private channels** show a lock instead of "#" (sidebar and the profile's notification list).
+- **Workspace menu**: the workspace's name opens Invite people, Create a channel (when you may),
+  Workspace settings and Your profile, each in the modal.
+- **Header**: the channel's name (with ▾) opens its settings; huddle, notifications and ⋯ sit on the
+  right; phones get a visible menu button.

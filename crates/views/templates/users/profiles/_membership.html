@@ -1,6 +1,6 @@
 <li class="ws-row membership-item">
   {% filter link_to(h::routes::room(membership.room_id), h::attrs().class("ws-row__main txt-undecorated")) %}
-    <span class="ws-row__name">{% if !membership.direct %}<span class="ws-row__hash">#</span>{% endif %}{{ membership.room_display_name }}</span>
+    <span class="ws-row__name">{% if membership.room_param_key == "rooms_closed" %}<span class="ws-row__hash ws-row__lock" title="Private"></span>{% elif !membership.direct %}<span class="ws-row__hash">#</span>{% endif %}{{ membership.room_display_name }}</span>
 {% endfilter %}
   <span class="ws-involvement">
     {% filter turbo_frame_tag(h::dom_id(membership.room_param_key.as_str(), membership.room_id, Some("involvement")), h::attrs()) %}

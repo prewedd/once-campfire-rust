@@ -561,6 +561,61 @@ body {
   }
 }
 
+/* Folding sections (lib/workspace/sidebar.js): the heading is a button; folded, only the room
+   you're in and unread ones stay */
+#sidebar .sidebar__section::before { display: none; }
+
+.sidebar__section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  inline-size: fit-content;
+  margin: 12px 0 2px;
+  padding: 4px 8px 4px 6px;
+  border-radius: var(--ws-radius-sm);
+  color: var(--ws-side-ink);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sidebar__section-toggle::before {
+  content: "▾";
+  display: inline-block;
+  inline-size: 12px;
+  font-size: 11px;
+  transition: transform 120ms;
+}
+
+.sidebar__section-toggle[aria-expanded="false"]::before { transform: rotate(-90deg); }
+.sidebar__section-toggle:hover { background: var(--ws-side-hover); color: var(--ws-side-ink-strong); }
+.sidebar__section-toggle:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
+
+#sidebar .sidebar__section--folded :is(.room, .direct):not(.unread):not(.room--active):not(.direct__new) { display: none; }
+
+/* Private channels: a lock instead of "#" */
+.ws-row__lock { display: inline-block; vertical-align: -1px; }
+.ws-row__lock::before { display: block; inline-size: 12px; }
+:is(#sidebar .room[id^="list_rooms_closed_"]:not(.rooms__new-btn), .ws-row__lock)::before {
+  content: "";
+  block-size: 13px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5 7V5a3 3 0 0 1 6 0v2h.5A1.5 1.5 0 0 1 13 8.5v5a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 13.5v-5A1.5 1.5 0 0 1 4.5 7H5Zm1.5 0h3V5a1.5 1.5 0 0 0-3 0v2Z'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5 7V5a3 3 0 0 1 6 0v2h.5A1.5 1.5 0 0 1 13 8.5v5a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 13.5v-5A1.5 1.5 0 0 1 4.5 7H5Zm1.5 0h3V5a1.5 1.5 0 0 0-3 0v2Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* The workspace's name opens its menu */
+#sidebar .sidebar__workspace[role="button"] { cursor: pointer; }
+#sidebar .sidebar__workspace[role="button"]:hover { background: var(--ws-side-hover); }
+#sidebar .sidebar__workspace[role="button"]:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
+#sidebar .sidebar__workspace[role="button"] .sidebar__workspace-name::after { content: " ▾"; font-size: 12px; opacity: 0.7; }
+.workspace-menu .involvement-menu__item { text-decoration: none; }
+
+/* The channel's name in the header opens its settings */
+#nav:has(a[data-room-id]) .room--current { cursor: pointer; border-radius: var(--ws-radius); }
+#nav:has(a[data-room-id]) .room--current:hover { background: var(--ws-bg-subtle); }
+#nav:has(a[data-room-id]) .room--current h1::after { content: "▾"; margin-inline-start: 6px; color: var(--ws-faint); font-size: 12px; font-weight: 400; }
+
 /* A room or a person: one compact row */
 #sidebar :is(.room, .direct) {
   --btn-background: transparent;
