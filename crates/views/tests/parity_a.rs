@@ -29,6 +29,7 @@ fn without_port_markup(html: &str) -> String {
     let mut html = html.to_string();
     for (open, close) in [
         (r#"<header class="sidebar__workspace">"#, "</header>"),
+        (r#"<nav class="sidebar__shortcuts""#, "</nav>"),
         (r#"<details class="theme-picker""#, "</details>"),
         ("<script data-theme-boot>", "</script>"),
         (r#"<span class="presence-dot""#, "</span>"),

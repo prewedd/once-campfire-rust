@@ -233,6 +233,7 @@ static ROUTES: LazyLock<Vec<Route>> = LazyLock::new(|| {
         get("/rooms/:room_id/threads/:thread_id/refresh(.:format)", "threads#refresh", threads::refresh),
         get("/rooms/:room_id/threads/:id/@:message_id(.:format)", "threads#show", threads::show),
         get("/rooms/:room_id/threads/:id(.:format)", "threads#show", threads::show),
+        get("/threads(.:format)", "threads#index", threads::index),
         get("/rooms/:room_id/scheduled_messages(.:format)", "scheduled_messages#index", scheduled_messages::index),
         post("/rooms/:room_id/scheduled_messages(.:format)", "scheduled_messages#create", scheduled_messages::create),
         patch("/rooms/:room_id/scheduled_messages/:id(.:format)", "scheduled_messages#update", scheduled_messages::update),

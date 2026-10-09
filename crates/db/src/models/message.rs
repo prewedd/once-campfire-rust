@@ -317,7 +317,26 @@ impl Message {
     }
 
     /// A top-level message's summary, or `None` while it has no replies.
-    pub fn thread_summary(conn: &Connection, parent_id: i64) -> Result<Option<ThreadSummary>> {
+/// The threads someone is in (started, or replied to), in rooms they're still in, the most
+    /// recently active first: each parent's id and its last reply's time.
+    pub fn threads_for(conn: &Connection, user_id: i64, limit: i64) -> Result<Vec<(i64, Timestamp)>> {
+        query_all(
+            conn,
+            r#"SELECT "parents"."id", MAX("replies"."created_at") AS "last_reply_at"
+               FROM "messages" AS "parents"
+               INNER JOIN "messages" AS "replies" ON "replies"."thread_parent_id" = "parents"."id"
+               INNER JOIN "memberships" ON "memberships"."room_id" = "parents"."room_id" AND "memberships"."user_id" = ?1
+               WHERE "parents"."creator_id" = ?1
+                  OR EXISTS (SELECT 1 FROM "messages" AS "mine" WHERE "mine"."thread_parent_id" = "parents"."id" AND "mine"."creator_id" = ?1)
+               GROUP BY "parents"."id"
+               ORDER BY "last_reply_at" DESC
+               LIMIT ?2"#,
+            params![user_id, limit],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+    }
+
+        pub fn thread_summary(conn: &Connection, parent_id: i64) -> Result<Option<ThreadSummary>> {
         let counted: (i64, Option<Timestamp>) = conn.query_row_cached(
             r#"SELECT COUNT(*), MAX("messages"."created_at") FROM "messages" WHERE "messages"."thread_parent_id" = ?"#,
             [parent_id],

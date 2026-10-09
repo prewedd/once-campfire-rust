@@ -15,6 +15,7 @@ import { closeModal } from "lib/workspace/modal"
 import { addTooltips } from "lib/workspace/involvement"
 import { enableReordering } from "lib/workspace/reorder"
 import "lib/workspace/schedule"
+import "lib/workspace/threads"
 
 const BOOSTS = '[id^="boosts_message_"]'
 

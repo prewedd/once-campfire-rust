@@ -27,4 +27,7 @@
     {%- let room = &show.room %}{% let thread_id = Some(show.parent_id) %}{% let pane = true %}
     {% include "rooms/show/_composer.html" %}
   </footer>
+  {#- Its room's messages, for a thread from another room (the Threads view); for the room's own,
+      the browser shares the page's subscription. -#}
+  <turbo-cable-stream-source channel="RoomMessagesChannel" signed-stream-name="{{ show.messages_stream_name }}"></turbo-cable-stream-source>
 </turbo-frame>

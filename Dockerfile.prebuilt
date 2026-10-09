@@ -1,0 +1,10 @@
+# The app image from a binary compiled outside Docker build (script/deploy-build: in the toolchain
+# image, with a persistent, incremental build directory), on the cached runtime stage of
+# Dockerfile (`docker build --target runtime -t campfire-runtime .`). The context is the binary.
+ARG RUNTIME=campfire-runtime:latest
+FROM ${RUNTIME}
+COPY --chmod=755 campfire /usr/local/bin/campfire
+ARG APP_VERSION
+ENV APP_VERSION=$APP_VERSION
+ARG GIT_REVISION
+ENV GIT_REVISION=$GIT_REVISION

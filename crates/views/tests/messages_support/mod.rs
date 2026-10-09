@@ -20,7 +20,7 @@ pub struct Golden {
 
 /// Assets this app adds (the workspace redesign), which the reference's asset map doesn't have.
 fn added_asset(logical: &str) -> Option<String> {
-    ["emoji.svg", "emoji/prompt.html", "palette.svg", "headphones.svg", "clock.svg"].contains(&logical).then(|| format!("/assets/{logical}"))
+    ["emoji.svg", "emoji/prompt.html", "palette.svg", "headphones.svg", "clock.svg", "threads.svg"].contains(&logical).then(|| format!("/assets/{logical}"))
 }
 
 pub fn golden(name: &str) -> Golden {
@@ -139,6 +139,7 @@ fn without_port_markup(actual: Vec<String>) -> Vec<String> {
         "composer__emoji-btn",
         "composer__schedule-btn",
         "sidebar__workspace",
+        "sidebar__shortcuts",
         "theme-picker",
         "presence-dot",
         "presence-status",

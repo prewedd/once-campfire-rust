@@ -98,7 +98,7 @@ COPY --from=ffmpeg /opt/ffmpeg /opt/ffmpeg
 ENV LIBRARY_PATH=/opt/vips/lib \
     LD_LIBRARY_PATH=/opt/vips/lib:/opt/ffmpeg/lib \
     PATH=/opt/ffmpeg/bin:$PATH
-RUN rustup component add clippy
+RUN rustup component add clippy && apt-get install --no-install-recommends -y mold
 
 
 # Build the binary against the libvips above.
@@ -139,7 +139,9 @@ COPY --from=ffmpeg /opt/ffmpeg/lib/libavcodec.so.61 /opt/ffmpeg/lib/libavfilter.
 COPY --from=ffmpeg /opt/ffmpeg/bin/ffmpeg /opt/ffmpeg/bin/ffprobe /usr/local/bin/
 
 
-FROM docker.io/library/debian:${DEBIAN_RELEASE}-slim
+# The runtime without the app: built once and cached, so a deploy that compiled the binary on the
+# host (with its incremental build directory) only adds the binary (Dockerfile.prebuilt).
+FROM docker.io/library/debian:${DEBIAN_RELEASE}-slim AS runtime
 
 # ca-certificates: the system CA store, for webhooks, unfurling, Web Push and the ACME directory.
 # The rest are the Debian libraries libvips and ffmpeg were built against: glib and expat, the image
@@ -167,8 +169,6 @@ RUN groupadd --system --gid 1000 rails && \
     useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash
 
 WORKDIR /rails
-
-COPY --from=build /out/campfire /usr/local/bin/campfire
 
 # bin/boot: what the reference's `thrust bin/start-app` did, in one process: HTTP_PORT (80) and,
 # with TLS_DOMAIN, HTTPS_PORT (443), with the app itself also on TARGET_PORT (3000, loopback only unless TARGET_BIND says otherwise). Thruster's
@@ -212,3 +212,6 @@ EXPOSE 80 443
 
 # Start the server by default, this can be overwritten at runtime
 CMD ["bin/boot"]
+
+FROM runtime
+COPY --from=build /out/campfire /usr/local/bin/campfire

@@ -140,3 +140,49 @@ async fn render_show(c: &mut Ctx, room: Room, parent: Message, around: Option<i6
 
 #[cfg(test)]
 mod tests;
+
+/// `GET /threads(.json)`: the threads you're in, most recently active first, for the Threads view
+/// in the right-hand panel (plans/redesign.md). `new` when the latest reply isn't yours.
+pub async fn index(c: &mut Ctx) -> Result {
+    before_actions(c, Before::default()).await?;
+    let user = require_current_user(c)?.clone();
+    let app = c.app().clone();
+    let threads = c
+        .app()
+        .db
+        .read(move |conn| {
+            let rich_text = app.db.env().rich_text.clone();
+            let mut threads = Vec::new();
+            for (parent_id, last_reply_at) in Message::threads_for(conn, user.id, 50)? {
+                let parent = Message::find(conn, parent_id)?;
+                let room = Room::find(conn, parent.room_id)?;
+                let Some(summary) = Message::thread_summary(conn, parent_id)? else { continue };
+                let author = campfire_db::User::find(conn, parent.creator_id)?;
+                let people = summary
+                    .participant_ids
+                    .iter()
+                    .filter_map(|id| campfire_db::User::find(conn, *id).ok())
+                    .map(|person| serde_json::json!({ "name": person.name, "avatar_url": crate::controllers::presenters::avatar_path(&app.secrets, &person) }))
+                    .collect::<Vec<_>>();
+                let preview: String = parent.plain_text_body(conn, &*rich_text)?.chars().take(200).collect();
+                threads.push(serde_json::json!({
+                    "room_id": room.id,
+                    "room_name": crate::controllers::presenters::accounts::room_display_name(conn, &room, &user)?,
+                    "direct": room.direct(),
+                    "parent_id": parent_id,
+                    "author": author.name,
+                    "author_avatar_url": crate::controllers::presenters::avatar_path(&app.secrets, &author),
+                    "preview": preview,
+                    "reply_count": summary.reply_count,
+                    "last_reply_at": last_reply_at.jiff().as_second(),
+                    "new": summary.participant_ids.first().is_some_and(|id| *id != user.id),
+                    "participants": people,
+                    "url": campfire_routes::room_thread(room.id, parent_id),
+                }));
+            }
+            Ok(threads)
+        })
+        .await
+        .map_err(db_error)?;
+    Ok(c.render(StatusCode::OK, &format::JSON, serde_json::Value::from(threads).to_string()))
+}
