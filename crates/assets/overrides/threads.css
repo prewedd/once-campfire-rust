@@ -84,5 +84,10 @@
     font-weight: 400;
     margin-inline-start: 0.5ch;
     opacity: 0.7;
+
+    /* Phones: just "Thread"; the back button names the room */
+    @media (max-width: 100ch) {
+      display: none;
+    }
   }
 }
