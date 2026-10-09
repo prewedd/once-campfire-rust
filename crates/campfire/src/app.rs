@@ -119,6 +119,7 @@ pub async fn boot(config: Config) -> anyhow::Result<Booted> {
     crate::integrations::register_jobs(&mut registry);
     let runner = jobs::start(queue, app.clone(), registry, app.config.job_concurrency);
 
+    crate::controllers::huddles::reconcile_in_background(app.clone());
     let kit = Kit::new(kit_config, crypto, clock, app.clone());
     let router = router(&app, kit);
     Ok(Booted { app, router, jobs: runner })

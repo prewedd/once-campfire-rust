@@ -19,3 +19,10 @@
 </a>
 
   {% include "rooms/involvements/_bell.html" %}
+{%- if show.huddles %}
+  <button type="button" class="btn huddle-btn" data-controller="huddle" data-action="huddle#toggle" data-huddle-room-value="{{ room.id }}" data-huddle-name-value="{% if !room.is_direct() %}#{% endif %}{{ room.display_name }}" title="Start a huddle">
+    <img aria-hidden="true" src="{{ ctx.asset("headphones.svg") }}" width="18" height="18" />
+    <span class="huddle-btn__people" data-huddle-target="people"></span>
+    <span class="huddle-btn__label" data-huddle-target="label">Huddle</span>
+  </button>
+{%- endif %}

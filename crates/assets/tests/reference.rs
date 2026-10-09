@@ -178,10 +178,11 @@ fn stylesheet_link_tag_all_matches_the_reference() {
 #[test]
 fn javascript_importmap_tags_match_the_reference() {
     // The reference's pins, as it pins them, plus the modules the overrides add (the workspace
-    // redesign), each pinned and preloaded like its neighbours.
+    // redesign), each pinned and preloaded like its neighbours. The LiveKit client isn't a module
+    // of the app's: huddles import it by URL, only when someone joins one.
     let added: Vec<String> = added()
         .into_iter()
-        .filter(|logical| logical.ends_with(".js"))
+        .filter(|logical| logical.ends_with(".js") && !logical.starts_with("livekit/"))
         .map(|logical| campfire_assets::javascript_path(&logical))
         .collect();
     assert!(!added.is_empty());

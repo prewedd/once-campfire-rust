@@ -10,6 +10,7 @@
 
 import { cable } from "@hotwired/turbo-rails"
 import { addBoost } from "lib/emoji/boosts"
+import { showHuddles, trackHuddles } from "lib/huddle/huddle"
 
 const BOOSTS = '[id^="boosts_message_"]'
 
@@ -224,6 +225,8 @@ function refresh() {
     markCurrentRoom()
     showPresence()
     trackPresence()
+    showHuddles()
+    trackHuddles()
   })
 }
 

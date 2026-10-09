@@ -78,6 +78,9 @@ pub struct ShowView {
     pub join_code: String,
     /// `Turbo::StreamsChannel.signed_stream_name([room, :messages])`.
     pub messages_stream_name: String,
+    /// Huddles are set up (plans/huddles.md): the header offers one.
+    #[serde(default)]
+    pub huddles: bool,
 }
 
 /// `rooms/show`.

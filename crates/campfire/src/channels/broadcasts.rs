@@ -134,6 +134,15 @@ impl Broadcasts {
         }
     }
 
+    /// A room's huddle changed (plans/huddles.md): who's in it now, to each of its members.
+    pub fn huddle(&self, conn: &Connection, room_id: i64, participants: &[crate::huddles::Participant]) -> campfire_db::Result<()> {
+        let change = super::huddles::Change { room_id, participants };
+        for membership in Membership::for_room(conn, room_id)? {
+            self.server.broadcast(&super::huddles::stream_name_for(membership.user_id), &change);
+        }
+        Ok(())
+    }
+
     /// The parent's summary, after its thread gained or lost a reply.
     pub fn thread_summary_replace(&self, room: &Room, parent: &Message, partials: &dyn Partials) {
         let html = partials.thread_summary(parent);

@@ -9,6 +9,7 @@
 
 pub mod broadcasts;
 mod connection;
+mod huddles;
 mod online;
 mod presence;
 mod read_rooms;
@@ -70,12 +71,13 @@ pub fn server(deps: Deps, config: Config) -> Cable {
 /// (`Turbo.signed_stream_verifier`); `RoomMessagesChannel` verifies with it too, and
 /// `Turbo::StreamsChannel` gets it with `RoomStreamsAreAuthorized` prepended.
 pub fn register(builder: ServerBuilder<CableUser>, db: &Database, streams: StreamsChannel) -> ServerBuilder<CableUser> {
-    let (presence_db, room_db, messages_db, typing_db) = (db.clone(), db.clone(), db.clone(), db.clone());
+    let (presence_db, room_db, messages_db, typing_db, huddles_db) = (db.clone(), db.clone(), db.clone(), db.clone(), db.clone());
     let stock = streams.clone().guarded_by(room_messages::guarded_stream);
     builder
         .channel("ApplicationCable::Channel", || EmptyChannel)
         .channel("HeartbeatChannel", || EmptyChannel)
         .channel("PresenceChannel", move || presence::PresenceChannel::new(presence_db.clone()))
+        .channel("HuddlesChannel", move || huddles::HuddlesChannel::new(huddles_db.clone()))
         .channel("OnlineChannel", online::OnlineChannel::new)
         .channel("ReadRoomsChannel", || read_rooms::ReadRoomsChannel)
         .channel("RoomChannel", move || room::RoomChannel::new(room_db.clone()))

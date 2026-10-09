@@ -31,6 +31,7 @@
 {% block head %}{% endblock %}  </head>
 
   <body class="{{ h::body_classes(ctx, self.body_class()) }}" data-controller="local-time lightbox">
+    <div id="huddle" class="huddle" data-turbo-permanent hidden></div>
     <a href="#main-content" class="skip-navigation btn">Skip to main content</a>
 
     <nav id="nav">

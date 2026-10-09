@@ -33,6 +33,7 @@ fn without_port_markup(html: &str) -> String {
         ("<script data-theme-boot>", "</script>"),
         (r#"<span class="presence-dot""#, "</span>"),
         (r#"<span class="presence-status""#, "</span>"),
+        (r#"<div id="huddle""#, "</div>"),
     ] {
         while let Some(start) = html.find(open) {
             let Some(length) = html[start..].find(close) else { break };

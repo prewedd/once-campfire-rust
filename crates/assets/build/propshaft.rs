@@ -174,6 +174,9 @@ impl LoadPath {
     fn collect_references(&self, index: usize, pattern: &Regex, references: &mut Vec<usize>) {
         let content = latin1_decode(&self.assets[index].content);
         let directory = dirname(&self.assets[index].logical_path);
+        if !could_match(pattern, &content) {
+            return;
+        }
         for captures in pattern.captures_iter(&content) {
             let captures = captures.unwrap();
             let url = latin1_to_utf8(&captures[1]);
@@ -193,6 +196,9 @@ impl LoadPath {
     fn compile_asset_urls(&self, index: usize, pattern: &Regex, input: &str) -> String {
         let directory = dirname(&self.assets[index].logical_path);
         let is_css = self.kind(index) == Kind::Css;
+        if !could_match(pattern, input) {
+            return input.to_string();
+        }
         gsub(pattern, input, |captures| {
             let url = latin1_to_utf8(&captures[1]);
             let fingerprint = captures.get(2).map(|m| m.as_str()).unwrap_or("");
@@ -216,6 +222,10 @@ impl LoadPath {
 
     fn compile_source_mapping_urls(&self, index: usize, input: &str) -> String {
         let logical_path = &self.assets[index].logical_path;
+        // As with could_match: no comment, nothing to rewrite.
+        if !input.contains("# sourceMappingURL=") {
+            return input.to_string();
+        }
         gsub(&self.source_mapping_urls, input, |captures| {
             let comment_start = &captures[1];
             let comment_end = captures.get(3).map(|m| m.as_str()).unwrap_or("");
@@ -408,4 +418,12 @@ fn utf8_to_latin1(s: &str) -> String {
 
 pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Whether `content` has the asset URL pattern's literal head (`url(`, `RAILS_ASSET_URL(`) at all.
+/// Without it there's nothing to match, and skipping the scan keeps fancy_regex's backtracking
+/// limit out of reach on large bundles (the vendored LiveKit client).
+fn could_match(pattern: &Regex, content: &str) -> bool {
+    let head = pattern.as_str().split(r"\(").next().unwrap_or_default();
+    content.contains(&format!("{head}("))
 }

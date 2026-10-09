@@ -33,6 +33,7 @@ use crate::active_storage;
 pub mod accounts;
 pub mod autocompletable;
 pub mod first_runs;
+pub mod huddles;
 pub mod messages;
 pub mod presenters;
 pub mod pwa;
@@ -222,6 +223,9 @@ static ROUTES: LazyLock<Vec<Route>> = LazyLock::new(|| {
         patch("/rooms/:room_id/:bot_key/messages/:id(.:format)", "messages/by_bots#update", messages::by_bots::update).defaults(BOT_DEFAULTS),
         put("/rooms/:room_id/:bot_key/messages/:id(.:format)", "messages/by_bots#update", messages::by_bots::update).defaults(BOT_DEFAULTS),
         delete("/rooms/:room_id/:bot_key/messages/:id(.:format)", "messages/by_bots#destroy", messages::by_bots::destroy).defaults(BOT_DEFAULTS),
+        // Huddles (plans/huddles.md)
+        post("/rooms/:room_id/huddle(.:format)", "huddles#join", huddles::join),
+        post("/livekit/webhook(.:format)", "huddles#webhook", huddles::webhook),
         // Threads (plans/threads.md)
         get("/rooms/:room_id/threads/:thread_id/messages(.:format)", "threads#messages", threads::messages),
         get("/rooms/:room_id/threads/:thread_id/refresh(.:format)", "threads#refresh", threads::refresh),
@@ -508,7 +512,7 @@ mod tests {
     const MISSING_CONTROLLERS: &[&str] = &["rooms/settings"];
 
     /// Controllers this app adds to the Rails routes (README, Known differences).
-    const ADDED_CONTROLLERS: &[&str] = &["threads"];
+    const ADDED_CONTROLLERS: &[&str] = &["threads", "huddles"];
 
     #[test]
     fn the_table_is_rails_routes_in_order() {

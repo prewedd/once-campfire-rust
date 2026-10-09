@@ -6,6 +6,7 @@ mod channels;
 mod concerns;
 mod config;
 mod controllers;
+mod huddles;
 mod integrations;
 mod jobs;
 mod rich_text;
