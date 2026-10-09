@@ -318,6 +318,12 @@ bench/results/pi-100k-20260928/run100k.sh BIN LABEL        # 100,000 cable clien
 
 Deliberate:
 
+- **PreWedd's workspace look.** Slack- and Discord-style chat in PreWedd's UI kit
+  ([`plans/redesign.md`](plans/redesign.md)): the sidebar on the left with Channels and Direct
+  messages, compact grouped messages, a hover toolbar with quick reactions, reactions as counted
+  pills you toggle, an emoji picker and `:shortcode` suggestions, Inter. All in
+  `crates/assets/overrides` plus a few added elements in templates, which the parity goldens leave
+  out.
 - **Threads.** Any top-level message can be replied to in a thread of its own, as in Slack
   ([`plans/threads.md`](plans/threads.md)). Replies live at `/rooms/:room_id/threads/:id`, stay
   out of the room's timeline (its pages, refreshes and the bot API's index), and show under their

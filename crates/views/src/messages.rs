@@ -235,6 +235,9 @@ impl<'de> Deserialize<'de> for MessageItem {
     }
 }
 
+/// The reactions a message's hover toolbar offers in one click (the rest are in the emoji picker).
+pub const QUICK_REACTIONS: [(&str, &str); 3] = [("👍", "Thumbs up"), ("❤️", "Red heart"), ("😂", "Face with tears of joy")];
+
 /// `EmojiHelper::REACTIONS`.
 pub const REACTIONS: [(&str, &str); 8] = [
     ("👍", "Thumbs up"),

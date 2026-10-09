@@ -1,5 +1,14 @@
 {#- reference/app/views/messages/_actions.html.erb -#}
 <div class="message__actions" data-controller="soft-keyboard">
+  <div class="message__toolbar-reactions" data-controller="emoji" data-emoji-boosts-url-value="{{ message.boosts_path() }}">
+    {%- for (character, title) in crate::messages::QUICK_REACTIONS %}
+    <button type="button" class="btn message__action-btn message__options-btn message__react-btn" data-action="emoji#react" data-emoji-content-param="{{ character }}" title="{{ title }}">{{ character }}</button>
+    {%- endfor %}
+    <button type="button" class="btn message__action-btn message__options-btn message__react-btn message__react-btn--add" data-action="emoji#pickReaction mouseenter->emoji#preload" aria-haspopup="dialog" aria-expanded="false" title="Add reaction">
+      <img class="colorize--black" aria-hidden="true" src="{{ ctx.asset("boost.svg") }}" width="20" height="20" />
+      <span class="for-screen-reader">Add reaction</span>
+    </button>
+  </div>
   {%- if !message.is_reply() %}
   <a class="btn message__action-btn message__options-btn message__thread-btn message__thread-btn--quick" data-turbo-frame="_top" title="Reply in thread" href="{{ message.thread_path() }}">
     <img class="colorize--black" aria-hidden="true" src="{{ ctx.asset("messages-outlined.svg") }}" width="20" height="20" />

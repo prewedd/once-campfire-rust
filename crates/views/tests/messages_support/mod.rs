@@ -18,6 +18,11 @@ pub struct Golden {
     assets: HashMap<String, String>,
 }
 
+/// Assets this app adds (the workspace redesign), which the reference's asset map doesn't have.
+fn added_asset(logical: &str) -> Option<String> {
+    ["emoji.svg", "emoji/prompt.html"].contains(&logical).then(|| format!("/assets/{logical}"))
+}
+
 pub fn golden(name: &str) -> Golden {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden/b").join(format!("{name}.json"));
     let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path:?}: {e}")))
@@ -39,7 +44,7 @@ impl Golden {
     pub fn render(&self, render: impl FnOnce(&ViewContext) -> String) -> String {
         let context = &self.json["context"];
         let asset_path = |logical: &str| {
-            self.assets.get(logical).cloned().unwrap_or_else(|| panic!("{}: unknown asset {logical}", self.name))
+            self.assets.get(logical).cloned().or_else(|| added_asset(logical)).unwrap_or_else(|| panic!("{}: unknown asset {logical}", self.name))
         };
         let current_user = context["current_user"].as_object().map(|user| CurrentUser {
             id: user["id"].as_i64().unwrap(),
@@ -103,12 +108,12 @@ impl Golden {
         } else {
             expected
         };
-        assert_same(&self.name, &trim_whitespace(expected), &trim_whitespace(without_thread_markup(tokens(actual_html))));
+        assert_same(&self.name, &trim_whitespace(expected), &trim_whitespace(without_port_markup(tokens(actual_html))));
     }
 
     pub fn assert_dom(&self, actual_html: &str) {
         let expected = without_forgery_tokens(serde_json::from_value(self.json["expected"].clone()).unwrap());
-        let actual = without_thread_markup(tokens(actual_html));
+        let actual = without_port_markup(tokens(actual_html));
         if self.kind == "page" {
             let regions = regions(&expected);
             assert!(!regions.is_empty(), "{}: no regions in reference", self.name);
@@ -122,16 +127,24 @@ impl Golden {
     }
 }
 
-/// Threads are this app's own (plans/threads.md, README "Known differences"): the "Reply in
-/// thread" button and the thread summary under each message are checked by their own tests
-/// (`threads_views.rs`), and taken out of our stream here, with the text around them merged as
-/// if they'd never been there.
-fn without_thread_markup(actual: Vec<String>) -> Vec<String> {
-    let is_thread = |t: &str| t.contains("message__thread-btn") || t.contains(r#"class="message__thread""#);
+/// This app's own markup (README "Known differences": threads and the workspace redesign) has
+/// its own tests (`threads_views.rs`, `workspace_views.rs`): the elements it adds are taken out of
+/// our stream here, with the text around them merged as if they'd never been there, and so is
+/// the composer's placeholder.
+fn without_port_markup(actual: Vec<String>) -> Vec<String> {
+    const ADDED: &[&str] = &[
+        "message__thread-btn",
+        r#"class="message__thread""#,
+        "message__toolbar-reactions",
+        "composer__emoji-btn",
+        "sidebar__workspace",
+        r#"<lexxy-prompt trigger=":""#,
+    ];
+    let is_added = |t: &str| ADDED.iter().any(|marker| t.contains(marker));
     let mut out = Vec::with_capacity(actual.len());
     let mut tokens = actual.into_iter();
     while let Some(token) = tokens.next() {
-        if token.starts_with('<') && is_thread(&token) {
+        if token.starts_with('<') && is_added(&token) {
             let name = tag_name(&token);
             let mut depth = 1usize;
             for inner in tokens.by_ref() {
@@ -148,10 +161,23 @@ fn without_thread_markup(actual: Vec<String>) -> Vec<String> {
         }
         match token.strip_prefix('#') {
             Some(text) => push_text(&mut out, text),
-            None => out.push(token),
+            None => out.push(without_placeholder(token)),
         }
     }
     out
+}
+
+fn without_placeholder(token: String) -> String {
+    if !token.starts_with("<lexxy-editor ") {
+        return token;
+    }
+    match token.find(" placeholder=\"") {
+        Some(start) => {
+            let end = start + " placeholder=\"".len() + token[start + " placeholder=\"".len()..].find('"').unwrap() + 1;
+            format!("{}{}", &token[..start], &token[end..])
+        }
+        None => token,
+    }
 }
 
 /// The reference's token stream without the CSRF tags and fields Rails renders (this app has none),

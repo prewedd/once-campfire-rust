@@ -8,6 +8,10 @@
       data-controller="badge-dot"
       data-badge-dot-unread-class="unread"
       data-action="rooms-list:unread@window->badge-dot#update rooms-list:read@window->badge-dot#update turbo:submit-start->turbo-frame#unpermanize">
+    <header class="sidebar__workspace">
+      {%- if ctx.account.has_logo %}<img class="sidebar__workspace-logo" aria-hidden="true" src="{{ ctx.account.logo_url }}" width="28" height="28" />{% endif %}
+      <span class="sidebar__workspace-name">{{ ctx.account.name }}</span>
+    </header>
     <turbo-frame id="direct_rooms_control" target="_top">
       <div class="directs gap overflow-x overflow-hide-scrollbar">
         {% filter link_to(h::routes::new_rooms_direct(), h::attrs().class("direct direct__new").data("turbo_frame", "_self")) %}

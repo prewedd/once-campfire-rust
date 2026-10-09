@@ -56,7 +56,8 @@
 .messages--thread {
   /* Already here: no summary, nor a way into the thread you're in */
   .message__thread,
-  .message__thread-btn {
+  .message__thread-btn,
+  .message__meta .message__actions .message__thread-btn {
     display: none;
   }
 

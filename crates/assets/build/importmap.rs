@@ -27,7 +27,10 @@ enum Entry {
 
 /// Importmap::Map#expanded_packages_and_directories: pins in insertion order, then every
 /// directory expanded; a later entry for an existing name keeps its position (a Ruby Hash).
-pub fn expand(importmap_rb: &Path, rails_root: &Path) -> Vec<Pin> {
+/// A directory's files include those `overrides` adds at its logical path (`app/javascript/x`
+/// is `x`), as if they were in the reference: overrides shadow the reference's files by logical
+/// path, so they're pinned like them.
+pub fn expand(importmap_rb: &Path, rails_root: &Path, overrides: &Path) -> Vec<Pin> {
     let source = fs::read_to_string(importmap_rb).unwrap();
     let mut packages: Vec<Pin> = Vec::new();
     let mut directories: Vec<(String, Option<String>, Option<String>, bool)> = Vec::new();
@@ -62,15 +65,13 @@ pub fn expand(importmap_rb: &Path, rails_root: &Path) -> Vec<Pin> {
         if !root.exists() {
             continue;
         }
-        let mut files = Vec::new();
-        javascript_files_in_tree(&root, &mut files);
-        files.sort();
-        for file in files {
-            let filename = file
-                .strip_prefix(&root)
-                .unwrap()
-                .to_string_lossy()
-                .into_owned();
+        let mut filenames = relative_javascript_files(&root);
+        if let Some(logical) = ["app/javascript/", "vendor/javascript/"].iter().find_map(|prefix| dir.strip_prefix(prefix)) {
+            filenames.extend(relative_javascript_files(&overrides.join(logical)));
+        }
+        filenames.sort();
+        filenames.dedup();
+        for filename in filenames {
             let name = module_name_from(&filename, under.as_deref());
             let path = [to.as_deref().or(under.as_deref()), Some(filename.as_str())]
                 .into_iter()
@@ -90,6 +91,16 @@ pub fn expand(importmap_rb: &Path, rails_root: &Path) -> Vec<Pin> {
     }
 
     packages
+}
+
+/// The JavaScript files under `root`, as paths relative to it (none when it doesn't exist).
+fn relative_javascript_files(root: &Path) -> Vec<String> {
+    if !root.exists() {
+        return Vec::new();
+    }
+    let mut files = Vec::new();
+    javascript_files_in_tree(root, &mut files);
+    files.into_iter().map(|file| file.strip_prefix(root).unwrap().to_string_lossy().into_owned()).collect()
 }
 
 fn insert(packages: &mut Vec<Pin>, pin: Pin) {

@@ -16,8 +16,9 @@
                 <img aria-hidden="true" class="composer__input-hint colorize--black" style="view-transition-name: input-btn;" src="{{ ctx.asset("messages-outlined.svg") }}" width="22" height="22" />
 
                 <div class="flex flex-column flex-item-grow min-width gap">
-                  <lexxy-editor rows="1" class="input lexxy-content" style="order: -1" aria-multiline="true" aria-label="{% if thread_id.is_some() %}Reply in thread{% else %}Write a message{% endif %}" permitted-attachment-types="application/vnd.campfire.mention application/vnd.actiontext.opengraph-embed" data-controller="unfurl" data-action="lexxy:change-&gt;typing-notifications#start keydown-&gt;composer#submitByKeyboard:capture lexxy:change-&gt;composer#saveDraft lexxy:insert-link-&gt;unfurl#unfurl" data-composer-target="text" data-direct-upload-url="{{ ctx.url("/rails/active_storage/direct_uploads") }}" data-blob-url-template="{{ ctx.url("/rails/active_storage/blobs/redirect/:signed_id/:filename") }}" id="message_body" input="message_body_trix_input_message" name="message[body]">
+                  <lexxy-editor rows="1" class="input lexxy-content" style="order: -1" aria-multiline="true" aria-label="{% if thread_id.is_some() %}Reply in thread{% else %}Write a message{% endif %}" placeholder="{% if thread_id.is_some() %}Reply…{% else if room.is_direct() %}Message {{ room.display_name }}{% else %}Message #{{ room.display_name }}{% endif %}" permitted-attachment-types="application/vnd.campfire.mention application/vnd.actiontext.opengraph-embed" data-controller="unfurl" data-action="lexxy:change-&gt;typing-notifications#start keydown-&gt;composer#submitByKeyboard:capture lexxy:change-&gt;composer#saveDraft lexxy:insert-link-&gt;unfurl#unfurl" data-composer-target="text" data-direct-upload-url="{{ ctx.url("/rails/active_storage/direct_uploads") }}" data-blob-url-template="{{ ctx.url("/rails/active_storage/blobs/redirect/:signed_id/:filename") }}" id="message_body" input="message_body_trix_input_message" name="message[body]">
                     <lexxy-prompt trigger="@" name="mention" src="{{ crate::rooms::mention_prompt_src(*room.id) }}" remote-filtering="true" empty-results="No matches"></lexxy-prompt>
+                    <lexxy-prompt trigger=":" name="emoji" src="{{ ctx.asset("emoji/prompt.html") }}" insert-editable-text empty-results="No emoji"></lexxy-prompt>
 </lexxy-editor>                </div>
 
                 <label class="btn btn--borderless txt-small flex-item-no-shrink composer__attachment-btn input--file">
@@ -25,6 +26,11 @@
                   <input type="file" data-action="composer#filePicked" multiple />
                   <span class="for-screen-reader">Attach a file</span>
                 </label>
+
+                <button class="btn btn--borderless txt-small flex-item-no-shrink composer__emoji-btn" type="button" data-controller="emoji" data-action="emoji#insert mouseenter->emoji#preload focus->emoji#preload" aria-haspopup="dialog" aria-expanded="false" title="Emoji">
+                  <img class="colorize--black" aria-hidden="true" src="{{ ctx.asset("emoji.svg") }}" width="20" height="20" />
+                  <span class="for-screen-reader">Emoji</span>
+                </button>
 
                 <button class="btn btn--borderless txt-small flex-item-no-shrink composer__rich-text-btn" type="button" data-action="composer#toggleToolbar">
                   <img class="colorize--black" aria-hidden="true" src="{{ ctx.asset("text-options.svg") }}" width="20" height="20" />

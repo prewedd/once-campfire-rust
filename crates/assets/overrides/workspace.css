@@ -1,0 +1,1501 @@
+/* ==========================================================================
+   Workspace: PreWedd's look for Campfire (plans/redesign.md)
+
+   Chat the way Slack and Discord users expect it (a sidebar of channels and people, compact
+   grouped messages, a hover toolbar, reaction pills, threads, an emoji picker), drawn with the
+   PreWedd UI kit: zinc neutrals, rose for what's ours or needs you, Inter throughout.
+   Loaded after every other stylesheet (it sorts last), so it restyles them in place.
+   ========================================================================== */
+
+/* Inter, self-hosted: Latin and Cyrillic, one variable font each (SIL Open Font License) */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/inter-cyrillic-ext.woff2") format("woff2");
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/inter-cyrillic.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/inter-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/inter-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ==========================================================================
+   Tokens
+   ========================================================================== */
+:root {
+  /* PreWedd UI kit */
+  --ws-rose-50: #fff1f3;
+  --ws-rose-100: #ffe4e8;
+  --ws-rose-300: #fea3b4;
+  --ws-rose-400: #fd6f8d;
+  --ws-rose-500: #f63d68;
+  --ws-rose-600: #e31b53;
+  --ws-rose-700: #c01046;
+
+  /* Surfaces and ink (light) */
+  --ws-bg: #ffffff;
+  --ws-bg-raised: #ffffff;
+  --ws-bg-hover: #f7f7f8;
+  --ws-bg-subtle: #f4f4f5;
+  --ws-ink: #18181b;
+  --ws-ink-soft: #3f3f46;
+  --ws-muted: #71717b;
+  --ws-faint: #a1a1aa;
+  --ws-border: #e4e4e7;
+  --ws-border-strong: #d4d4d8;
+
+  --ws-accent: var(--ws-rose-500);
+  --ws-accent-hover: var(--ws-rose-600);
+  --ws-accent-ink: var(--ws-rose-700);
+  --ws-accent-soft: var(--ws-rose-50);
+  --ws-accent-soft-strong: var(--ws-rose-100);
+  --ws-ring: 0 0 0 3px rgb(246 61 104 / 0.18);
+
+  /* The sidebar is ink in both themes, with a little rose light in its corner */
+  --ws-side-bg: #141417;
+  --ws-side-glow: radial-gradient(140% 55% at 0% 0%, rgb(246 61 104 / 0.13), transparent 60%);
+  --ws-side-ink: #a1a1aa;
+  --ws-side-ink-strong: #fafafa;
+  --ws-side-hover: rgb(255 255 255 / 0.06);
+  --ws-side-line: rgb(255 255 255 / 0.07);
+
+  --ws-shadow-sm: 0 1px 2px rgb(9 9 11 / 0.06);
+  --ws-shadow: 0 1px 2px rgb(9 9 11 / 0.06), 0 4px 14px rgb(9 9 11 / 0.08);
+  --ws-shadow-lg: 0 2px 6px rgb(9 9 11 / 0.06), 0 16px 40px rgb(9 9 11 / 0.14);
+
+  --ws-radius-xs: 4px;
+  --ws-radius-sm: 6px;
+  --ws-radius: 8px;
+  --ws-radius-lg: 12px;
+
+  --ws-font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+  --ws-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --ws-gutter: 20px;
+  --ws-avatar: 36px;
+
+  /* Campfire's own palette, mapped onto these */
+  --font-family: var(--ws-font);
+  --lch-black: 21% 0.006 285.9;
+  --lch-white: 100% 0 0;
+  --lch-gray: 96.7% 0.001 286.4;
+  --lch-gray-dark: 92% 0.004 286.3;
+  --lch-gray-darker: 70.6% 0.014 286;
+  --lch-blue: 51.9% 0.201 13.2;
+  --lch-blue-light: 97% 0.015 7.5;
+  --lch-blue-dark: 81% 0.109 7.6;
+  --lch-red: 50.2% 0.183 29.1;
+  --lch-green: 61.4% 0.15 152.3;
+  --lch-orange: 64.9% 0.219 12.9;
+
+  @media (prefers-color-scheme: dark) {
+    --ws-bg: #1a1a1d;
+    --ws-bg-raised: #222226;
+    --ws-bg-hover: #202024;
+    --ws-bg-subtle: #26262b;
+    --ws-ink: #ececef;
+    --ws-ink-soft: #d4d4d8;
+    --ws-muted: #9f9fa9;
+    --ws-faint: #71717b;
+    --ws-border: #2e2e33;
+    --ws-border-strong: #3f3f46;
+
+    --ws-accent-ink: var(--ws-rose-400);
+    --ws-accent-soft: rgb(246 61 104 / 0.12);
+    --ws-accent-soft-strong: rgb(246 61 104 / 0.2);
+    --ws-ring: 0 0 0 3px rgb(246 61 104 / 0.28);
+
+    --ws-side-bg: #111113;
+    --ws-side-glow: radial-gradient(140% 55% at 0% 0%, rgb(246 61 104 / 0.11), transparent 60%);
+
+    --ws-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --ws-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 18px rgb(0 0 0 / 0.35);
+    --ws-shadow-lg: 0 2px 6px rgb(0 0 0 / 0.4), 0 18px 48px rgb(0 0 0 / 0.5);
+
+    --lch-black: 94% 0.003 286;
+    --lch-white: 21.6% 0.005 286;
+    --lch-gray: 25.5% 0.006 286;
+    --lch-gray-dark: 29% 0.007 286;
+    --lch-gray-darker: 37% 0.012 285.8;
+    --lch-blue: 72.1% 0.175 9.4;
+    --lch-blue-light: 27% 0.07 12;
+    --lch-blue-dark: 45% 0.15 13;
+    --lch-red: 61.9% 0.235 27.7;
+  }
+}
+
+/* ==========================================================================
+   Type
+   ========================================================================== */
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-color: var(--ws-bg);
+  color: var(--ws-ink);
+  font-feature-settings: "cv11", "ss03";
+  font-size: 15px;
+  letter-spacing: -0.006em;
+  line-height: 1.4667;
+}
+
+:is(h1, h2, h3, h4) {
+  letter-spacing: -0.015em;
+}
+
+:is(time, .message__timestamp) {
+  font-variant-numeric: tabular-nums;
+}
+
+.btn {
+  font-weight: 600;
+}
+
+* {
+  scrollbar-color: color-mix(in srgb, var(--ws-muted) 45%, transparent) transparent;
+}
+
+/* ==========================================================================
+   Frame: sidebar on the left, a header bar over the conversation
+   ========================================================================== */
+@media (min-width: 100ch) {
+  body.sidebar {
+    --sidebar-width: 264px;
+
+    grid-template-areas:
+      "sidebar nav"
+      "sidebar main";
+    grid-template-columns: var(--sidebar-width) 1fr;
+  }
+
+  #nav {
+    inset-inline: var(--sidebar-width) 0;
+  }
+
+  .sidebar #main-content {
+    border-inline: 0;
+    margin-inline: 0;
+  }
+
+  .sidebar #nav {
+    background: color-mix(in srgb, var(--ws-bg) 88%, transparent);
+    backdrop-filter: saturate(1.4) blur(12px);
+    border-block-end: 1px solid var(--ws-border);
+    margin-inline-start: 0;
+    min-block-size: 52px;
+    padding-block: 0;
+    padding-inline: 12px 16px;
+
+    .room--current,
+    .account-logo {
+      margin-inline-start: 0;
+    }
+  }
+
+  .sidebar .messages {
+    padding-block-start: calc(52px + 8px);
+  }
+
+  .sidebar .typing-indicator {
+    margin-inline-start: 0;
+  }
+
+  .sidebar__tools {
+    inset-inline: 0 auto;
+  }
+
+  #app-logo {
+    display: none;
+  }
+}
+
+/* The header: the channel's name, with "#" for rooms (not pings or threads) */
+#nav .room--current {
+  --btn-background: transparent;
+  --btn-border-color: transparent;
+  --btn-color: var(--ws-ink);
+  --hover-size: 0;
+
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  padding-inline: 6px;
+
+  &:not(.thread--current):not(:has(.for-screen-reader)) h1::before {
+    color: var(--ws-faint);
+    content: "#";
+    font-weight: 500;
+    margin-inline-end: 0.25em;
+  }
+}
+
+#nav .btn:not(.room--current):not(.avatar) {
+  --btn-background: transparent;
+  --btn-border-color: transparent;
+  --btn-border-radius: var(--ws-radius);
+  --btn-size: 34px;
+  --hover-size: 0;
+
+  &:hover {
+    background-color: var(--ws-bg-subtle);
+  }
+}
+
+#nav .account-logo {
+  border-radius: var(--ws-radius);
+
+  /* On desktop the sidebar's header shows it */
+  @media (min-width: 100ch) {
+    .sidebar & {
+      display: none;
+    }
+  }
+}
+
+/* ==========================================================================
+   Sidebar
+   ========================================================================== */
+.sidebar #sidebar {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--ws-side-glow), var(--ws-side-bg);
+  color: var(--ws-side-ink);
+}
+
+#sidebar .sidebar__container {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar__workspace {
+  align-items: center;
+  border-block-end: 1px solid var(--ws-side-line);
+  display: flex;
+  gap: 10px;
+  min-block-size: 52px;
+  order: 0;
+  padding-inline: 16px;
+}
+
+.sidebar__workspace-logo {
+  block-size: 28px;
+  border-radius: var(--ws-radius);
+  inline-size: 28px;
+  object-fit: cover;
+}
+
+.sidebar__workspace-name {
+  color: var(--ws-side-ink-strong);
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Section labels, Channels first, then people */
+:is(#sidebar .rooms, #sidebar .directs)::before {
+  color: var(--ws-faint);
+  display: block;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  padding: 18px 10px 6px;
+  text-transform: uppercase;
+}
+
+#sidebar .rooms {
+  --row-gap: 1px;
+
+  gap: 1px;
+  order: 1;
+  padding-inline: 8px;
+
+  &::before {
+    content: "Channels";
+  }
+}
+
+#sidebar .directs {
+  -webkit-backdrop-filter: none;
+  -webkit-mask-image: none;
+  backdrop-filter: none;
+  background: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  inset: auto;
+  mask-image: none;
+  margin: 0;
+  order: 2;
+  overflow: visible;
+  padding: 0 8px 16px;
+  position: relative;
+  z-index: auto;
+
+  &::before {
+    content: "Direct messages";
+  }
+
+  #direct_rooms,
+  > div[contents] {
+    display: contents;
+  }
+}
+
+/* A room or a person: one compact row */
+#sidebar :is(.room, .direct) {
+  --btn-background: transparent;
+  --btn-border-color: transparent;
+  --btn-border-radius: var(--ws-radius-sm);
+  --btn-color: var(--ws-side-ink);
+  --btn-padding: 0 10px;
+  --hover-size: 0;
+  --hover-filter: none;
+
+  align-items: center;
+  background-color: transparent;
+  border-radius: var(--ws-radius-sm);
+  box-shadow: none;
+  color: var(--ws-side-ink);
+  display: flex;
+  font-size: 15px;
+  font-weight: 500;
+  gap: 8px;
+  inline-size: 100%;
+  justify-content: start;
+  justify-items: start;
+  margin: 0;
+  min-block-size: 30px;
+  padding: 0 10px;
+  text-decoration: none;
+
+  &:hover {
+    background-color: var(--ws-side-hover);
+    color: var(--ws-side-ink-strong);
+  }
+
+  &.unread {
+    color: var(--ws-side-ink-strong);
+    font-weight: 700;
+  }
+
+  &.room--active {
+    background-color: var(--ws-accent);
+    color: #fff;
+  }
+}
+
+#sidebar .room:not(.rooms__new-btn)::before {
+  content: "#";
+  flex-shrink: 0;
+  font-weight: 500;
+  inline-size: 0.9em;
+  opacity: 0.6;
+  text-align: center;
+}
+
+/* Unread: a rose dot at the row's end */
+#sidebar :is(.room, .direct).unread:not(.room--active)::after {
+  background-color: var(--ws-accent);
+  block-size: 8px;
+  border-radius: 999px;
+  content: "";
+  flex-shrink: 0;
+  inline-size: 8px;
+  margin-inline-start: auto;
+}
+
+#sidebar .room.unread:not(.room--active)::after {
+  box-shadow: 0 0 0 3px rgb(246 61 104 / 0.18);
+}
+
+#sidebar .rooms__new-btn {
+  color: var(--ws-faint);
+  font-weight: 500;
+  opacity: 1;
+
+  img {
+    block-size: 14px;
+    filter: invert(1);
+    inline-size: 14px;
+    opacity: 0.7;
+  }
+
+  &::after {
+    content: "Add channel";
+  }
+}
+
+/* People: a small rounded avatar and the name */
+#sidebar .direct {
+  .avatar,
+  .avatar__group {
+    --avatar-size: 22px;
+
+    block-size: 22px;
+    border-radius: var(--ws-radius-sm);
+    flex-shrink: 0;
+    inline-size: 22px;
+    margin: 0;
+  }
+
+  .avatar img {
+    border-radius: var(--ws-radius-sm);
+  }
+
+  .direct__author {
+    color: inherit;
+    font-size: inherit;
+    margin: 0;
+    max-inline-size: none;
+    min-inline-size: 0;
+    padding: 0;
+
+    .unread & {
+      font-weight: 700;
+    }
+
+    .unread &::after {
+      display: none;
+    }
+
+    .txt-small {
+      font-size: inherit;
+    }
+  }
+
+  &:hover .avatar:not(.avatar--icon) {
+    filter: none;
+  }
+}
+
+#sidebar form.button_to {
+  display: block;
+}
+
+#sidebar button.direct {
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+/* "New message": a small + on the section label */
+#sidebar .direct.direct__new {
+  inline-size: 26px;
+  inset: 13px 12px auto auto;
+  justify-content: center;
+  min-block-size: 26px;
+  padding: 0;
+  position: absolute;
+
+  .direct__author {
+    display: none;
+  }
+
+  .avatar--icon {
+    display: none;
+  }
+
+  &::before {
+    color: var(--ws-side-ink);
+    content: "+";
+    font-size: 20px;
+    font-weight: 400;
+    line-height: 1;
+  }
+
+  &:hover::before {
+    color: var(--ws-side-ink-strong);
+  }
+}
+
+/* You and settings, along the bottom */
+#sidebar .sidebar__tools {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--ws-side-bg);
+  border-block-start: 1px solid var(--ws-side-line);
+  justify-content: space-between;
+  padding: 10px 12px;
+  z-index: 4;
+}
+
+#sidebar .sidebar__tool {
+  --btn-border-radius: var(--ws-radius);
+  --btn-size: 34px;
+}
+
+#sidebar .sidebar__tool:not(.avatar) {
+  --btn-background: transparent;
+  --btn-border-color: transparent;
+
+  &:hover {
+    background-color: var(--ws-side-hover);
+  }
+}
+
+#sidebar .sidebar__tool.avatar img {
+  border-radius: var(--ws-radius);
+}
+
+#sidebar :is(img.colorize--black, .btn:not(.avatar) img:not([class])) {
+  filter: invert(1);
+}
+
+.sidebar__toggle {
+  --btn-border-radius: var(--ws-radius);
+}
+
+/* The menu button sits on the page while the sidebar is closed, on the sidebar once it's open */
+#sidebar .sidebar__toggle img {
+  filter: none;
+
+  @media (prefers-color-scheme: dark) {
+    filter: invert(1);
+  }
+}
+
+#sidebar.open .sidebar__toggle img {
+  filter: invert(1);
+}
+
+/* Phones: a solid header too */
+@media (max-width: 100ch) {
+  .sidebar #nav {
+    background: color-mix(in srgb, var(--ws-bg) 92%, transparent);
+    backdrop-filter: saturate(1.4) blur(12px);
+    border-block-end: 1px solid var(--ws-border);
+
+    &::before {
+      display: none;
+    }
+  }
+}
+
+/* ==========================================================================
+   Messages: compact rows, grouped like Slack and Discord
+   ========================================================================== */
+.messages {
+  --message-space: 0;
+  --message-row-gap: 0;
+
+  padding-block-end: 8px;
+  row-gap: 0;
+}
+
+.message {
+  --content-padding-block: 0;
+  --content-padding-inline: 0;
+
+  column-gap: 12px;
+  grid-auto-columns: var(--ws-avatar) 1fr min-content;
+  padding-block: 6px 4px;
+  padding-inline: var(--ws-gutter);
+  margin-block-start: 6px;
+
+  @media (any-hover: hover) {
+    &:hover {
+      background-color: var(--ws-bg-hover);
+    }
+  }
+
+  + .message--threaded {
+    margin-block-start: 0;
+  }
+}
+
+/* A follow-up from the same person: no avatar or name; its time shows in the gutter on hover */
+.message--threaded {
+  padding-block: 2px;
+
+  /* Its header row takes no room; the toolbar still anchors to the whole message */
+  .message__meta {
+    block-size: 0;
+    min-block-size: 0;
+    overflow: visible;
+    padding: 0;
+  }
+
+  /* Where the actions sit in the row (phones), they float at its top right instead */
+  @media (max-width: 100ch), (hover: none) {
+    .message__actions {
+      inset: 0 var(--ws-gutter) auto auto;
+      position: absolute;
+    }
+  }
+
+  .message__avatar {
+    display: none;
+  }
+
+  .message__heading {
+    inset-block-start: 4px;
+    inset-inline-start: 0;
+    inline-size: calc(var(--ws-gutter) + var(--ws-avatar) + 4px);
+    justify-content: end;
+    position: absolute;
+  }
+
+  .message__permalink {
+    font-size: 11px;
+    opacity: 0;
+  }
+
+  &:hover .message__permalink {
+    opacity: 1;
+  }
+
+  .message__body {
+    grid-column: 2 / -1;
+  }
+}
+
+.message__avatar {
+  --avatar-size: var(--ws-avatar);
+  --avatar-border-radius: var(--ws-radius);
+
+  box-shadow: none;
+
+  .avatar,
+  img {
+    --avatar-border-radius: var(--ws-radius);
+
+    border-radius: var(--ws-radius);
+  }
+}
+
+.message__body {
+  max-inline-size: 100%;
+  position: static;
+}
+
+.message__body-content {
+  --message-background: transparent;
+
+  border-radius: 0;
+  inline-size: auto;
+  margin-block-end: 0;
+  position: static;
+}
+
+.message__meta {
+  line-height: 1.35;
+  min-block-size: 0;
+}
+
+.message__heading {
+  align-items: baseline;
+  gap: 8px;
+}
+
+.message__author {
+  color: var(--ws-ink);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  overflow: visible;
+}
+
+.message__permalink {
+  color: var(--ws-muted);
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 1;
+
+  &:hover {
+    color: var(--ws-ink-soft);
+    text-decoration: underline;
+  }
+}
+
+.message .lexxy-content {
+  color: var(--ws-ink);
+  font-size: 15px;
+  line-height: 1.4667;
+}
+
+.message__attachment {
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-radius-lg);
+  margin-block-start: 6px;
+  max-inline-size: min(480px, 100%);
+}
+
+/* Everyone on the left, you included */
+.message--me {
+  grid-auto-columns: var(--ws-avatar) 1fr min-content;
+  grid-template-areas:
+    "sep sep sep"
+    "avatar body body";
+
+  :is(.message__body, .message__meta, .message__heading) {
+    justify-self: start;
+  }
+
+  .message__body {
+    flex-direction: row;
+  }
+
+  :is(.message__meta, .message__heading) {
+    flex-direction: row;
+    justify-content: start;
+  }
+
+  .message__meta {
+    padding-inline: 0;
+  }
+
+  .message__avatar {
+    margin-inline: 0;
+  }
+
+  .message__actions {
+    justify-content: start;
+  }
+
+  &.message--threaded .message__heading {
+    justify-content: end;
+  }
+}
+
+.message--emoji:not(:has(.composer--edit)) .message__body-content {
+  padding: 0;
+  text-align: start;
+  text-shadow: none;
+
+  .lexxy-content {
+    font-size: 32px;
+    line-height: 1.25;
+  }
+
+  .message--me & {
+    padding: 0;
+    text-align: start;
+  }
+}
+
+/* Messages for you: a rose wash and bar */
+.message--mentioned {
+  background-color: var(--ws-accent-soft);
+  box-shadow: inset 2px 0 0 var(--ws-accent);
+
+  .message__body-content {
+    --message-background: transparent;
+
+    animation: none;
+  }
+
+  @media (any-hover: hover) {
+    &:hover {
+      background-color: var(--ws-accent-soft);
+    }
+  }
+}
+
+.message.search-highlight {
+  background-color: var(--ws-accent-soft);
+  box-shadow: inset 2px 0 0 var(--ws-accent);
+
+  .message__body-content {
+    border: 0;
+  }
+}
+
+.message--failed .message__body-content {
+  outline: 0;
+}
+
+/* The date between days: a rule with a pill */
+.message__day-separator {
+  color: var(--ws-ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-block: 14px 6px;
+  text-transform: none;
+
+  time,
+  span {
+    background-color: var(--ws-bg);
+    border: 1px solid var(--ws-border);
+    border-radius: 999px;
+    box-shadow: var(--ws-shadow-sm);
+    padding: 3px 14px;
+  }
+
+  &::before,
+  &::after {
+    border-top: 1px solid var(--ws-border);
+  }
+}
+
+/* ==========================================================================
+   Rich text
+   ========================================================================== */
+.lexxy-content {
+  a:not(.mention):not([class*="btn"]) {
+    color: var(--ws-accent-ink);
+    text-decoration-color: color-mix(in srgb, var(--ws-accent-ink) 35%, transparent);
+    text-underline-offset: 2px;
+
+    &:hover {
+      text-decoration-color: currentColor;
+    }
+  }
+
+  blockquote {
+    border-inline-start: 3px solid var(--ws-border-strong);
+    border-radius: 2px;
+    color: var(--ws-ink-soft);
+    margin-block: 4px;
+    margin-inline: 0;
+    padding-inline-start: 12px;
+  }
+
+  cite {
+    color: var(--ws-muted);
+    font-size: 13px;
+  }
+
+  .mention {
+    background-color: var(--ws-accent-soft-strong);
+    border-radius: var(--ws-radius-xs);
+    color: var(--ws-accent-ink);
+    font-weight: 600;
+    padding-block: 0 1px;
+    padding-inline-end: 4px;
+  }
+
+  code {
+    background-color: var(--ws-bg-subtle);
+    border: 1px solid var(--ws-border);
+    border-radius: var(--ws-radius-xs);
+    color: var(--ws-accent-ink);
+    font-family: var(--ws-mono);
+    font-size: 0.85em;
+    font-weight: 400;
+    padding: 1px 4px;
+  }
+
+  pre {
+    background-color: var(--ws-bg-subtle);
+    border: 1px solid var(--ws-border);
+    border-radius: var(--ws-radius);
+    font-family: var(--ws-mono);
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 10px 12px;
+
+    code {
+      background: none;
+      border: 0;
+      color: inherit;
+      padding: 0;
+    }
+  }
+}
+
+/* ==========================================================================
+   The hover toolbar: quick reactions, add reaction, reply in thread, more
+   ========================================================================== */
+.message__toolbar-reactions {
+  display: contents;
+}
+
+@media (min-width: 100ch) and (any-hover: hover) {
+  .message__meta .message__actions {
+    align-items: center;
+    background-color: var(--ws-bg-raised);
+    border: 1px solid var(--ws-border);
+    border-radius: var(--ws-radius);
+    box-shadow: var(--ws-shadow);
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 1px;
+    inset: -16px var(--ws-gutter) auto auto;
+    opacity: 0;
+    padding: 2px;
+    pointer-events: none;
+    position: absolute;
+    transform: none;
+    transition: opacity 80ms ease-out;
+    z-index: 4;
+
+    .message:hover &,
+    .message:has([open]) &,
+    .message:focus-within & {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .message__options-btn {
+      --btn-border-radius: var(--ws-radius-sm);
+      --btn-size: 32px;
+      --hover-size: 0;
+
+      aspect-ratio: 1;
+      block-size: 32px;
+      border-color: transparent;
+      display: grid;
+      inline-size: 32px;
+      opacity: 1;
+      padding: 0;
+      place-items: center;
+
+      img {
+        inline-size: 18px;
+      }
+
+      &:hover {
+        background-color: var(--ws-bg-subtle);
+      }
+    }
+
+    .message__react-btn:not(.message__react-btn--add) {
+      font-size: 17px;
+      line-height: 1;
+    }
+
+    .message__react-btn--add {
+      border-inline-end: 1px solid var(--ws-border);
+      border-radius: var(--ws-radius-sm) 0 0 var(--ws-radius-sm);
+      margin-inline-end: 2px;
+    }
+  }
+
+  .message--me .message__meta .message__actions {
+    inset-inline: auto var(--ws-gutter);
+  }
+
+  .message__actions-menu {
+    inset: calc(32px + 8px) 0 auto auto;
+    transform: none;
+
+    &::before,
+    &::after {
+      display: none;
+    }
+
+    .popup-orientation-top & {
+      inset: auto 0 calc(32px + 8px) auto;
+    }
+  }
+}
+
+/* On phones: just "…" (and the thread button), as before */
+@media (max-width: 100ch), (hover: none) {
+  .message__toolbar-reactions {
+    display: none;
+  }
+}
+
+/* The "…" menu: a clean card */
+.message__actions-menu {
+  --border-color: var(--ws-border);
+
+  background-color: var(--ws-bg-raised);
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-radius-lg);
+  box-shadow: var(--ws-shadow-lg);
+  padding: 6px;
+
+  .message__action-btn {
+    --btn-border-radius: var(--ws-radius-sm);
+
+    &:hover {
+      --btn-background: var(--ws-bg-subtle);
+    }
+  }
+
+  .message__actions-grid {
+    border-color: var(--ws-border);
+  }
+}
+
+/* ==========================================================================
+   Reactions: one pill per emoji, with a count; yours in rose
+   ========================================================================== */
+.boosts {
+  --column-gap: 4px;
+
+  margin-block-start: 4px;
+}
+
+.boost {
+  --boost-border-color: var(--ws-border);
+
+  align-items: center;
+  background-color: var(--ws-bg-subtle);
+  border: 1px solid var(--ws-border);
+  border-radius: 999px;
+  cursor: pointer;
+  gap: 4px;
+  margin: 0;
+  min-block-size: 26px;
+  padding: 0 8px 0 6px;
+  transition: background-color 80ms, border-color 80ms;
+  user-select: none;
+
+  .boost__avatar {
+    display: none;
+  }
+
+  [data-boost-delete-target="content"] {
+    font-size: 15px;
+    line-height: 1;
+  }
+
+  &:hover {
+    background-color: var(--ws-bg-raised);
+    border-color: var(--ws-border-strong);
+    box-shadow: none;
+  }
+
+  &.boost--mine {
+    background-color: var(--ws-accent-soft);
+    border-color: color-mix(in srgb, var(--ws-accent) 55%, transparent);
+
+    .boost__count {
+      color: var(--ws-accent-ink);
+    }
+  }
+
+  &.boost--folded {
+    display: none;
+  }
+
+  .boost__delete {
+    display: none;
+  }
+}
+
+.boost__count {
+  color: var(--ws-ink-soft);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+/* Add a reaction: a ghost button after the pills, while you're on the message */
+.message__boost-inline .boost__action {
+  --btn-background: transparent;
+  --btn-border-color: var(--ws-border);
+  --btn-border-radius: 999px;
+  --btn-padding: 0;
+
+  block-size: 26px;
+  inline-size: 34px;
+  opacity: 0;
+
+  img {
+    inline-size: 15px;
+  }
+
+  .message:hover & {
+    opacity: 1;
+  }
+}
+
+/* ==========================================================================
+   Threads
+   ========================================================================== */
+.message__thread-link {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--ws-radius);
+  color: var(--ws-accent-ink);
+  font-size: 13px;
+  gap: 8px;
+  margin-block-start: 4px;
+  margin-inline-start: -5px;
+  padding: 4px 10px 4px 4px;
+
+  @media (any-hover: hover) {
+    &:hover {
+      background-color: var(--ws-bg-raised);
+      border-color: var(--ws-border);
+      box-shadow: var(--ws-shadow-sm);
+
+      .message__thread-last::after {
+        color: var(--ws-muted);
+        content: "View thread ›";
+        margin-inline-start: 8px;
+      }
+    }
+  }
+}
+
+.message__thread-avatars {
+  gap: 3px;
+}
+
+.message__thread-avatar {
+  block-size: 22px;
+  border-radius: var(--ws-radius-sm);
+  inline-size: 22px;
+}
+
+.message__thread-count {
+  font-weight: 700;
+}
+
+.message__thread-last {
+  color: var(--ws-muted);
+  font-weight: 400;
+  opacity: 1;
+}
+
+/* The thread view: the parent heads it, then a labelled rule, then the replies */
+.messages--thread > .message:not([data-thread-parent-id]) {
+  border-block-end: 0;
+  padding-block-end: 6px;
+
+  &::after {
+    background: linear-gradient(var(--ws-border), var(--ws-border)) right 0 center / calc(100% - 64px) 1px no-repeat;
+    color: var(--ws-muted);
+    content: "Replies";
+    font-size: 12px;
+    font-weight: 600;
+    grid-column: 2 / -1;
+    margin-block-start: 14px;
+  }
+}
+
+.thread--current .thread__room-name {
+  color: var(--ws-muted);
+  font-size: 14px;
+  font-weight: 500;
+  margin-inline-start: 6px;
+  opacity: 1;
+
+  &::before {
+    content: "·";
+    margin-inline-end: 6px;
+  }
+}
+
+/* ==========================================================================
+   The composer: one rounded box, its tools inside
+   ========================================================================== */
+.composer {
+  padding: 4px var(--ws-gutter) 20px;
+}
+
+.composer__input.input {
+  --input-border-color: var(--ws-border-strong);
+
+  background-color: var(--ws-bg-raised);
+  border-radius: var(--ws-radius-lg);
+  box-shadow: var(--ws-shadow-sm);
+  padding: 8px 8px 8px 14px;
+  transition: border-color 100ms, box-shadow 100ms;
+
+  &:focus-within {
+    --input-border-color: color-mix(in srgb, var(--ws-accent) 55%, var(--ws-border-strong));
+
+    box-shadow: var(--ws-ring);
+  }
+
+  lexxy-editor,
+  .lexxy-editor__content {
+    font-size: 15px;
+    line-height: 1.4667;
+  }
+
+  .lexxy-editor__content::before {
+    color: var(--ws-faint);
+    opacity: 1;
+  }
+}
+
+.composer__input-hint {
+  display: none;
+}
+
+:is(.composer__attachment-btn, .composer__rich-text-btn, .composer__emoji-btn) {
+  --btn-border-radius: var(--ws-radius-sm);
+  --btn-size: 32px;
+
+  &:hover {
+    background-color: var(--ws-bg-subtle);
+  }
+
+  img {
+    inline-size: 19px;
+    opacity: 0.75;
+  }
+}
+
+/* Send: the page's one rose button */
+#composer .btn--reversed {
+  --btn-background: var(--ws-accent);
+  --btn-border-radius: var(--ws-radius);
+  --btn-color: #fff;
+  --btn-size: 32px;
+  --hover-filter: none;
+
+  &:hover {
+    --btn-background: var(--ws-accent-hover);
+  }
+
+  img {
+    filter: invert(1) !important;
+  }
+}
+
+.composer__context-btn {
+  --btn-border-color: var(--ws-border);
+  --btn-border-radius: var(--ws-radius);
+}
+
+.typing-indicator {
+  color: var(--ws-muted);
+  font-size: 12px;
+}
+
+/* Lexxy's suggestions (@people, :emoji:) */
+.lexxy-prompt-menu {
+  background-color: var(--ws-bg-raised);
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-radius-lg);
+  box-shadow: var(--ws-shadow-lg);
+  color: var(--ws-ink);
+  padding: 4px;
+}
+
+.lexxy-prompt-menu__item {
+  border-radius: var(--ws-radius-sm);
+  font-size: 14px;
+
+  b {
+    font-size: 18px;
+    font-weight: 400;
+    inline-size: 1.4em;
+    margin-inline-end: 6px;
+    text-align: center;
+  }
+
+  &[aria-selected="true"],
+  &:hover {
+    background-color: var(--ws-accent-soft);
+    color: var(--ws-ink);
+  }
+}
+
+/* ==========================================================================
+   The emoji picker
+   ========================================================================== */
+.emoji-picker {
+  background-color: var(--ws-bg-raised);
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-radius-lg);
+  box-shadow: var(--ws-shadow-lg);
+  color: var(--ws-ink);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--ws-font);
+  block-size: 420px;
+  inline-size: 360px;
+  overflow: hidden;
+  position: fixed;
+  z-index: 50;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.emoji-picker--sheet {
+  block-size: min(60vh, 440px);
+  border-radius: 16px 16px 0 0;
+  inline-size: 100%;
+  inset: auto 0 0 0;
+}
+
+.emoji-picker__header {
+  padding: 10px 10px 6px;
+}
+
+.emoji-picker__search {
+  background-color: var(--ws-bg-subtle);
+  border: 1px solid transparent;
+  border-radius: var(--ws-radius);
+  color: var(--ws-ink);
+  font: inherit;
+  font-size: 14px;
+  inline-size: 100%;
+  outline: 0;
+  padding: 7px 10px;
+
+  &:focus {
+    background-color: var(--ws-bg-raised);
+    border-color: color-mix(in srgb, var(--ws-accent) 55%, var(--ws-border-strong));
+    box-shadow: var(--ws-ring);
+  }
+}
+
+.emoji-picker__tabs {
+  border-block-end: 1px solid var(--ws-border);
+  display: flex;
+  gap: 2px;
+  padding: 0 8px 6px;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.emoji-picker__tab {
+  background: none;
+  border: 0;
+  border-radius: var(--ws-radius-sm);
+  cursor: pointer;
+  flex: 1;
+  font-size: 16px;
+  padding: 4px 0;
+
+  &:hover {
+    background-color: var(--ws-bg-subtle);
+  }
+}
+
+.emoji-picker__body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 8px 8px;
+  scroll-padding-block: 30px 8px;
+}
+
+/* Only what's scrolled into view is laid out: nearly 1,900 emoji open instantly */
+.emoji-picker__section {
+  contain-intrinsic-size: auto 320px;
+  content-visibility: auto;
+}
+
+.emoji-picker__section-name {
+  background-color: color-mix(in srgb, var(--ws-bg-raised) 94%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--ws-muted);
+  font-size: 12px;
+  font-weight: 600;
+  inset-block-start: 0;
+  margin: 0;
+  padding: 8px 4px 4px;
+  position: sticky;
+  z-index: 1;
+}
+
+.emoji-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+}
+
+.emoji-picker__emoji {
+  aspect-ratio: 1;
+  background: none;
+  border: 0;
+  border-radius: var(--ws-radius-sm);
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+  padding: 0;
+  transition: transform 60ms ease-out;
+
+  &:hover,
+  &.emoji-picker__emoji--active {
+    background-color: var(--ws-accent-soft-strong);
+  }
+
+  &:active {
+    transform: scale(0.9);
+  }
+}
+
+.emoji-picker__empty {
+  color: var(--ws-muted);
+  font-size: 14px;
+  padding: 32px 8px;
+  text-align: center;
+}
+
+.emoji-picker__preview {
+  align-items: center;
+  border-block-start: 1px solid var(--ws-border);
+  color: var(--ws-muted);
+  display: flex;
+  font-size: 13px;
+  gap: 10px;
+  min-block-size: 46px;
+  padding: 6px 14px;
+}
+
+.emoji-picker__preview-char {
+  font-size: 26px;
+  line-height: 1;
+}
+
+/* ==========================================================================
+   Buttons, inputs, dialogs elsewhere
+   ========================================================================== */
+.btn {
+  --btn-border-radius: var(--ws-radius);
+}
+
+:is(.btn.avatar, .avatar.btn) {
+  --btn-border-radius: var(--avatar-border-radius);
+}
+
+.btn--negative {
+  --btn-background: #b5231a;
+}
+
+.input {
+  --input-border-radius: var(--ws-radius);
+}
+
+.dialog {
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-radius-lg);
+  box-shadow: var(--ws-shadow-lg);
+
+  &::backdrop {
+    backdrop-filter: blur(2px);
+    background: rgb(9 9 11 / 0.45);
+    opacity: 1;
+  }
+}
+
+.flash,
+.flash__inner {
+  border-radius: var(--ws-radius);
+}

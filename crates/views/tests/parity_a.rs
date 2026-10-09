@@ -13,12 +13,21 @@ use support::facts::*;
 
 fn assert_parity(name: &str, ext: &str, rendered: String) {
     let expected = normalize_html(&golden(name, ext));
-    let actual = normalize_html(&rendered);
+    let actual = normalize_html(&without_port_markup(&rendered));
     if let Some(report) = diff(&expected, &actual) {
         let out = golden_dir().join("../../../../../target/views-a/out");
         std::fs::create_dir_all(&out).ok();
         std::fs::write(out.join(format!("{name}.{ext}")), &rendered).ok();
         panic!("{name}: DOM differs from the reference\n{report}");
+    }
+}
+
+/// The sidebar's workspace header is this app's own (README "Known differences", the workspace
+/// redesign; `workspace_views.rs` covers it), so it's left out of the comparison.
+fn without_port_markup(html: &str) -> String {
+    match (html.find(r#"<header class="sidebar__workspace">"#), html.find("</header>")) {
+        (Some(start), Some(end)) if end > start => format!("{}{}", &html[..start], &html[end + "</header>".len()..]),
+        _ => html.to_string(),
     }
 }
 
@@ -372,6 +381,15 @@ fn users_sidebars_show() {
         layouts::frame(ctx, page.as_head(), page.as_content()).unwrap()
     });
     assert_parity(name, "html", html);
+}
+
+/// The workspace redesign (plans/redesign.md): the sidebar opens with the account's name.
+#[test]
+fn the_sidebar_names_the_workspace() {
+    let html = with_context("sidebar_david", Request::default(), |ctx| sidebar("sidebar_david", ctx).render().unwrap());
+    let name = with_context("sidebar_david", Request::default(), |ctx| ctx.account.name.clone());
+    assert!(html.contains(r#"<header class="sidebar__workspace">"#), "{html}");
+    assert!(html.contains(&format!(r#"<span class="sidebar__workspace-name">{name}</span>"#)));
 }
 
 #[test]

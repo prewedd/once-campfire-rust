@@ -215,7 +215,8 @@ fn importmap_tags(
             .find(path)
             .map(|index| format!("{PREFIX}/{}", entries[index].1))
     };
-    let pins = importmap::expand(&rails_root.join("config/importmap.rb"), rails_root);
+    let overrides = Path::new(env!("CARGO_MANIFEST_DIR")).join("overrides");
+    let pins = importmap::expand(&rails_root.join("config/importmap.rb"), rails_root, &overrides);
 
     // Missing assets are skipped (Propshaft::MissingAssetError is a rescuable asset error).
     let imports: Vec<(String, String)> = pins

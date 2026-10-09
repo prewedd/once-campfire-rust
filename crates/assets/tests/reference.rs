@@ -177,10 +177,18 @@ fn stylesheet_link_tag_all_matches_the_reference() {
 
 #[test]
 fn javascript_importmap_tags_match_the_reference() {
-    assert_eq!(
-        as_reference(campfire_assets::javascript_importmap_tags()),
-        fixture("javascript_importmap_tags.html")
-    );
+    // The reference's pins, as it pins them, plus the modules the overrides add (the workspace
+    // redesign), each pinned and preloaded like its neighbours.
+    let added: Vec<String> = added()
+        .into_iter()
+        .filter(|logical| logical.ends_with(".js"))
+        .map(|logical| campfire_assets::javascript_path(&logical))
+        .collect();
+    assert!(!added.is_empty());
+    let tags = campfire_assets::javascript_importmap_tags();
+    let lines: Vec<&str> = tags.lines().filter(|line| !added.iter().any(|path| line.contains(&format!("\"{path}\"")))).collect();
+    assert_eq!(lines.len() + 2 * added.len(), tags.lines().count(), "every added module is pinned and preloaded");
+    assert_eq!(as_reference(&lines.join("\n")), fixture("javascript_importmap_tags.html"));
 }
 
 #[test]
