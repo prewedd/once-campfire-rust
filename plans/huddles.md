@@ -38,5 +38,12 @@ imported only when someone joins.
 ## Deployment (team.prewedd.com)
 
 LiveKit v1.13.9 in `/root/livekit` (host networking). Signaling goes through Caddy
-(`/livekit/*` → `127.0.0.1:7880`); media on 7881/tcp, 7882/udp, TURN on 3478/udp with relays on
-30000–30100/udp. No TURN over TLS: Caddy owns 443, so networks that allow only 443 can't join.
+(`/livekit/*` → `127.0.0.1:7880`). Media: UDP 7882 and TCP 7881 straight to the server's public
+IP. For networks that allow only port 443: **nginx (stream) owns 443** and routes by server name:
+`turn.prewedd.com` (a DNS-only record) is TLS-terminated by nginx with Caddy's certificate for it
+and passed to LiveKit's TURN on `127.0.0.2:443` (`external_tls`, PROXY protocol); every other name
+passes through untouched to Caddy on `:8443`, which only accepts connections carrying nginx's
+PROXY header (so it still sees client addresses). A relay-only probe connects through
+`turns:turn.prewedd.com:443` (`relayProtocol=tls`). `/etc/cron.daily/nginx-reload` picks up the
+certificate's renewals. Rollback: `/etc/caddy/Caddyfile.pre-sni`, `systemctl disable --now nginx`,
+`/root/livekit/livekit.yaml.pre-sni`.
