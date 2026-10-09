@@ -24,6 +24,15 @@ impl Page for New<'_> {
     fn body_class(&self) -> Option<&str> { Some("signup") }
 }
 
+/// A profile in the room page's right-hand panel (plans/redesign.md).
+#[derive(Template)]
+#[template(path = "users/pane.html")]
+pub struct Pane<'a> {
+    pub ctx: &'a ViewContext<'a>,
+    pub user: UserSummary,
+    pub transfer_id: String,
+}
+
 /// `users/show.html.erb`.
 #[derive(Template)]
 #[template(path = "users/show.html", blocks = ["head", "nav", "content"])]
@@ -287,3 +296,10 @@ pub struct SidebarDirectPartial<'a> {
 pub struct SidebarSharedPartial {
     pub room: SidebarRoom,
 }
+
+/// The theme picker's modes (`data-mode` on <html>; none follows the system), plans/redesign.md.
+pub const THEME_MODES: [(&str, &str); 3] = [("", "System"), ("light", "Light"), ("dark", "Dark")];
+
+/// The theme picker's themes (`data-theme` on <html>; none is Graphite), plans/redesign.md.
+pub const THEMES: [(&str, &str); 7] =
+    [("", "Graphite"), ("aubergine", "Aubergine"), ("ocean", "Ocean"), ("forest", "Forest"), ("violet", "Violet"), ("rose", "Rose"), ("mono", "Mono")];

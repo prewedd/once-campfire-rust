@@ -22,13 +22,24 @@ fn assert_parity(name: &str, ext: &str, rendered: String) {
     }
 }
 
-/// The sidebar's workspace header is this app's own (README "Known differences", the workspace
-/// redesign; `workspace_views.rs` covers it), so it's left out of the comparison.
+/// The sidebar's workspace header, the theme picker, the layout's theme boot script and the
+/// presence dots are this app's own (README "Known differences", the workspace redesign; `workspace_views.rs` and the
+/// tests below cover them), so they're left out of the comparison.
 fn without_port_markup(html: &str) -> String {
-    match (html.find(r#"<header class="sidebar__workspace">"#), html.find("</header>")) {
-        (Some(start), Some(end)) if end > start => format!("{}{}", &html[..start], &html[end + "</header>".len()..]),
-        _ => html.to_string(),
+    let mut html = html.to_string();
+    for (open, close) in [
+        (r#"<header class="sidebar__workspace">"#, "</header>"),
+        (r#"<details class="theme-picker""#, "</details>"),
+        ("<script data-theme-boot>", "</script>"),
+        (r#"<span class="presence-dot""#, "</span>"),
+        (r#"<span class="presence-status""#, "</span>"),
+    ] {
+        while let Some(start) = html.find(open) {
+            let Some(length) = html[start..].find(close) else { break };
+            html.replace_range(start..start + length + close.len(), "");
+        }
     }
+    html
 }
 
 fn help_contact(case: &str) -> Option<accounts::HelpContact> {
@@ -390,6 +401,25 @@ fn the_sidebar_names_the_workspace() {
     let name = with_context("sidebar_david", Request::default(), |ctx| ctx.account.name.clone());
     assert!(html.contains(r#"<header class="sidebar__workspace">"#), "{html}");
     assert!(html.contains(&format!(r#"<span class="sidebar__workspace-name">{name}</span>"#)));
+}
+
+/// The theme picker, and the boot script that applies the saved theme before the page paints.
+#[test]
+fn themes_can_be_picked_and_apply_before_paint() {
+    let html = with_context("sidebar_david", Request::default(), |ctx| sidebar("sidebar_david", ctx).render().unwrap());
+    assert!(html.contains(r#"<details class="theme-picker" data-controller="theme""#), "{html}");
+    for (theme, _) in campfire_views::users::THEMES {
+        assert!(html.contains(&format!(r#"data-theme-name-param="{theme}""#)));
+    }
+    for (mode, _) in campfire_views::users::THEME_MODES {
+        assert!(html.contains(&format!(r#"data-theme-mode-param="{mode}""#)));
+    }
+    let page = with_context("sidebar_david", Request::default(), |ctx| {
+        layouts::Application::new(ctx, h::raw(String::new())).render().unwrap()
+    });
+    assert!(page.contains("<script data-theme-boot>"), "the layout applies the theme");
+    let boot = page.find("data-theme-boot").unwrap();
+    assert!(boot < page.find(r#"rel="stylesheet""#).unwrap_or(usize::MAX), "before the stylesheets");
 }
 
 #[test]

@@ -9,6 +9,7 @@
 
 pub mod broadcasts;
 mod connection;
+mod online;
 mod presence;
 mod read_rooms;
 pub mod revocation;
@@ -75,6 +76,7 @@ pub fn register(builder: ServerBuilder<CableUser>, db: &Database, streams: Strea
         .channel("ApplicationCable::Channel", || EmptyChannel)
         .channel("HeartbeatChannel", || EmptyChannel)
         .channel("PresenceChannel", move || presence::PresenceChannel::new(presence_db.clone()))
+        .channel("OnlineChannel", online::OnlineChannel::new)
         .channel("ReadRoomsChannel", || read_rooms::ReadRoomsChannel)
         .channel("RoomChannel", move || room::RoomChannel::new(room_db.clone()))
         .channel("RoomMessagesChannel", move || room_messages::RoomMessagesChannel::new(messages_db.clone(), streams.clone()))

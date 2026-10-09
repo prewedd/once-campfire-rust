@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Workspace: PreWedd's look for Campfire (plans/redesign.md)
+   Workspace: the team's look for Campfire (plans/redesign.md)
 
    Chat the way Slack and Discord users expect it (a sidebar of channels and people, compact
    grouped messages, a hover toolbar, reaction pills, threads, an emoji picker), drawn with the
@@ -45,19 +45,11 @@
 }
 
 /* ==========================================================================
-   Tokens
+   Tokens. A theme (`data-theme` on <html>) sets the accent and the sidebar; the mode
+   (`data-mode`: light or dark, or the system's when unset) sets everything else.
    ========================================================================== */
 :root {
-  /* PreWedd UI kit */
-  --ws-rose-50: #fff1f3;
-  --ws-rose-100: #ffe4e8;
-  --ws-rose-300: #fea3b4;
-  --ws-rose-400: #fd6f8d;
-  --ws-rose-500: #f63d68;
-  --ws-rose-600: #e31b53;
-  --ws-rose-700: #c01046;
-
-  /* Surfaces and ink (light) */
+  /* Surfaces and ink: light */
   --ws-bg: #ffffff;
   --ws-bg-raised: #ffffff;
   --ws-bg-hover: #f7f7f8;
@@ -68,21 +60,31 @@
   --ws-faint: #a1a1aa;
   --ws-border: #e4e4e7;
   --ws-border-strong: #d4d4d8;
+  /* Campfire's icons are black: as they are on light, inverted on dark */
+  --ws-ink-filter: none;
+  --ws-paper-filter: invert(100%);
 
-  --ws-accent: var(--ws-rose-500);
-  --ws-accent-hover: var(--ws-rose-600);
-  --ws-accent-ink: var(--ws-rose-700);
-  --ws-accent-soft: var(--ws-rose-50);
-  --ws-accent-soft-strong: var(--ws-rose-100);
-  --ws-ring: 0 0 0 3px rgb(246 61 104 / 0.18);
-
-  /* The sidebar is ink in both themes, with a little rose light in its corner */
-  --ws-side-bg: #141417;
-  --ws-side-glow: radial-gradient(140% 55% at 0% 0%, rgb(246 61 104 / 0.13), transparent 60%);
+  /* The theme: Graphite unless chosen otherwise */
+  --ws-accent: #2563eb;
+  --ws-on-accent: #ffffff;
+  --ws-on-accent-filter: invert(100%);
+  --ws-side-bg: #18181b;
+  --ws-side-glow: none;
   --ws-side-ink: #a1a1aa;
   --ws-side-ink-strong: #fafafa;
-  --ws-side-hover: rgb(255 255 255 / 0.06);
-  --ws-side-line: rgb(255 255 255 / 0.07);
+  --ws-side-hover: rgb(255 255 255 / 0.07);
+  --ws-side-line: rgb(255 255 255 / 0.08);
+  --ws-side-active: var(--ws-accent);
+  --ws-side-icon-filter: invert(100%);
+
+  /* Derived from the accent */
+  --ws-accent-hover: color-mix(in oklab, var(--ws-accent) 86%, black);
+  --ws-accent-ink: color-mix(in oklab, var(--ws-accent) 82%, black);
+  --ws-accent-soft: color-mix(in srgb, var(--ws-accent) 9%, transparent);
+  --ws-accent-soft-strong: color-mix(in srgb, var(--ws-accent) 16%, transparent);
+  --ws-ring: 0 0 0 3px color-mix(in srgb, var(--ws-accent) 25%, transparent);
+  --ws-online: #2bac76;
+  --ws-away: #a1a1aa;
 
   --ws-shadow-sm: 0 1px 2px rgb(9 9 11 / 0.06);
   --ws-shadow: 0 1px 2px rgb(9 9 11 / 0.06), 0 4px 14px rgb(9 9 11 / 0.08);
@@ -100,21 +102,56 @@
   --ws-gutter: 20px;
   --ws-avatar: 36px;
 
-  /* Campfire's own palette, mapped onto these */
+  /* Campfire's and Lexxy's palettes, mapped onto these */
   --font-family: var(--ws-font);
+  --color-bg: var(--ws-bg);
+  --color-text: var(--ws-ink);
+  --color-text-reversed: var(--ws-bg);
+  --color-message-bg: var(--ws-bg-subtle);
+  --color-border: var(--ws-bg-subtle);
+  --color-border-dark: var(--ws-border);
+  --color-border-darker: var(--ws-border-strong);
+  --color-link: var(--ws-accent-ink);
+  --color-selected: var(--ws-accent-soft);
+  --color-selected-dark: color-mix(in srgb, var(--ws-accent) 45%, transparent);
+  --color-negative: #e5484d;
+  --color-positive: #2bac76;
+  --color-alert: var(--ws-accent);
   --lch-black: 21% 0.006 285.9;
   --lch-white: 100% 0 0;
   --lch-gray: 96.7% 0.001 286.4;
   --lch-gray-dark: 92% 0.004 286.3;
   --lch-gray-darker: 70.6% 0.014 286;
-  --lch-blue: 51.9% 0.201 13.2;
-  --lch-blue-light: 97% 0.015 7.5;
-  --lch-blue-dark: 81% 0.109 7.6;
-  --lch-red: 50.2% 0.183 29.1;
-  --lch-green: 61.4% 0.15 152.3;
-  --lch-orange: 64.9% 0.219 12.9;
+  --lch-red: 57% 0.2 25;
+  --lexxy-color-ink: var(--ws-ink);
+  --lexxy-color-ink-medium: var(--ws-ink-soft);
+  --lexxy-color-ink-light: var(--ws-muted);
+  --lexxy-color-ink-lighter: var(--ws-border-strong);
+  --lexxy-color-ink-lightest: var(--ws-bg-subtle);
+  --lexxy-color-ink-inverted: var(--ws-bg);
+  --lexxy-color-accent-dark: var(--ws-accent-ink);
+  --lexxy-color-accent-medium: var(--ws-accent);
+  --lexxy-color-accent-light: var(--ws-accent-soft-strong);
+  --lexxy-color-accent-lightest: var(--ws-accent-soft);
+  --lexxy-color-blue: var(--ws-accent);
 
-  @media (prefers-color-scheme: dark) {
+    --keyword: oklch(58.79% 0.193 20.47);
+    --entity: oklch(50.15% 0.188 294.99);
+    --constant: oklch(49.49% 0.18 257.6);
+    --string: oklch(31.08% 0.101 255.87);
+    --variable: oklch(64.82% 0.18 45.87);
+    --comment: oklch(55.14% 0.019 250.98);
+    --entity-tag: oklch(54.64% 0.144 147.32);
+    --markup-heading: oklch(49.49% 0.18 257.6);
+    --markup-list: oklch(48.46% 0.093 90.48);
+    --markup-inserted: oklch(54.64% 0.144 147.32);
+    --markup-deleted: oklch(49.59% 0.183 24.19);
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-mode="light"]) {
     --ws-bg: #1a1a1d;
     --ws-bg-raised: #222226;
     --ws-bg-hover: #202024;
@@ -125,29 +162,167 @@
     --ws-faint: #71717b;
     --ws-border: #2e2e33;
     --ws-border-strong: #3f3f46;
-
-    --ws-accent-ink: var(--ws-rose-400);
-    --ws-accent-soft: rgb(246 61 104 / 0.12);
-    --ws-accent-soft-strong: rgb(246 61 104 / 0.2);
-    --ws-ring: 0 0 0 3px rgb(246 61 104 / 0.28);
-
-    --ws-side-bg: #111113;
-    --ws-side-glow: radial-gradient(140% 55% at 0% 0%, rgb(246 61 104 / 0.11), transparent 60%);
-
+    --ws-ink-filter: invert(100%);
+    --ws-paper-filter: none;
+    --ws-accent-ink: color-mix(in oklab, var(--ws-accent) 65%, white);
+    --ws-accent-soft: color-mix(in srgb, var(--ws-accent) 14%, transparent);
+    --ws-accent-soft-strong: color-mix(in srgb, var(--ws-accent) 24%, transparent);
     --ws-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
     --ws-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 18px rgb(0 0 0 / 0.35);
     --ws-shadow-lg: 0 2px 6px rgb(0 0 0 / 0.4), 0 18px 48px rgb(0 0 0 / 0.5);
-
     --lch-black: 94% 0.003 286;
     --lch-white: 21.6% 0.005 286;
     --lch-gray: 25.5% 0.006 286;
     --lch-gray-dark: 29% 0.007 286;
     --lch-gray-darker: 37% 0.012 285.8;
-    --lch-blue: 72.1% 0.175 9.4;
-    --lch-blue-light: 27% 0.07 12;
-    --lch-blue-dark: 45% 0.15 13;
-    --lch-red: 61.9% 0.235 27.7;
+
+    /* highlight.js, as code.css colors it in dark mode */
+    --keyword: oklch(73.45% 0.163 25.78);
+    --entity: oklch(80.05% 0.127 305.86);
+    --constant: oklch(78.57% 0.115 246.66);
+    --string: oklch(78.57% 0.115 246.66);
+    --variable: oklch(79.91% 0.141 60.1);
+    --comment: oklch(66.25% 0.018 250.92);
+    --entity-tag: oklch(84.16% 0.164 145.75);
+    --markup-heading: oklch(56.86% 0.202 259.67);
+    --markup-list: oklch(85.74% 0.133 89.95);
+    --markup-inserted: oklch(90.72% 0.112 146.34);
+    --markup-deleted: oklch(92.23% 0.04 27.49);
+
+    color-scheme: dark;
   }
+}
+
+:root[data-mode="dark"] {
+    --ws-bg: #1a1a1d;
+    --ws-bg-raised: #222226;
+    --ws-bg-hover: #202024;
+    --ws-bg-subtle: #26262b;
+    --ws-ink: #ececef;
+    --ws-ink-soft: #d4d4d8;
+    --ws-muted: #9f9fa9;
+    --ws-faint: #71717b;
+    --ws-border: #2e2e33;
+    --ws-border-strong: #3f3f46;
+    --ws-ink-filter: invert(100%);
+    --ws-paper-filter: none;
+    --ws-accent-ink: color-mix(in oklab, var(--ws-accent) 65%, white);
+    --ws-accent-soft: color-mix(in srgb, var(--ws-accent) 14%, transparent);
+    --ws-accent-soft-strong: color-mix(in srgb, var(--ws-accent) 24%, transparent);
+    --ws-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --ws-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 18px rgb(0 0 0 / 0.35);
+    --ws-shadow-lg: 0 2px 6px rgb(0 0 0 / 0.4), 0 18px 48px rgb(0 0 0 / 0.5);
+    --lch-black: 94% 0.003 286;
+    --lch-white: 21.6% 0.005 286;
+    --lch-gray: 25.5% 0.006 286;
+    --lch-gray-dark: 29% 0.007 286;
+    --lch-gray-darker: 37% 0.012 285.8;
+
+    /* highlight.js, as code.css colors it in dark mode */
+    --keyword: oklch(73.45% 0.163 25.78);
+    --entity: oklch(80.05% 0.127 305.86);
+    --constant: oklch(78.57% 0.115 246.66);
+    --string: oklch(78.57% 0.115 246.66);
+    --variable: oklch(79.91% 0.141 60.1);
+    --comment: oklch(66.25% 0.018 250.92);
+    --entity-tag: oklch(84.16% 0.164 145.75);
+    --markup-heading: oklch(56.86% 0.202 259.67);
+    --markup-list: oklch(85.74% 0.133 89.95);
+    --markup-inserted: oklch(90.72% 0.112 146.34);
+    --markup-deleted: oklch(92.23% 0.04 27.49);
+
+    color-scheme: dark;
+}
+
+/* Themes: the sidebar and the accent */
+:root[data-theme="aubergine"] {
+  --ws-accent: #1164a3;
+  --ws-side-bg: #3f0e40;
+  --ws-side-ink: #cfc3cf;
+  --ws-side-hover: rgb(0 0 0 / 0.16);
+  --ws-side-line: rgb(255 255 255 / 0.1);
+}
+
+:root[data-theme="ocean"] {
+  --ws-accent: #0284c7;
+  --ws-side-bg: #0b2136;
+  --ws-side-ink: #a8bfd4;
+}
+
+:root[data-theme="forest"] {
+  --ws-accent: #16a34a;
+  --ws-side-bg: #0f241b;
+  --ws-side-ink: #a7c4b4;
+}
+
+:root[data-theme="rose"] {
+  --ws-accent: #f63d68;
+  --ws-side-bg: #141417;
+  --ws-side-glow: radial-gradient(140% 55% at 0% 0%, rgb(246 61 104 / 0.13), transparent 60%);
+}
+
+:root[data-theme="violet"] {
+  --ws-accent: #7c3aed;
+  --ws-side-bg: #1c1530;
+  --ws-side-ink: #bdb2d8;
+}
+
+/* Mono: a light sidebar in light mode, ink accents */
+:root[data-theme="mono"] {
+  --ws-accent: #18181b;
+  --ws-side-bg: #f4f4f5;
+  --ws-side-ink: #52525c;
+  --ws-side-ink-strong: #18181b;
+  --ws-side-hover: rgb(0 0 0 / 0.05);
+  --ws-side-line: rgb(0 0 0 / 0.07);
+  --ws-side-icon-filter: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="mono"]:not([data-mode="light"]) {
+    --ws-accent: #e4e4e7;
+    --ws-on-accent: #18181b;
+    --ws-on-accent-filter: none;
+    --ws-side-bg: #111113;
+    --ws-side-ink: #a1a1aa;
+    --ws-side-ink-strong: #fafafa;
+    --ws-side-hover: rgb(255 255 255 / 0.07);
+    --ws-side-line: rgb(255 255 255 / 0.08);
+    --ws-side-icon-filter: invert(100%);
+  }
+}
+
+:root[data-theme="mono"][data-mode="dark"] {
+  --ws-accent: #e4e4e7;
+  --ws-on-accent: #18181b;
+  --ws-on-accent-filter: none;
+  --ws-side-bg: #111113;
+  --ws-side-ink: #a1a1aa;
+  --ws-side-ink-strong: #fafafa;
+  --ws-side-hover: rgb(255 255 255 / 0.07);
+  --ws-side-line: rgb(255 255 255 / 0.08);
+  --ws-side-icon-filter: invert(100%);
+}
+
+/* Campfire's own dark-mode rules follow the mode, not just the system */
+.colorize--black,
+.notifications-help img,
+.composer__file-caption::after,
+.banned .avatar::after {
+  filter: var(--ws-ink-filter);
+}
+
+.colorize--white {
+  filter: var(--ws-paper-filter);
+}
+
+.btn:where(:has(img):not(.avatar)) img:not([class]) {
+  filter: var(--ws-ink-filter);
+}
+
+:is(.btn--reversed, .btn--negative) img:not(.avatar),
+.btn:has(input:checked) img {
+  filter: var(--ws-paper-filter);
 }
 
 /* ==========================================================================
@@ -411,8 +586,8 @@ body {
   }
 
   &.room--active {
-    background-color: var(--ws-accent);
-    color: #fff;
+    background-color: var(--ws-side-active);
+    color: var(--ws-on-accent);
   }
 }
 
@@ -437,7 +612,7 @@ body {
 }
 
 #sidebar .room.unread:not(.room--active)::after {
-  box-shadow: 0 0 0 3px rgb(246 61 104 / 0.18);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ws-accent) 25%, transparent);
 }
 
 #sidebar .rooms__new-btn {
@@ -447,7 +622,7 @@ body {
 
   img {
     block-size: 14px;
-    filter: invert(1);
+    filter: var(--ws-side-icon-filter);
     inline-size: 14px;
     opacity: 0.7;
   }
@@ -569,7 +744,7 @@ body {
 }
 
 #sidebar :is(img.colorize--black, .btn:not(.avatar) img:not([class])) {
-  filter: invert(1);
+  filter: var(--ws-side-icon-filter);
 }
 
 .sidebar__toggle {
@@ -578,15 +753,11 @@ body {
 
 /* The menu button sits on the page while the sidebar is closed, on the sidebar once it's open */
 #sidebar .sidebar__toggle img {
-  filter: none;
-
-  @media (prefers-color-scheme: dark) {
-    filter: invert(1);
-  }
+  filter: var(--ws-ink-filter);
 }
 
 #sidebar.open .sidebar__toggle img {
-  filter: invert(1);
+  filter: var(--ws-side-icon-filter);
 }
 
 /* Phones: a solid header too */
@@ -1255,11 +1426,11 @@ body {
   }
 }
 
-/* Send: the page's one rose button */
-#composer .btn--reversed {
+/* Send: the page's one accent button */
+:is(#composer, #thread-composer) .btn--reversed {
   --btn-background: var(--ws-accent);
   --btn-border-radius: var(--ws-radius);
-  --btn-color: #fff;
+  --btn-color: var(--ws-on-accent);
   --btn-size: 32px;
   --hover-filter: none;
 
@@ -1268,7 +1439,7 @@ body {
   }
 
   img {
-    filter: invert(1) !important;
+    filter: var(--ws-on-accent-filter) !important;
   }
 }
 
@@ -1498,4 +1669,325 @@ body {
 .flash,
 .flash__inner {
   border-radius: var(--ws-radius);
+}
+
+/* ==========================================================================
+   The theme picker (sidebar footer)
+   ========================================================================== */
+.theme-picker {
+  margin-inline-start: auto;
+  position: relative;
+
+  > summary {
+    list-style: none;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+  }
+}
+
+.theme-picker__panel {
+  background-color: var(--ws-bg-raised);
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-radius-lg);
+  box-shadow: var(--ws-shadow-lg);
+  color: var(--ws-ink);
+  inline-size: 260px;
+  inset: auto auto calc(100% + 10px) -110px;
+  padding: 12px;
+  position: absolute;
+  z-index: 20;
+}
+
+.theme-picker__label {
+  color: var(--ws-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  margin-block: 2px 8px;
+  text-transform: uppercase;
+
+  &:not(:first-child) {
+    margin-block-start: 14px;
+  }
+}
+
+.theme-picker__modes {
+  background-color: var(--ws-bg-subtle);
+  border-radius: var(--ws-radius);
+  display: grid;
+  gap: 2px;
+  grid-template-columns: repeat(3, 1fr);
+  padding: 3px;
+}
+
+.theme-picker__mode {
+  background: none;
+  border: 0;
+  border-radius: var(--ws-radius-sm);
+  color: var(--ws-ink-soft);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 0;
+
+  &[aria-checked="true"] {
+    background-color: var(--ws-bg-raised);
+    box-shadow: var(--ws-shadow-sm);
+    color: var(--ws-ink);
+  }
+}
+
+.theme-picker__themes {
+  display: grid;
+  gap: 4px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.theme-picker__theme {
+  align-items: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--ws-radius);
+  color: var(--ws-ink);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  gap: 8px;
+  padding: 6px 8px;
+  text-align: start;
+
+  &:hover {
+    background-color: var(--ws-bg-subtle);
+  }
+
+  &[aria-checked="true"] {
+    border-color: var(--ws-accent);
+    box-shadow: var(--ws-ring);
+  }
+}
+
+/* Each swatch: the theme's sidebar, then its accent */
+.theme-picker__swatch {
+  --side: #18181b;
+  --accent: #2563eb;
+
+  background: linear-gradient(135deg, var(--side) 0 55%, var(--accent) 55% 100%);
+  block-size: 20px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.1);
+  flex-shrink: 0;
+  inline-size: 20px;
+
+  [data-swatch="aubergine"] & { --side: #3f0e40; --accent: #1164a3; }
+  [data-swatch="ocean"] & { --side: #0b2136; --accent: #0284c7; }
+  [data-swatch="forest"] & { --side: #0f241b; --accent: #16a34a; }
+  [data-swatch="violet"] & { --side: #1c1530; --accent: #7c3aed; }
+  [data-swatch="rose"] & { --side: #141417; --accent: #f63d68; }
+  [data-swatch="mono"] & { --side: #f4f4f5; --accent: #18181b; }
+}
+
+/* ==========================================================================
+   Presence: a green dot online, a hollow one away or offline
+   ========================================================================== */
+.presence-dot {
+  background-color: transparent;
+  block-size: 9px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px var(--ws-side-bg), inset 0 0 0 1.5px var(--ws-away);
+  inline-size: 9px;
+  inset: auto -2px -2px auto;
+  position: absolute;
+  z-index: 1;
+
+  &[data-presence="online"] {
+    background-color: var(--ws-online);
+    box-shadow: 0 0 0 2px var(--ws-side-bg);
+  }
+}
+
+#sidebar .direct .avatar {
+  overflow: visible;
+  position: relative;
+}
+
+.presence-status {
+  align-items: center;
+  color: var(--ws-muted);
+  display: inline-flex;
+  font-size: 13px;
+  gap: 6px;
+  justify-content: center;
+
+  &::before {
+    block-size: 9px;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1.5px var(--ws-away);
+    content: "";
+    inline-size: 9px;
+  }
+
+  &::after {
+    content: "Offline";
+  }
+
+  &[data-presence="online"] {
+    &::before {
+      background-color: var(--ws-online);
+      box-shadow: none;
+    }
+
+    &::after {
+      content: "Active";
+    }
+  }
+
+  &[data-presence="away"]::after {
+    content: "Away";
+  }
+}
+
+/* ==========================================================================
+   The right-hand panel: a thread or a profile beside the conversation
+   ========================================================================== */
+:root {
+  --ws-pane-width: min(440px, 100vw);
+}
+
+.flexpane {
+  background-color: var(--ws-bg);
+  border-inline-start: 1px solid var(--ws-border);
+  box-shadow: var(--ws-shadow-lg);
+  display: flex;
+  flex-direction: column;
+  inline-size: var(--ws-pane-width);
+  inset: 0 0 0 auto;
+  position: fixed;
+  z-index: 6;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+@media (min-width: 100ch) {
+  body.flexpane-open {
+    padding-inline-end: var(--ws-pane-width);
+
+    #nav {
+      inset-inline-end: var(--ws-pane-width);
+    }
+
+    .flexpane {
+      box-shadow: none;
+    }
+  }
+}
+
+.flexpane__header {
+  align-items: center;
+  border-block-end: 1px solid var(--ws-border);
+  display: flex;
+  flex: none;
+  gap: 4px;
+  min-block-size: 52px;
+  padding-inline: 16px 10px;
+}
+
+.flexpane__title {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flexpane__subtitle {
+  color: var(--ws-muted);
+  font-size: 13px;
+  font-weight: 500;
+  margin-inline-start: 6px;
+}
+
+:is(.flexpane__close, .flexpane__expand) {
+  --btn-background: transparent;
+  --btn-border-color: transparent;
+  --btn-border-radius: var(--ws-radius-sm);
+  --btn-size: 30px;
+  --hover-size: 0;
+
+  &:hover {
+    background-color: var(--ws-bg-subtle);
+  }
+
+  img {
+    filter: var(--ws-ink-filter);
+    inline-size: 15px;
+  }
+}
+
+.flexpane__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-block-size: 0;
+  position: relative;
+
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding-block: 8px;
+  }
+
+  .message {
+    --ws-gutter: 16px;
+  }
+}
+
+.flexpane__body--profile {
+  overflow-y: auto;
+  padding: 24px 16px;
+
+  .panel {
+    box-shadow: none;
+    inline-size: 100%;
+  }
+}
+
+.flexpane__footer .composer {
+  padding: 4px 16px 16px;
+}
+
+/* The panel's composer: no search button, and its own typing line */
+.flexpane__footer .composer__context-btn {
+  display: none;
+}
+
+/* The panel's composer keeps its formatting toolbar under the text, like the room's */
+@media (min-width: 100ch) and (any-hover: hover) and (pointer: fine) {
+  #thread-composer.composer--rich-text lexxy-editor.input {
+    display: flex;
+    flex-direction: column;
+    margin-block-end: -0.25em;
+
+    .lexxy-editor__content {
+      order: -1;
+    }
+
+    lexxy-toolbar {
+      margin-block-start: 0.4em;
+
+      [data-dropdown-panel] {
+        inset-block-end: 100%;
+        inset-block-start: auto;
+      }
+    }
+  }
 }

@@ -70,6 +70,23 @@ impl Show<'_> {
     }
 }
 
+/// The turbo frame the room page shows threads and profiles in (plans/redesign.md).
+pub const PANE_FRAME: &str = "flexpane";
+
+/// `threads/pane`: the thread in the room page's right-hand panel.
+#[derive(Template)]
+#[template(path = "threads/pane.html")]
+pub struct Pane<'a> {
+    pub ctx: &'a ViewContext<'a>,
+    pub show: &'a ShowView,
+}
+
+impl Pane<'_> {
+    fn loaded_at(&self) -> i64 {
+        epoch_ms(self.show.updated_at)
+    }
+}
+
 /// What changed in a thread since the client last loaded it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RefreshView {

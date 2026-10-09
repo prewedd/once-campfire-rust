@@ -26,6 +26,18 @@ PreWedd's UI kit (zinc neutrals, rose `#F63D68` for what's ours or needs you).
   thread), rose Send.
 - **Threads.** The summary shows the latest repliers, the count and "View thread ›" on hover; the
   thread view heads with the parent and a "Replies" rule.
+- **Themes.** A palette button by Settings picks the mode (System, Light, Dark) and a theme:
+  Graphite (the default), Aubergine, Ocean, Forest, Violet, Rose or Mono (a light sidebar). Each is
+  a sidebar and an accent; everything else follows the mode. Saved per device, applied before the
+  page paints.
+- **Presence.** A green dot for whoever has Campfire open and visible, a hollow one for away (all
+  their pages hidden two minutes) or offline: on people in the sidebar and on profiles ("Active",
+  "Away", "Offline"). `OnlineChannel` keeps it in memory; a person goes offline a few seconds after
+  their last page closes, so moving between pages doesn't flicker.
+- **The right-hand panel.** Threads and profiles open beside the conversation, as in Slack: the
+  room stays put, the thread's reply box takes the focus, Escape or ✕ closes it, and "Open in full"
+  goes to the thread's own page. The server renders the panel's version (with ids of its own)
+  when Turbo asks for the `flexpane` frame.
 - Light and dark, phones included.
 
 ## How it's built
@@ -43,3 +55,6 @@ PreWedd's UI kit (zinc neutrals, rose `#F63D68` for what's ours or needs you).
   sidebar's header. The parity goldens leave these out (`crates/views/tests/messages_support`,
   `parity_a.rs`); `workspace_views.rs` covers them.
 - The importmap now pins modules the overrides add to a pinned directory, as Rails would.
+- `controllers/theme_controller.js` and `users/sidebars/_theme_picker.html` (the picker), a boot
+  script in `layouts/application.html`; `channels/online.rs`; `threads/pane.html`,
+  `users/pane.html` and `users/_profile.html` (the panel), opened by `initializers/workspace.js`.

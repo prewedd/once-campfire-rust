@@ -5,7 +5,10 @@
 //   adds it when you haven't reacted with that emoji yet, as in Slack. Boosts still arrive and
 //   leave one by one (Turbo streams), so the pills are worked out again whenever they change.
 // - The room you're in is marked in the sidebar.
+// - Presence: who's online or away (OnlineChannel), on everything marked `data-presence-user`.
+// - The right-hand panel: threads and profiles open beside the conversation, as in Slack.
 
+import { cable } from "@hotwired/turbo-rails"
 import { addBoost } from "lib/emoji/boosts"
 
 const BOOSTS = '[id^="boosts_message_"]'
@@ -111,6 +114,106 @@ function markCurrentRoom() {
   })
 }
 
+// Presence. One subscription per page, kept across Turbo visits.
+const AWAY_AFTER = 2 * 60 * 1000
+const statuses = new Map()
+let onlineChannel
+let awayTimer
+
+function showPresence() {
+  document.querySelectorAll("[data-presence-user]").forEach(element => {
+    element.dataset.presence = statuses.get(element.dataset.presenceUser) ?? "offline"
+  })
+}
+
+async function trackPresence() {
+  if (onlineChannel || !Current.user) return
+  onlineChannel = await cable.subscribeTo({ channel: "OnlineChannel" }, {
+    received(data) {
+      if (data.snapshot) {
+        statuses.clear()
+        Object.entries(data.snapshot).forEach(([ id, status ]) => statuses.set(id, status))
+      } else {
+        statuses.set(String(data.user_id), data.status)
+      }
+      showPresence()
+    },
+    connected() {
+      if (document.visibilityState === "hidden") this.perform("away")
+    }
+  })
+}
+
+document.addEventListener("visibilitychange", () => {
+  clearTimeout(awayTimer)
+  if (document.visibilityState === "hidden") {
+    awayTimer = setTimeout(() => onlineChannel?.perform("away"), AWAY_AFTER)
+  } else {
+    onlineChannel?.perform("active")
+  }
+})
+
+// The right-hand panel. Links to a thread or a profile from the conversation open in it; anything
+// else (a modified click, "Open in full", other pages) navigates as before.
+const PANE_PATH = /^\/(rooms\/\d+\/threads\/\d+(\/@\d+)?|users\/\d+)$/
+
+function paneFrameFor(link) {
+  const frame = document.getElementById("flexpane")
+  if (!frame || !link.closest("#main-content") || link.closest(".flexpane__header")) return null
+  const url = new URL(link.href, location.href)
+  return url.origin === location.origin && PANE_PATH.test(url.pathname) ? frame : null
+}
+
+function openPane(frame, url) {
+  frame.closest(".flexpane").hidden = false
+  document.body.classList.add("flexpane-open")
+  frame.src = url
+}
+
+function closePane() {
+  const pane = document.querySelector(".flexpane:not([hidden])")
+  if (!pane) return false
+  pane.hidden = true
+  document.body.classList.remove("flexpane-open")
+  const frame = pane.querySelector("turbo-frame")
+  frame.removeAttribute("src")
+  frame.replaceChildren()
+  return true
+}
+
+document.addEventListener("click", event => {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+  if (event.target.closest("[data-flexpane-close]")) {
+    closePane()
+    return
+  }
+  const link = event.target.closest("a[href]")
+  const frame = link && paneFrameFor(link)
+  if (!frame) return
+  event.preventDefault()
+  event.stopPropagation()
+  openPane(frame, link.href)
+}, true)
+
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && !event.defaultPrevented && !document.querySelector(".lexxy-prompt-menu--visible") && closePane()) {
+    event.preventDefault()
+  }
+})
+
+// The panel's copy of a thread's parent would share its ids with the room's; the room's keeps them.
+// shortcut: so edits to the parent reach the room's copy only, until the panel reloads.
+document.addEventListener("turbo:frame-load", event => {
+  if (event.target.id !== "flexpane") return
+  event.target.querySelectorAll("[id]").forEach(element => {
+    if (document.querySelectorAll(`[id="${CSS.escape(element.id)}"]`).length > 1) element.removeAttribute("id")
+  })
+  // A thread opens ready for a reply, as the composer does on a page (not on touch screens).
+  if (!window.matchMedia("(pointer: coarse)").matches) {
+    setTimeout(() => event.target.querySelector("lexxy-editor")?.focus(), 50)
+  }
+})
+
 let scheduled = false
 function refresh() {
   if (scheduled) return
@@ -119,6 +222,8 @@ function refresh() {
     scheduled = false
     groupAllBoosts()
     markCurrentRoom()
+    showPresence()
+    trackPresence()
   })
 }
 

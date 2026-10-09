@@ -1,0 +1,23 @@
+{#- The workspace redesign (plans/redesign.md): pick a theme and light or dark, per device. -#}
+<details class="theme-picker" data-controller="theme" data-action="keydown.esc->theme#close">
+  <summary class="btn sidebar__tool theme-picker__btn" title="Theme">
+    <img aria-hidden="true" src="{{ ctx.asset("palette.svg") }}" width="20" height="20" />
+    <span class="for-screen-reader">Theme</span>
+  </summary>
+  <div class="theme-picker__panel">
+    <div class="theme-picker__label">Appearance</div>
+    <div class="theme-picker__modes" role="radiogroup" aria-label="Appearance">
+      {%- for (mode, label) in crate::users::THEME_MODES %}
+      <button type="button" class="theme-picker__mode" role="radio" data-action="theme#mode" data-theme-mode-param="{{ mode }}" data-theme-target="mode" data-value="{{ mode }}">{{ label }}</button>
+      {%- endfor %}
+    </div>
+    <div class="theme-picker__label">Theme</div>
+    <div class="theme-picker__themes" role="radiogroup" aria-label="Theme">
+      {%- for (theme, label) in crate::users::THEMES %}
+      <button type="button" class="theme-picker__theme" role="radio" data-action="theme#theme" data-theme-name-param="{{ theme }}" data-theme-target="theme" data-value="{{ theme }}" data-swatch="{{ theme }}">
+        <span class="theme-picker__swatch" aria-hidden="true"></span>{{ label }}
+      </button>
+      {%- endfor %}
+    </div>
+  </div>
+</details>

@@ -1,0 +1,30 @@
+{#- The workspace redesign (plans/redesign.md): a thread in the room page's right-hand panel, with
+    ids of its own so it doesn't collide with the room's message area and composer. -#}
+<turbo-frame id="flexpane">
+  <header class="flexpane__header">
+    <h2 class="flexpane__title">Thread <span class="flexpane__subtitle">{% if show.room.is_direct() %}with{% else %}in #{% endif %}{{ show.room.display_name }}</span></h2>
+    <a class="btn flexpane__expand" data-turbo-frame="_top" href="{{ h::routes::room_thread(show.room.id, show.parent_id) }}" title="Open in full">
+      <img aria-hidden="true" src="{{ ctx.asset("arrow-right.svg") }}" width="16" height="16" /><span class="for-screen-reader">Open in full</span>
+    </a>
+    <button type="button" class="btn flexpane__close" data-flexpane-close title="Close">
+      <img aria-hidden="true" src="{{ ctx.asset("remove.svg") }}" width="16" height="16" /><span class="for-screen-reader">Close</span>
+    </button>
+  </header>
+
+  <div id="thread-message-area" class="message-area message-area--thread flexpane__body" contents="true" data-controller="messages drop-target" data-action="turbo:before-stream-render@document-&gt;messages#beforeStreamRender dragenter-&gt;drop-target#dragenter dragover-&gt;drop-target#dragover drop-&gt;drop-target#drop" data-messages-first-of-day-class="message--first-of-day" data-messages-formatted-class="message--formatted" data-messages-me-class="message--me" data-messages-mentioned-class="message--mentioned" data-messages-threaded-class="message--threaded" data-messages-page-url-value="{{ ctx.url(h::routes::room_thread_messages(show.room.id, show.parent_id).as_str()) }}">
+    {%- let user = &show.user %}
+    {% include "messages/_template.html" %}
+
+    <div id="{{ show.messages_dom_id() }}" class="messages messages--thread" data-controller="maintain-scroll refresh-room" data-action="turbo:before-stream-render@document-&gt;maintain-scroll#beforeStreamRender visibilitychange@document-&gt;refresh-room#visibilityChanged online@window-&gt;refresh-room#online" data-messages-target="messages" data-refresh-room-loaded-at-value="{{ self.loaded_at() }}" data-refresh-room-url-value="{{ ctx.url(h::routes::room_thread_refresh(show.room.id, show.parent_id).as_str()) }}">
+      {%- for message in show.messages %}
+      {{ crate::messages::cached_message_item(ctx, message) }}
+      {%- endfor %}
+    </div>
+    <button class="message-area__return-to-latest btn" data-action="messages#returnToLatest" data-messages-target="latest" hidden="hidden"><img aria-hidden="true" src="{{ ctx.asset("arrow-down.svg") }}" width="20" height="20" /><span class="for-screen-reader">Jump to newest reply</span></button>
+  </div>
+
+  <footer class="flexpane__footer">
+    {%- let room = &show.room %}{% let thread_id = Some(show.parent_id) %}{% let pane = true %}
+    {% include "rooms/show/_composer.html" %}
+  </footer>
+</turbo-frame>

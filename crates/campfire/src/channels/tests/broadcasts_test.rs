@@ -78,23 +78,22 @@ async fn reply_broadcasts() {
     let reply = campfire_db::Message { id: parent.id + 1_000, client_message_id: "reply".into(), thread_parent_id: Some(parent.id), ..parent.clone() };
     app.broadcasts.reply_create(&designers, &reply, &parent, &[campfire_db::fixtures::identify("kevin")], &FakePartials);
 
-    for client in [&mut kevin, &mut jason] {
-        assert_eq!(
-            turbo_stream(&client.next_text().await),
-            format!(
-                r#"<turbo-stream action="append" target="thread_messages_{}"><template><div id="message_reply">message {}</div></template></turbo-stream>"#,
-                parent.id, reply.id
-            )
-        );
-        assert_eq!(
-            turbo_stream(&client.next_text().await),
-            format!(
-                r#"<turbo-stream maintain_scroll="true" action="replace" target="thread_summary_message_0001"><template><div>summary {}</div></template></turbo-stream>"#,
-                parent.id
-            )
-        );
-    }
-    assert_eq!(kevin.next_text().await, delivery(&unreads, &format!(r#"{{"roomId":{}}}"#, designers.id)));
+    let append = format!(
+        r#"<turbo-stream action="append" target="thread_messages_{}"><template><div id="message_reply">message {}</div></template></turbo-stream>"#,
+        parent.id, reply.id
+    );
+    let summary = format!(
+        r#"<turbo-stream maintain_scroll="true" action="replace" target="thread_summary_message_0001"><template><div>summary {}</div></template></turbo-stream>"#,
+        parent.id
+    );
+    let unread = delivery(&unreads, &format!(r#"{{"roomId":{}}}"#, designers.id));
+    // Each stream keeps its order; the two streams don't keep theirs between them.
+    let mut kevins = vec![kevin.next_text().await, kevin.next_text().await, kevin.next_text().await];
+    let kevins_unread = kevins.iter().position(|frame| *frame == unread).expect("Kevin, in the thread, hears the room went unread");
+    kevins.remove(kevins_unread);
+    assert_eq!(kevins.iter().map(|frame| turbo_stream(frame)).collect::<Vec<_>>(), [append.clone(), summary.clone()]);
+    let jasons = vec![turbo_stream(&jason.next_text().await), turbo_stream(&jason.next_text().await)];
+    assert_eq!(jasons, [append, summary], "Jason sees the thread change, without the unread ping");
     kevin.assert_silent().await;
     jason.assert_silent().await;
 }

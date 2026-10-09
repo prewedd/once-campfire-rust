@@ -129,7 +129,11 @@ async fn render_show(c: &mut Ctx, room: Room, parent: Message, around: Option<i6
         })
         .await
         .map_err(db_error)?;
-    let response = page::framed_page!(c, StatusCode::OK, |ctx| views::Show { ctx, show: &show }).await?;
+    let response = if c.turbo_frame_request_id() == Some(views::PANE_FRAME) {
+        page::bare(c, StatusCode::OK, &format::HTML, |ctx| views::Pane { ctx, show: &show }.render()).await?
+    } else {
+        page::framed_page!(c, StatusCode::OK, |ctx| views::Show { ctx, show: &show }).await?
+    };
     let fragments = campfire_views::messages::MessageItem::cached_fragments(&c.app().fragment_cache, &show.messages);
     Ok(response.with_cached_fragments(fragments))
 }

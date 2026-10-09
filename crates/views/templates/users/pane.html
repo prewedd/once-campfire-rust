@@ -1,0 +1,12 @@
+{#- The workspace redesign (plans/redesign.md): a profile in the room page's right-hand panel. -#}
+<turbo-frame id="flexpane">
+  <header class="flexpane__header">
+    <h2 class="flexpane__title">Profile</h2>
+    <button type="button" class="btn flexpane__close" data-flexpane-close title="Close">
+      <img aria-hidden="true" src="{{ ctx.asset("remove.svg") }}" width="16" height="16" /><span class="for-screen-reader">Close</span>
+    </button>
+  </header>
+  <div class="flexpane__body flexpane__body--profile">
+    {% include "users/_profile.html" %}
+  </div>
+</turbo-frame>

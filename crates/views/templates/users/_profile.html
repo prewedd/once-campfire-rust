@@ -1,0 +1,36 @@
+{#- users/show's content: the full page and the right-hand panel (plans/redesign.md) share it. -#}
+<section class="panel txt-align-center">
+  <div class="flex flex-column gap {% if user.banned() %}banned{% endif %}">
+    <div class="avatar txt-xx-large center" style="background: white">
+      {{ h::image_tag(ctx, user.avatar_path.as_str(), h::attrs().alt("Profile avatar").class("avatar")) }}
+    </div>
+
+{% if user.bot() %}      <div class="pad-double--inline push--inline push--block-start">
+{% if user.active() %}          {{ h::button_to_direct_room_with(ctx, user.id) }}
+{% else %}          <div>{{ user.name }} is no longer on this account</div>
+{% endif %}      </div>
+{% else %}{% if !user.deactivated() %}        <div class="flex flex-column gap" style="--row-gap: calc(var(--block-space) / 3)">
+          <h1 class="txt-x-large txt-tight-lines margin-none">{{ user.name }}</h1>
+          <span class="presence-status" data-presence-user="{{ user.id }}"></span>
+{% if ctx.can_administer() %}            <div>{{ h::mail_to(user.email_address.as_deref().unwrap_or_default()) }}</div>
+{% endif %}          <div>{{ user.bio.as_deref().unwrap_or_default() }}</div>
+        </div>
+
+{% if user.active() %}          <div class="pad-inline-double margin-inline margin-block-start">
+            {% filter button_to(h::rooms_directs_with_user(user.id), h::attrs().class("btn btn--reversed full-width txt-large")) %}
+              {{ h::image_tag(ctx, "messages.svg", h::attrs().aria("hidden", "true").aria("label", "Ping " ~ user.name)) }}
+{% endfilter %}          </div>
+
+{% if ctx.can_administer() %}            <hr class="margin-block-start borderless">
+
+            {% include "users/profiles/_transfer.html" %}
+{% endif %}{% endif %}
+{% if ctx.can_administer() && !ctx.is_current_user(user.id) %}          <div class="margin-block-start">
+            {% include "users/_ban_button.html" %}
+          </div>
+{% endif %}{% else %}        <div>
+          <h1 class="txt-x-large margin-none">{{ user.name }}</h1>
+          <div>{{ user.name }} is no longer on this account</div>
+        </div>
+{% endif %}{% endif %}  </div>
+</section>

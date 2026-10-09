@@ -22,6 +22,7 @@
     {{ h::builder_tag("link", h::attrs().attr("rel", "icon").attr("href", ctx.account.logo_url.as_str()).type_("image/png")) }}
     {{ h::builder_tag("link", h::attrs().attr("rel", "apple-touch-icon").attr("href", ctx.account.logo_url.as_str())) }}
 
+    <script data-theme-boot>try { const root = document.documentElement, theme = localStorage.getItem("ws-theme"), mode = localStorage.getItem("ws-mode"); if (theme) root.dataset.theme = theme; if (mode) root.dataset.mode = mode } catch {}</script>
     {{ h::raw(ctx.stylesheet_tags) }}
     {{ h::custom_styles_tag(ctx) }}
 

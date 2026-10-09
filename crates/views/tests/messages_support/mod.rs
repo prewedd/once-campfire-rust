@@ -20,7 +20,7 @@ pub struct Golden {
 
 /// Assets this app adds (the workspace redesign), which the reference's asset map doesn't have.
 fn added_asset(logical: &str) -> Option<String> {
-    ["emoji.svg", "emoji/prompt.html"].contains(&logical).then(|| format!("/assets/{logical}"))
+    ["emoji.svg", "emoji/prompt.html", "palette.svg"].contains(&logical).then(|| format!("/assets/{logical}"))
 }
 
 pub fn golden(name: &str) -> Golden {
@@ -138,6 +138,11 @@ fn without_port_markup(actual: Vec<String>) -> Vec<String> {
         "message__toolbar-reactions",
         "composer__emoji-btn",
         "sidebar__workspace",
+        "theme-picker",
+        "presence-dot",
+        "presence-status",
+        r#"<aside class="flexpane""#,
+        "data-theme-boot",
         r#"<lexxy-prompt trigger=":""#,
     ];
     let is_added = |t: &str| ADDED.iter().any(|marker| t.contains(marker));

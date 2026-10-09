@@ -27,4 +27,4 @@
 </div>
 {%- endblock %}
 
-{%- block footer %}{% let room = &show.room %}{% let thread_id = Some(show.parent_id) %}{% include "rooms/show/_composer.html" %}{% endblock %}
+{%- block footer %}{% let room = &show.room %}{% let thread_id = Some(show.parent_id) %}{% let pane = false %}{% include "rooms/show/_composer.html" %}{% endblock %}

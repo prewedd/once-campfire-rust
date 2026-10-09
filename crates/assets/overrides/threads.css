@@ -76,6 +76,22 @@
       .message__author {
         display: inline;
       }
+
+      /* …and its time beside its name, not in the gutter */
+      .message__meta {
+        block-size: auto;
+      }
+
+      .message__heading {
+        inline-size: auto;
+        justify-content: start;
+        position: static;
+      }
+
+      .message__permalink {
+        font-size: 12px;
+        opacity: 1;
+      }
     }
   }
 }

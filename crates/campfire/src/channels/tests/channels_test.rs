@@ -213,6 +213,38 @@ async fn typing_in_a_thread_stays_in_the_thread() {
     in_another_thread.assert_silent().await;
 }
 
+/// Waits up to ten frames for one containing `wanted`.
+async fn frame_containing(client: &mut Client, wanted: String) -> bool {
+    for _ in 0..10 {
+        if client.next_text().await.contains(&wanted) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Presence (plans/redesign.md): a page that subscribes is online, everyone hears it, and a
+/// hidden page makes its person away.
+#[tokio::test]
+async fn online_and_away_go_out_to_everyone() {
+    let app = start().await;
+    let online = identifier(json!({ "channel": "OnlineChannel" }));
+    let mut watcher = app.connect("kevin").await;
+    watcher.subscribe(&online).await;
+    let first = watcher.next_text().await;
+    assert!(first.contains("snapshot") || first.contains("confirm_subscription"), "{first}");
+
+    let mut person = app.connect("jz").await;
+    person.subscribe(&online).await;
+    let jz = id("jz");
+    assert!(frame_containing(&mut watcher, format!(r#"{{"user_id":{jz},"status":"online"}}"#)).await);
+
+    person.perform(&online, json!({ "action": "away" })).await;
+    assert!(frame_containing(&mut watcher, format!(r#"{{"user_id":{jz},"status":"away"}}"#)).await);
+    person.perform(&online, json!({ "action": "active" })).await;
+    assert!(frame_containing(&mut watcher, format!(r#"{{"user_id":{jz},"status":"online"}}"#)).await);
+}
+
 fn typing_stream_name(room: &campfire_db::Room) -> String {
     campfire_cable::naming::broadcasting_for("TypingNotificationsChannel", &[&room_gid(room).to_param()])
 }

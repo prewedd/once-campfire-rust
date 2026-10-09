@@ -15,7 +15,7 @@ use campfire_views::users;
 use super::presenters::attachments::{self, Assignment, Record};
 use super::presenters::{self, view_context};
 use crate::app::AppCtx;
-use crate::controllers::presenters::page::framed_page;
+use crate::controllers::presenters::page::{self, framed_page};
 use crate::concerns::{self, Before, cast_integer};
 
 /// `require_unauthenticated_access only: %i[ new create ]`, `before_action :verify_join_code`
@@ -79,6 +79,12 @@ pub async fn show(c: &mut Ctx) -> Result {
     let secrets = c.app().secrets.clone();
     let transfer_id = presenters::accounts::transfer_id(&secrets, user.id, c.now());
     let user = presenters::user_summary(&secrets, &user);
+    if c.turbo_frame_request_id() == Some(campfire_views::threads::PANE_FRAME) {
+        return page::bare(c, StatusCode::OK, &format::HTML, |ctx| {
+            users::Pane { ctx, user: user.clone(), transfer_id: transfer_id.clone() }.render()
+        })
+        .await;
+    }
     view_context::page_or_frame(
         c,
         StatusCode::OK,

@@ -321,7 +321,8 @@ Deliberate:
 - **PreWedd's workspace look.** Slack- and Discord-style chat in PreWedd's UI kit
   ([`plans/redesign.md`](plans/redesign.md)): the sidebar on the left with Channels and Direct
   messages, compact grouped messages, a hover toolbar with quick reactions, reactions as counted
-  pills you toggle, an emoji picker and `:shortcode` suggestions, Inter. All in
+  pills you toggle, an emoji picker and `:shortcode` suggestions, Inter, a theme picker, presence
+  dots (`OnlineChannel`) and a right-hand panel for threads and profiles. Mostly in
   `crates/assets/overrides` plus a few added elements in templates, which the parity goldens leave
   out.
 - **Threads.** Any top-level message can be replied to in a thread of its own, as in Slack
