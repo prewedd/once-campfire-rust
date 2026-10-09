@@ -381,16 +381,29 @@ mod dev {
     use super::{StaticRequest, StaticResponse, mime_type};
     use crate::embedded;
 
-    static DIR: LazyLock<Option<PathBuf>> = LazyLock::new(|| std::env::var_os("CAMPFIRE_DEV_ASSETS").map(PathBuf::from));
+    /// `CAMPFIRE_DEV_ASSETS`: development, never cached. `CAMPFIRE_LIVE_ASSETS`: production, where
+    /// a deploy of stylesheets and scripts is copying them there (no build); browsers revalidate
+    /// (`no-cache` with `Last-Modified`), so a change shows on the next page load.
+    static DIR: LazyLock<Option<(PathBuf, bool)>> = LazyLock::new(|| {
+        std::env::var_os("CAMPFIRE_DEV_ASSETS")
+            .map(|dir| (PathBuf::from(dir), false))
+            .or_else(|| std::env::var_os("CAMPFIRE_LIVE_ASSETS").map(|dir| (PathBuf::from(dir), true)))
+    });
 
     pub(super) fn serve(request: &StaticRequest) -> Option<StaticResponse> {
-        let dir = DIR.as_ref()?;
+        let (dir, live) = DIR.as_ref()?;
         let requested = request.path.strip_prefix("/assets/")?;
         let logical = embedded::MANIFEST.iter().find(|(_, digested)| *digested == requested).map_or(requested, |(logical, _)| logical);
-        if logical.contains("..") {
+        if !is_safe(logical) {
             return None;
         }
-        let bytes = std::fs::read(dir.join(logical)).ok()?;
+        let path = dir.join(logical);
+        let modified = std::fs::metadata(&path).ok()?.modified().ok()?;
+        let last_modified = http_date(modified.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64);
+        if *live && request.if_modified_since == Some(last_modified.as_str()) {
+            return Some(StaticResponse { status: 304, headers: Vec::new(), body: Vec::new().into() });
+        }
+        let bytes = std::fs::read(&path).ok()?;
         let extension = logical.rsplit_once('.').map_or("", |(_, extension)| extension);
         let body = match extension {
             "css" => rewrite_css(&String::from_utf8_lossy(&bytes), logical).into_bytes(),
@@ -400,9 +413,49 @@ mod dev {
         let content_type = mime_type(format!(".{extension}").as_bytes()).unwrap_or("application/octet-stream");
         Some(StaticResponse {
             status: 200,
-            headers: vec![("content-type", content_type.to_string()), ("cache-control", "no-store".to_string())],
+            headers: if *live {
+                vec![("content-type", content_type.to_string()), ("cache-control", "no-cache".to_string()), ("last-modified", last_modified)]
+            } else {
+                vec![("content-type", content_type.to_string()), ("cache-control", "no-store".to_string())]
+            },
             body: if request.method == "HEAD" { Vec::new().into() } else { body.into() },
         })
+    }
+
+    /// A relative path inside the directory: no parent steps, no absolute or Windows-style paths
+    /// (`dir.join("/etc/passwd")` would be `/etc/passwd`).
+    fn is_safe(logical: &str) -> bool {
+        !logical.is_empty()
+            && !logical.starts_with('/')
+            && !logical.contains('\\')
+            && !logical.contains('%')
+            && !logical.contains('\0')
+            && logical.split('/').all(|part| !part.is_empty() && part != ".." && part != ".")
+    }
+
+    /// An IMF-fixdate (`Sun, 06 Nov 1994 08:49:37 GMT`) for Unix seconds.
+    fn http_date(seconds: i64) -> String {
+        let (days, rest) = (seconds.div_euclid(86_400), seconds.rem_euclid(86_400));
+        // Howard Hinnant's civil_from_days.
+        let z = days + 719_468;
+        let era = z.div_euclid(146_097);
+        let doe = z - era * 146_097;
+        let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let day = doy - (153 * mp + 2) / 5 + 1;
+        let month = if mp < 10 { mp + 3 } else { mp - 9 };
+        let year = yoe + era * 400 + i64::from(month <= 2);
+        const WEEKDAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
+        const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        format!(
+            "{}, {day:02} {} {year} {:02}:{:02}:{:02} GMT",
+            WEEKDAYS[days.rem_euclid(7) as usize],
+            MONTHS[(month - 1) as usize],
+            rest / 3600,
+            rest % 3600 / 60,
+            rest % 60
+        )
     }
 
     /// `url("fonts/x.woff2")` relative to the stylesheet, as an /assets/ path.
@@ -418,6 +471,20 @@ mod dev {
 
     #[cfg(test)]
     mod tests {
+        #[test]
+        fn only_paths_inside_the_directory() {
+            for bad in ["/etc/passwd", "../x", "a/../../x", "a//b", "./a", "a\\b", "%2e%2e/x", ""] {
+                assert!(!super::is_safe(bad), "{bad}");
+            }
+            assert!(super::is_safe("lib/huddle/huddle.js"));
+        }
+
+        #[test]
+        fn http_dates() {
+            assert_eq!(super::http_date(784_111_777), "Sun, 06 Nov 1994 08:49:37 GMT");
+            assert_eq!(super::http_date(1_791_590_400), "Sat, 10 Oct 2026 00:00:00 GMT");
+        }
+
         #[test]
         fn rewrites_like_the_build_would_resolve() {
             assert_eq!(super::rewrite_css(r#"src: url("fonts/a.woff2")"#, "workspace.css"), r#"src: url("/assets/fonts/a.woff2")"#);

@@ -1,0 +1,23 @@
+#!/bin/bash
+# A copy of production for development, in $CAMPFIRE_DEV_HOME (/root/campfire-dev): the database via
+# SQLite's backup API, with push subscriptions and webhooks removed so nothing it does reaches a
+# phone or a bot, and the uploaded files. Replaces any previous copy of the database.
+set -euo pipefail
+DEV=${CAMPFIRE_DEV_HOME:-/root/campfire-dev}
+PROD=${CAMPFIRE_PROD_DB:-/var/lib/docker/volumes/campfire_campfire/_data/db/production.sqlite3}
+mkdir -p "$DEV/storage/db" "$DEV/storage/files"
+rm -f "$DEV"/storage/db/production.sqlite3*
+python3 -I - "$PROD" "$DEV/storage/db/production.sqlite3" <<'PY'
+import sqlite3, sys
+source = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+copy = sqlite3.connect(sys.argv[2])
+source.backup(copy)
+copy.execute("DELETE FROM push_subscriptions")
+copy.execute("DELETE FROM webhooks")
+copy.commit()
+assert copy.execute("pragma integrity_check").fetchone()[0] == "ok"
+PY
+# Uploaded files (avatars, the logo, attachments), read-only use: rsync only adds what's new.
+rsync -a "$(dirname "$(dirname "$PROD")")/files/" "$DEV/storage/files/"
+chmod -R go-rwx "$DEV"
+echo "staging: $DEV/storage/db/production.sqlite3 (no push subscriptions, no webhooks)"

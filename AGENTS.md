@@ -57,3 +57,67 @@ faster or better.
 `parity/` builds the reference image as `campfire-reference` from `reference/Dockerfile` and runs it
 in production mode with a fixed `SECRET_KEY_BASE` (see `parity/.env.reference`) so that golden
 vectors, seeds and screenshots are reproducible. Those keys are for tests only.
+
+## Iterating fast
+
+The smallest build, the fewest tests that cover the change, the fastest deploy.
+
+### The loop
+
+
+| You changed | See it | Test it | Ship it |
+|---|---|---|---|
+| CSS / JS in `crates/assets/overrides/` (editing an existing file) | reload the dev page: nothing to build | `e2e/run --affected` (smoke + the suites for those files) | `/root/campfire/deploy-assets.sh` (~1 s, no build) |
+| Rust, templates, a new asset file | `script/dev/server` (~25 s debug build) | `cargo test -p <crate you touched>` + `e2e/run --affected` | commit, `/root/campfire/deploy.sh` |
+| Nothing visible (docs, scripts) | — | — | commit; no deploy |
+
+- **Dev server**: `script/dev/server` runs a debug build on http://127.0.0.1:3090 with the overrides
+  served from disk, a staging copy of production (`script/dev/staging`: no push subscriptions, no
+  webhooks) and its own LiveKit. Restart it only after Rust/template changes, or after adding an
+  asset file (the asset manifest is built in).
+- **Type-check before building**: `cargo check -p campfire` (or the crate you touched) catches
+  most mistakes in seconds; don't wait for a full build or a test run to find a typo.
+- Rust comes from the toolchain image: `docker run --rm -v $PWD:/src -w /src -v
+  campfire-cargo-registry:/usr/local/cargo/registry -v campfire-cargo-target:/src/target
+  campfire-toolchain:local cargo …` (that's what `script/dev/server` uses).
+
+### Tests: run what the change can break, nothing more
+
+- `e2e/run --affected` runs `smoke` (~20 s) plus the suites mapped to the files changed since the
+  deployed revision, in parallel. Name suites to run just those: `e2e/run huddle schedule`.
+- `e2e/run --all` (~5 min, threads is the slowest) only before risky deploys: changes to the
+  composer, the message list, Turbo/Stimulus plumbing, cable channels, or many files at once.
+- Rust: `cargo test -p <crate>` for the crate touched; `-p campfire_views` whenever templates or
+  the sidebar/composer markup change (the parity goldens filter this app's own markup: add a
+  marker in `crates/views/tests/messages_support/mod.rs` and `parity_a.rs` for new markup).
+  `cargo test --workspace --exclude html5ever` only before a release or a schema change.
+- Known, not regressions: `threads` fails "Bob edits his reply"/"screenshots" in headless Chromium
+  (the runner ignores those); two Rust timing tests (`parses_pathological_pages_quickly`,
+  `deeply_nested_content_attachments_render_quickly`) fail in debug builds on a busy machine.
+- Never edit an existing asset's imports to a module the running dev server doesn't know (a new
+  file) while suites run: restart the dev server first.
+- A new feature gets a suite in `e2e/suites/<name>.e2e.js` (copy `smoke`'s shape: `check()`,
+  exit non-zero on failure) and a line in `affected()` in `e2e/run`.
+
+### Deploys (team.prewedd.com)
+
+- `/root/campfire/deploy-assets.sh`: edits to existing CSS/JS only. Copies the overrides to
+  `/root/campfire/assets`, which production serves live (`CAMPFIRE_LIVE_ASSETS`). It refuses, and
+  says so, when anything else changed.
+- `/root/campfire/deploy.sh`: everything else. Needs a clean tree (it tags the image with the
+  commit). Compiles incrementally in the toolchain image (`profile.deploy`: this workspace
+  unoptimized, every dependency at opt-level 3 and cached; a one-line Rust or template change
+  compiles in ~16 s, a cold build ~4 min), wraps the binary in the cached runtime image
+  (`Dockerfile.prebuilt`), smoke-tests it on a copy of production, backs up the database, switches,
+  and rolls back if it isn't healthy within a minute. The TLIC apps' health is printed at the end.
+- The Dockerfile's own full build (`docker build .`) stays for releases and CI; deploys don't use it.
+- Huddles: never restart the `livekit` container while people are in a huddle (it drops them for a
+  few seconds); `docker logs livekit` shows who is.
+
+### Don't
+
+- Don't run the full matrix "to be safe" after a CSS tweak, or rebuild images to check a template:
+  use the dev server.
+- Don't run two cargo builds against the same target directory at once (they queue on its lock).
+- Don't leave work only in a session's scratch directory: suites, scripts and data belong in the
+  repo (`e2e/`, `script/dev/`) or `/root/campfire-dev`.

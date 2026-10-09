@@ -1,0 +1,37 @@
+#!/bin/bash
+# The development server on http://127.0.0.1:3090: a debug build from this checkout (~25 s after a
+# Rust change), with crates/assets/overrides served live from disk (CSS/JS changes need nothing but
+# a reload), on a copy of production (script/dev/staging), with a LiveKit of its own for huddles.
+#   script/dev/server          (re)start it after a Rust or template change
+set -euo pipefail
+REPO=$(cd "$(dirname "$0")/../.." && pwd)
+DEV=${CAMPFIRE_DEV_HOME:-/root/campfire-dev}
+[ -f "$DEV/storage/db/production.sqlite3" ] || "$REPO/script/dev/staging"
+[ -f "$DEV/secret" ] || (umask 077 && openssl rand -hex 64 > "$DEV/secret")
+
+if [ ! -f "$DEV/livekit.yaml" ]; then
+  cat > "$DEV/livekit.yaml" <<YAML
+port: 7890
+bind_addresses: ["127.0.0.1", "172.17.0.1"]
+rtc: { tcp_port: 7891, port_range_start: 7892, port_range_end: 7893, use_external_ip: false, node_ip: 127.0.0.1 }
+keys: { devkey: devsecret-devsecret-devsecret-devsecret }
+webhook: { api_key: devkey, urls: ["http://127.0.0.1:3090/livekit/webhook"] }
+YAML
+fi
+docker inspect livekit-dev >/dev/null 2>&1 || docker run -d --name livekit-dev --restart unless-stopped --network host \
+  --cpus 2 --memory 1g -v "$DEV/livekit.yaml":/etc/livekit.yaml:ro livekit/livekit-server:v1.13.9 --config /etc/livekit.yaml >/dev/null
+
+docker rm -f campfire-dev >/dev/null 2>&1 || true
+docker run -d --name campfire-dev --cpus 10 --memory 16g --ulimit nofile=65536:65536 -p 127.0.0.1:3090:80 \
+  -v "$REPO":/src -w /src -v campfire-cargo-registry:/usr/local/cargo/registry -v campfire-cargo-target:/src/target \
+  -v "$DEV/storage":/storage -e CAMPFIRE_STORAGE_PATH=/storage -e SECRET_KEY_BASE="$(cat "$DEV/secret")" -e DISABLE_SSL=true \
+  -e LIVEKIT_URL=ws://127.0.0.1:7890 -e LIVEKIT_INTERNAL_URL=http://172.17.0.1:7890 \
+  -e LIVEKIT_API_KEY=devkey -e LIVEKIT_API_SECRET=devsecret-devsecret-devsecret-devsecret \
+  -e CAMPFIRE_DEV_ASSETS=/src/crates/assets/overrides -e CARGO_TERM_COLOR=never \
+  campfire-toolchain:local cargo run -q -p campfire -- server >/dev/null
+start=$(date +%s)
+until curl -sf -o /dev/null http://127.0.0.1:3090/up; do
+  docker inspect -f '{{.State.Running}}' campfire-dev 2>/dev/null | grep -q true || { docker logs campfire-dev 2>&1 | tail -30; exit 1; }
+  sleep 1
+done
+echo "dev: http://127.0.0.1:3090 ($(( $(date +%s) - start )) s)"

@@ -3,5 +3,6 @@ target/
 /parity/out
 /parity/.seed
 /parity/.native
-/.claude
+/.claude/*
+!/.claude/skills/
 /.cargo-home

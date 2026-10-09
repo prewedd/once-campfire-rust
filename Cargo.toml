@@ -89,8 +89,17 @@ codegen-units = 1
 # What PreWedd deploys (`docker build --build-arg CARGO_PROFILE=deploy`): release, with thin LTO,
 # parallel codegen and incremental builds, so a one-line change rebuilds in a fraction of the
 # time. The difference at runtime doesn't show at a small team's load.
+# Deploys (/root/campfire/deploy.sh): built for iteration speed, incrementally, like the dev build:
+# this workspace's crates unoptimized, no LTO, many codegen units, so a one-line change rebuilds in
+# about as long as a dev build. Release builds keep full optimization.
 [profile.deploy]
 inherits = "release"
-lto = "thin"
-codegen-units = 16
+opt-level = 0
+lto = false
+codegen-units = 256
 incremental = true
+
+# …with every dependency optimized: compiled once and cached, so their speed costs nothing per
+# deploy, and the hot paths (gzip, SQLite, JSON, WebSocket framing, libvips bindings) are theirs.
+[profile.deploy.package."*"]
+opt-level = 3

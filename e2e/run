@@ -1,0 +1,64 @@
+#!/bin/bash
+# End-to-end suites, in parallel, in the Playwright image (every browser and its libraries).
+#
+#   e2e/run smoke huddle            the named suites
+#   e2e/run --affected [rev]        smoke, plus the suites for what changed since rev (default:
+#                                   the deployed revision, else HEAD~1), committed or not
+#   e2e/run --all                   every suite (~5 min, the slowest being threads)
+#
+# Against BASE (default http://127.0.0.1:3090, script/dev/server). Output (screenshots, logs) in
+# e2e/out/. Exits non-zero if any suite failed. See AGENTS.md for when to run what.
+set -uo pipefail
+E2E=$(cd "$(dirname "$0")" && pwd)
+REPO=$(dirname "$E2E")
+BASE=${BASE:-http://127.0.0.1:3090}
+DB=${CAMPFIRE_DEV_HOME:-/root/campfire-dev}/storage/db/production.sqlite3
+IMAGE=mcr.microsoft.com/playwright:v1.47.2-noble
+ALL="smoke huddle huddle-browsers screen ui3 ui4 workspace threads threadsview schedule"
+
+# Which suites cover which files (first match wins per file; everything also gets smoke).
+affected() {
+  local rev=$1
+  { git -C "$REPO" diff --name-only "$rev"; git -C "$REPO" ls-files --others --exclude-standard; } | sort -u | while read -r file; do
+    case "$file" in
+      e2e/suites/*.e2e.js) basename "$file" .e2e.js ;;
+      e2e/*|*.md|script/*|.claude/*|.gitignore) ;;
+      *huddle*|*livekit*) echo huddle screen huddle-browsers ;;
+      *schedul*) echo schedule ;;
+      *thread*|*refresh_room*|*scroll_manager*|*composer*|*messages_controller*) echo threads threadsview ui3 ;;
+      *modal*|*involvement*|*reorder*|*sorted_list*|users/pane*|*sidebars*|*memberships*) echo ui4 ;;
+      *emoji*|*boost*|*reaction*|*initializers/workspace.js) echo workspace ui3 ;;
+      *online*|*presence*|*theme*) echo ui3 ;;
+      crates/assets/overrides/*.css) echo ui3 ;;
+    esac
+  done | tr ' ' '\n' | sort -u | tr '\n' ' '
+}
+
+case "${1:-}" in
+  --all) SUITES=$ALL ;;
+  --affected)
+    rev=${2:-$(grep -oP 'campfire-prewedd:\K\w+' /root/campfire/compose.yml 2>/dev/null || echo HEAD~1)}
+    SUITES="smoke $(affected "$rev")"
+    echo "e2e: changes since $rev → $SUITES" ;;
+  "") echo "usage: e2e/run <suite ...> | --affected [rev] | --all   (suites: $ALL)"; exit 2 ;;
+  *) SUITES="$*" ;;
+esac
+
+CODE=$(python3 -I -c "import sqlite3,sys; print(sqlite3.connect(f'file:{sys.argv[1]}?mode=ro', uri=True).execute('select join_code from accounts').fetchone()[0])" "$DB")
+curl -sf -o /dev/null "$BASE/up" || { echo "e2e: nothing at $BASE (script/dev/server)"; exit 1; }
+mkdir -p "$E2E/out"
+
+exec docker run --rm --network host --ipc=host --cpus 12 -v "$E2E":/e2e -w /e2e \
+  -e SUITES="$SUITES" -e BASE="$BASE" -e CODE="$CODE" -e JOBS="${E2E_JOBS:-5}" "$IMAGE" bash -c '
+  [ -d node_modules/playwright ] || npm install --silent --no-audit --no-fund >/dev/null 2>&1
+  start=$(date +%s)
+  # At most $JOBS at once: each runs two browsers against a debug build.
+  printf "%s\n" $SUITES | xargs -P "$JOBS" -I{} sh -c "timeout 600 node suites/{}.e2e.js /e2e \"$BASE\" \"$CODE\" /e2e/out > out/{}.log 2>&1; echo \$? > out/{}.status"
+  failed=0
+  for suite in $SUITES; do
+    status=$(cat out/$suite.status)
+    summary=$(grep -E "checks passed" out/$suite.log | tail -1)
+    if [ "$status" = 0 ]; then echo "  ok    $suite  $summary"; else failed=1; echo "  FAIL  $suite  $summary"; grep -E "^FAIL" out/$suite.log | sed "s/^/          /"; fi
+  done
+  echo "e2e: $(( $(date +%s) - start )) s"
+  exit $failed'

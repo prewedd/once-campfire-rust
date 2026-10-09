@@ -1,0 +1,6 @@
+{
+  "name": "campfire-e2e",
+  "private": true,
+  "description": "End-to-end suites for this app's own features; run with e2e/run (see AGENTS.md)",
+  "dependencies": { "playwright": "1.47.2" }
+}
