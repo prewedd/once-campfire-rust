@@ -294,6 +294,13 @@ pub(crate) async fn canonicalize_body(app: &App, body: String, request_host: Opt
     app.db.read(move |conn| Ok(canonical_body(conn, &app2, &body, request_host))).await.map_err(db_error)
 }
 
+/// A canonical body as plain text, for previews (a scheduled message's).
+pub(crate) fn plain_text_of(conn: &campfire_db::Connection, app: &App, body: &str) -> String {
+    let resolver = DbResolver { conn, secrets: &app.secrets, now: app.clock.now() };
+    let ctx = resolver.render_context(None);
+    Content::load(body, &ctx).and_then(|content| content.to_plain_text(&ctx)).unwrap_or_default()
+}
+
 /// Assigning a String to a rich text attribute stores the canonicalized content
 /// (`ActionText::Content.new(body, canonicalize: true).to_html`).
 pub(crate) fn canonical_body(conn: &campfire_db::Connection, app: &App, body: &str, request_host: Option<String>) -> String {
@@ -470,34 +477,35 @@ fn thread_summary_html(presenter: &Presenter, parent: &Message) -> campfire_db::
 pub(crate) async fn broadcast_replace(c: &Ctx, room: &Room, message: &Message) -> Result<()> {
     let (app, room, message) = (c.app().clone(), room.clone(), message.clone());
     let base_url = page::renderer_base_url(c);
-    c.app()
-        .db
-        .read(move |conn| {
-            let presenter = Presenter::new(conn, &app, None);
-            let view = presenter.message(&message)?;
-            let account = campfire_db::Account::first(conn)?;
-            let html = page::render_detached_at(&app, account.as_ref(), &base_url, |ctx| {
-                views::PresentationPartial { ctx, message: &view }.render()
-            })
-            .map_err(|e| campfire_db::Error::Other(e.to_string()))?;
-            let partials = Rendered { message_presentation: Some(html), ..Rendered::default() };
-            app.broadcasts.message_replace(&room, &message, &partials);
-            Ok(())
-        })
-        .await
-        .map_err(db_error)
+    c.app().db.read(move |conn| broadcast_replace_on(conn, &app, &room, &message, &base_url)).await.map_err(db_error)
+}
+
+/// [`broadcast_replace`] on a reader, with URLs at `base_url`; a huddle's card ending uses it too.
+pub(crate) fn broadcast_replace_on(conn: &campfire_db::Connection, app: &App, room: &Room, message: &Message, base_url: &str) -> campfire_db::Result<()> {
+    let presenter = Presenter::new(conn, app, None);
+    let view = presenter.message(message)?;
+    let account = campfire_db::Account::first(conn)?;
+    let html = page::render_detached_at(app, account.as_ref(), base_url, |ctx| views::PresentationPartial { ctx, message: &view }.render())
+        .map_err(|e| campfire_db::Error::Other(e.to_string()))?;
+    let partials = Rendered { message_presentation: Some(html), ..Rendered::default() };
+    app.broadcasts.message_replace(room, message, &partials);
+    Ok(())
 }
 
 /// `deliver_webhooks_to_bots`: every active bot in a direct room, else every mentioned active
 /// bot, except the message's creator.
 pub(crate) async fn deliver_webhooks_to_bots(c: &Ctx, room: &Room, message: &Message) -> Result<()> {
-    let (app, room, eligible) = (c.app().clone(), room.clone(), message.clone());
-    let bots: Vec<User> = c
-        .app()
+    deliver_webhooks_to_bots_on(c.app(), room, message).await
+}
+
+/// [`deliver_webhooks_to_bots`] outside a request (a scheduled message posting).
+pub(crate) async fn deliver_webhooks_to_bots_on(app: &App, room: &Room, message: &Message) -> Result<()> {
+    let (reader, room, eligible) = (app.clone(), room.clone(), message.clone());
+    let bots: Vec<User> = app
         .db
         .read(move |conn| {
             let candidates =
-                if room.direct() { room.active_bots(conn)? } else { eligible.mentionees(conn, &*app.db.env().rich_text)? };
+                if room.direct() { room.active_bots(conn)? } else { eligible.mentionees(conn, &*reader.db.env().rich_text)? };
             Ok(candidates
                 .into_iter()
                 .filter(|user| user.role == Role::Bot && user.status == Status::Active && user.id != eligible.creator_id)
@@ -510,8 +518,7 @@ pub(crate) async fn deliver_webhooks_to_bots(c: &Ctx, room: &Room, message: &Mes
     }
     // bot.deliver_webhook_later(@message)
     let message_id = message.id;
-    c.app()
-        .db
+    app.db
         .write(move |tx| bots.iter().try_for_each(|bot| bot.deliver_webhook_later(tx, message_id)))
         .await
         .map_err(db_error)

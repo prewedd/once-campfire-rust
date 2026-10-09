@@ -9,6 +9,7 @@ mod membership_test;
 mod message_test;
 mod push_test;
 mod room_test;
+mod scheduled_message_test;
 mod thread_test;
 mod user_test;
 

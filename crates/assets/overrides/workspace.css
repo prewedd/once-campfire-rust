@@ -2331,6 +2331,64 @@ body:has(#huddle:not([hidden], .huddle--expanded)) #sidebar .sidebar__container 
 
 .huddle__grid { display: none; }
 
+.huddle__meter {
+  display: block;
+  height: 4px;
+  margin-block-start: 4px;
+  border-radius: 2px;
+  background: var(--ws-bg-subtle);
+  overflow: hidden;
+}
+
+.huddle__meter span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--ws-online);
+  transition: width 60ms linear;
+}
+
+.huddle-invite {
+  position: fixed;
+  z-index: 41;
+  inset-block-start: 16px;
+  inset-inline-end: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 10px 10px 14px;
+  border-radius: var(--ws-radius-lg);
+  background: var(--ws-bg-raised);
+  color: var(--ws-ink);
+  border: 1px solid var(--ws-border);
+  box-shadow: var(--ws-shadow-lg);
+  font: 500 14px var(--ws-font);
+  animation: huddle-invite-in 180ms ease-out;
+}
+
+@keyframes huddle-invite-in {
+  from { transform: translateY(-8px); opacity: 0; }
+}
+
+.huddle-invite__icon { font-size: 20px; }
+.huddle-invite__text { flex: 1; min-width: 0; }
+
+.huddle-invite__join,
+.huddle-invite__dismiss {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--ws-radius);
+  font: 600 13px var(--ws-font);
+  cursor: pointer;
+}
+
+.huddle-invite__join { background: var(--ws-online); color: #fff; }
+.huddle-invite__join:hover { background: color-mix(in oklab, var(--ws-online) 85%, black); }
+.huddle-invite__dismiss { padding: 0 10px; color: var(--ws-muted); }
+.huddle-invite__dismiss:hover { background: var(--ws-bg-hover); color: var(--ws-ink); }
+:is(.huddle-invite__join, .huddle-invite__dismiss):focus-visible { outline: none; box-shadow: var(--ws-ring); }
+
 /* The stage */
 
 .huddle--expanded {
@@ -2368,9 +2426,12 @@ body:has(#huddle:not([hidden], .huddle--expanded)) #sidebar .sidebar__container 
   overflow: auto;
 }
 
+/* A screen being shared takes the stage; everyone else is a strip beside it (huddle.js sets --people). */
 .huddle--expanded .huddle__grid:has(.huddle__tile--screen) {
-  grid-template-columns: 1fr minmax(200px, 260px);
-  grid-auto-rows: minmax(140px, auto);
+  grid-template-columns: 1fr minmax(180px, 240px);
+  grid-template-rows: repeat(var(--people, 1), minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .huddle__tile {
@@ -2387,9 +2448,12 @@ body:has(#huddle:not([hidden], .huddle--expanded)) #sidebar .sidebar__container 
 
 .huddle__tile--screen {
   grid-column: 1;
-  grid-row: 1 / span 99;
+  grid-row: 1 / span var(--people, 1);
   background: #000;
 }
+
+/* A second screen at once joins the strip */
+.huddle__tile--screen ~ .huddle__tile--screen { grid-column: 2; grid-row: auto; }
 
 .huddle__media {
   position: absolute;
@@ -2478,10 +2542,392 @@ body:has(#huddle:not([hidden], .huddle--expanded)) #sidebar .sidebar__container 
   .huddle--expanded .huddle__window { border-radius: 0; }
   .huddle--expanded .huddle__grid,
   .huddle--expanded .huddle__grid:has(.huddle__tile--screen) { grid-template-columns: 1fr; }
+  .huddle--expanded .huddle__grid:has(.huddle__tile--screen) { grid-template-rows: none; grid-auto-rows: minmax(120px, 1fr); overflow: auto; }
   .huddle__tile--screen { grid-row: auto; min-height: 40vh; }
   .huddle-btn__label { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #sidebar .room--huddle::after, .huddle__reaction, .huddle__tile-reaction { animation: none; }
+  #sidebar .room--huddle::after, .huddle__reaction, .huddle__tile-reaction, .huddle-invite { animation: none; }
 }
+
+/* ── Modals: settings and the other card screens, over the conversation ───────────────────── */
+
+.ws-modal {
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(86vh, 900px);
+  padding: 0;
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-radius-lg);
+  background: var(--ws-bg-raised);
+  color: var(--ws-ink);
+  box-shadow: var(--ws-shadow-lg);
+  overflow: hidden;
+  font-family: var(--ws-font);
+}
+
+.ws-modal[open] {
+  display: flex;
+  flex-direction: column;
+  animation: ws-modal-in 160ms ease-out;
+}
+
+.ws-modal::backdrop {
+  background: rgb(9 9 11 / 0.45);
+  backdrop-filter: blur(2px);
+}
+
+@keyframes ws-modal-in {
+  from { transform: translateY(8px) scale(0.98); opacity: 0; }
+}
+
+.ws-modal__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 14px 20px;
+  border-bottom: 1px solid var(--ws-border);
+}
+
+.ws-modal__title {
+  flex: 1;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-modal__actions {
+  display: flex;
+  gap: 4px;
+}
+
+.ws-modal__actions .btn { --btn-size: 32px; }
+
+.ws-modal__icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--ws-radius);
+  color: var(--ws-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ws-modal__back { font-size: 26px; padding-bottom: 3px; }
+.ws-modal__icon[hidden] { display: none; }
+.ws-modal__icon:hover { background: var(--ws-bg-hover); color: var(--ws-ink); }
+.ws-modal__icon:focus-visible { outline: none; box-shadow: var(--ws-ring); }
+
+.ws-modal__body {
+  flex: 1;
+  min-height: 120px;
+  overflow: auto;
+  padding: 20px 24px 24px;
+  transition: opacity 120ms;
+}
+
+.ws-modal--loading .ws-modal__body { opacity: 0.4; pointer-events: none; }
+
+/* The page's own card becomes the modal's content */
+.ws-modal .panel {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: none;
+}
+
+.ws-modal .panel > :is(h1, h2):first-child { display: none; }
+.ws-modal__body > *, .ws-modal .panel > *, .ws-modal .panel form > * { margin-inline: auto; }
+
+@media (max-width: 640px) {
+  .ws-modal { width: 100vw; max-width: 100vw; max-height: 100dvh; height: 100dvh; border-radius: 0; border: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-modal[open] { animation: none; }
+}
+
+/* ── Notifications menu (lib/workspace/involvement.js) ───────────────────────────────────────── */
+
+
+
+.involvement-menu {
+  position: fixed;
+  z-index: 60;
+  width: 290px;
+  padding: 6px;
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-radius-lg);
+  background: var(--ws-bg-raised);
+  box-shadow: var(--ws-shadow-lg);
+  font-family: var(--ws-font);
+  animation: huddle-invite-in 120ms ease-out;
+}
+
+.involvement-menu__title {
+  margin: 4px 10px 6px;
+  color: var(--ws-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.involvement-menu__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--ws-radius);
+  color: var(--ws-ink);
+  text-align: start;
+  cursor: pointer;
+}
+
+.involvement-menu__item img { margin-top: 2px; filter: var(--ws-ink-filter); }
+.involvement-menu__item span { display: grid; gap: 1px; }
+.involvement-menu__item strong { font-size: 14px; font-weight: 600; }
+.involvement-menu__item small { color: var(--ws-muted); font-size: 12.5px; }
+.involvement-menu__item:hover, .involvement-menu__item:focus-visible { background: var(--ws-bg-hover); outline: none; }
+.involvement-menu__item[aria-checked="true"] { background: var(--ws-accent-soft); }
+.involvement-menu__item[aria-checked="true"] strong::after { content: " ✓"; color: var(--ws-accent-ink); }
+
+/* ── Profile in the right-hand panel (users/pane.html), as Slack lays it out ────────────────── */
+
+.profile-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 20px;
+}
+
+.profile-pane__photo {
+  width: 100%;
+  max-width: 260px;
+  aspect-ratio: 1;
+  margin: 0 auto 12px;
+  border-radius: var(--ws-radius-lg);
+  object-fit: cover;
+  background: var(--ws-bg-subtle);
+}
+
+.profile-pane__name {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.profile-pane__bio {
+  margin: 0;
+  color: var(--ws-ink-soft);
+  font-size: 15px;
+}
+
+.profile-pane__presence { margin: 2px 0 0; color: var(--ws-muted); font-size: 14px; }
+
+.profile-pane__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 14px 4px;
+}
+
+.profile-pane__actions .button_to { display: contents; }
+
+.profile-pane__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--ws-border-strong);
+  border-radius: var(--ws-radius);
+  background: var(--ws-bg-raised);
+  color: var(--ws-ink);
+  font: 600 14px var(--ws-font);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.profile-pane__btn:hover { background: var(--ws-bg-hover); }
+.profile-pane__btn:focus-visible { outline: none; box-shadow: var(--ws-ring); }
+.profile-pane__btn img { filter: var(--ws-ink-filter); }
+
+.profile-pane__btn--primary {
+  border-color: transparent;
+  background: var(--ws-accent);
+  color: var(--ws-on-accent);
+}
+
+.profile-pane__btn--primary:hover { background: var(--ws-accent-hover); }
+
+.profile-pane__btn.huddle-btn--live { border-color: var(--ws-online); color: color-mix(in oklab, var(--ws-online) 70%, var(--ws-ink)); }
+.profile-pane__btn.huddle-btn--joined { border-color: transparent; background: var(--ws-online); color: #fff; }
+.profile-pane__btn.huddle-btn--joined img { filter: invert(100%); }
+
+.profile-pane__section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ws-border);
+  font-size: 14px;
+}
+
+.profile-pane__section h4 { margin: 0 0 8px; font-size: 14px; font-weight: 700; }
+.profile-pane__section p { margin: 0; display: grid; gap: 2px; }
+.profile-pane__label { color: var(--ws-muted); font-size: 12.5px; }
+.profile-pane.banned .profile-pane__photo { filter: grayscale(1); opacity: 0.6; }
+
+/* Dragging a channel into place (lib/workspace/reorder.js) */
+#sidebar #shared_rooms > [draggable="true"] { cursor: pointer; }
+#sidebar .room--dragging { opacity: 0.35; }
+
+/* ── Scheduled messages (lib/workspace/schedule.js) ───────────────────────────────────────────── */
+
+.composer__schedule-btn img { opacity: 0.75; }
+
+.schedule-menu {
+  position: fixed;
+  z-index: 60;
+  width: 280px;
+  padding: 6px;
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-radius-lg);
+  background: var(--ws-bg-raised);
+  color: var(--ws-ink);
+  box-shadow: var(--ws-shadow-lg);
+  font-family: var(--ws-font);
+  animation: huddle-invite-in 120ms ease-out;
+}
+
+.schedule-menu__title {
+  margin: 4px 10px 6px;
+  color: var(--ws-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.schedule-menu__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--ws-radius);
+  color: var(--ws-ink);
+  font-size: 14px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.schedule-menu__item strong { font-weight: 600; }
+.schedule-menu__item small { color: var(--ws-muted); font-size: 12.5px; }
+.schedule-menu__item:hover, .schedule-menu__item:focus-visible { background: var(--ws-bg-hover); outline: none; }
+
+.schedule-menu__custom {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  margin: 6px 4px 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ws-border);
+}
+
+.schedule-menu__custom label,
+.scheduled-item__reschedule {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+  color: var(--ws-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.schedule-menu input[type=datetime-local],
+.scheduled-item input[type=datetime-local] {
+  padding: 6px 8px;
+  border: 1px solid var(--ws-border-strong);
+  border-radius: var(--ws-radius-sm);
+  background: var(--ws-bg);
+  color: var(--ws-ink);
+  font: 400 13px var(--ws-font);
+  color-scheme: light dark;
+}
+
+.schedule-menu__go,
+.scheduled-item__actions button {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--ws-radius);
+  background: var(--ws-accent);
+  color: var(--ws-on-accent);
+  font: 600 13px var(--ws-font);
+  cursor: pointer;
+}
+
+.schedule-menu__go:hover { background: var(--ws-accent-hover); }
+.schedule-menu__error { margin: 6px 10px 2px; color: #e5484d; font-size: 12.5px; }
+.schedule-menu__error[hidden] { display: none; }
+
+.schedule-toast {
+  position: fixed;
+  z-index: 60;
+  inset-block-end: 24px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  padding: 10px 16px;
+  border-radius: var(--ws-radius-lg);
+  background: var(--ws-ink);
+  color: var(--ws-bg);
+  box-shadow: var(--ws-shadow-lg);
+  font: 500 14px var(--ws-font);
+  animation: huddle-invite-in 160ms ease-out;
+}
+
+.scheduled-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 var(--ws-gutter) 4px;
+  padding: 6px 10px;
+  border-radius: var(--ws-radius);
+  background: var(--ws-bg-subtle);
+  color: var(--ws-ink-soft);
+  font: 500 13px var(--ws-font);
+  text-align: start;
+  cursor: pointer;
+}
+
+.scheduled-bar img { filter: var(--ws-ink-filter); opacity: 0.7; }
+.scheduled-bar span { margin-inline-start: auto; color: var(--ws-accent-ink); font-weight: 600; }
+.scheduled-bar:hover { background: var(--ws-bg-hover); }
+
+.scheduled-list { display: grid; align-content: start; gap: 10px; padding: 16px; }
+.scheduled-list__empty { margin: 8px 4px; color: var(--ws-muted); font-size: 14px; }
+
+.scheduled-item {
+  padding: 12px;
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-radius-lg);
+  background: var(--ws-bg-raised);
+}
+
+.scheduled-item__when { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; color: var(--ws-muted); font-size: 12.5px; font-weight: 600; }
+.scheduled-item__when img { filter: var(--ws-ink-filter); opacity: 0.7; }
+.scheduled-item__preview { margin: 0 0 10px; font-size: 14.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.scheduled-item__actions { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.scheduled-item__actions .scheduled-item__delete { background: transparent; color: #e5484d; border: 1px solid var(--ws-border-strong); }

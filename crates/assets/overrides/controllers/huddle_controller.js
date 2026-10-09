@@ -28,6 +28,10 @@ export default class extends Controller {
     this.element.setAttribute("aria-pressed", here)
     this.labelTarget.textContent = here ? "Leave" : people.length ? "Join" : "Huddle"
     this.element.title = here ? "Leave the huddle" : people.length ? `Join ${people.map(person => person.name).join(", ")}` : "Start a huddle"
+    // Only when they change: replacing what's under the pointer mid-click loses the click.
+    const shown = people.slice(0, 3).map(person => person.avatar_url).join(" ")
+    if (this.peopleTarget.dataset.shown === shown) return
+    this.peopleTarget.dataset.shown = shown
     this.peopleTarget.replaceChildren(...people.slice(0, 3).map(person => {
       const image = document.createElement("img")
       image.src = person.avatar_url

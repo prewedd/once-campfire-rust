@@ -73,3 +73,17 @@ impl SidebarData {
         }
     }
 }
+
+/// `POST /users/me/sidebar/positions`: the channels in the order this person dragged them into,
+/// as `room_ids=3,1,7` (plans/redesign.md). Rooms they aren't in are ignored.
+pub async fn reorder(c: &mut Ctx) -> Result {
+    concerns::before_actions(c, Before::default()).await?;
+    let user_id = concerns::require_current_user(c)?.id;
+    let room_ids: Vec<i64> = c.param_str("room_ids").unwrap_or_default().split(',').filter_map(|id| id.trim().parse().ok()).take(500).collect();
+    c.app()
+        .db
+        .write(move |tx| campfire_db::Membership::reorder(tx, user_id, &room_ids))
+        .await
+        .map_err(Error::internal)?;
+    Ok(concerns::head(StatusCode::NO_CONTENT))
+}

@@ -24,6 +24,7 @@ const ICONS = {
   expand: '<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>',
   collapse: '<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/>',
   leave: '<path d="M10.7 13.3a16 16 0 0 0 3.4 2.6l1.3-1.3a2 2 0 0 1 2.1-.5 13 13 0 0 0 2.8.7 2 2 0 0 1 1.7 2v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1M5.2 13.4A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9M22 2 2 22"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
   volume: '<path d="M11 5 6 9H2v6h4l5 4V5ZM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
 }
 
@@ -398,6 +399,7 @@ class Huddle extends EventTarget {
       ...people.filter(person => person.screen).map(person => ({ key: `${person.identity}:screen`, person, track: person.screen.track, screen: true })),
       ...people.map(person => ({ key: person.identity, person, track: person.camera?.track })),
     ]
+    grid.style.setProperty("--people", Math.max(1, tiles.length - 1))
     const keys = new Set(tiles.map(tile => tile.key))
     grid.querySelectorAll("[data-key]").forEach(element => keys.has(element.dataset.key) || element.remove())
 
@@ -449,6 +451,7 @@ class Huddle extends EventTarget {
           <span class="huddle__live" aria-hidden="true"></span>
           <span class="huddle__room"></span>
           <span class="huddle__timer"></span>
+          <button type="button" class="huddle__control huddle__control--plain" data-huddle-copy title="Copy huddle link" aria-label="Copy huddle link">${icon("link")}</button>
           <button type="button" class="huddle__control huddle__control--plain" data-huddle-control="expand"></button>
         </div>
         <p class="huddle__status" hidden></p>
@@ -492,6 +495,7 @@ class Huddle extends EventTarget {
     else if (target.dataset.huddleReact) this.react(target.dataset.huddleReact)
     else if (target.dataset.huddleLeave !== undefined) this.leave()
     else if (target.dataset.huddleOpen) this.#togglePopover(target.dataset.huddleOpen)
+    else if (target.dataset.huddleCopy !== undefined) this.copyLink()
   }
 
   #input = (event) => {
@@ -526,6 +530,7 @@ class Huddle extends EventTarget {
         <select data-device="${kind}">
           ${options[index].map(device => `<option value="${escapeHTML(device.deviceId)}"${device.deviceId === active(kind) ? " selected" : ""}>${escapeHTML(device.label || `${label} ${device.deviceId.slice(0, 4)}`)}</option>`).join("") || `<option>No ${label.toLowerCase()} found</option>`}
         </select>
+        ${kind === "audioinput" ? `<span class="huddle__meter" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100"><span></span></span>` : ""}
       </label>`).join("") + [
       [ "noiseSuppression", "Noise suppression" ],
       [ "echoCancellation", "Echo cancellation" ],
@@ -533,6 +538,40 @@ class Huddle extends EventTarget {
     ].map(([ name, label ]) => `
       <label class="huddle__toggle"><input type="checkbox" data-processing="${name}"${this.#prefs[name] ? " checked" : ""}> ${label}</label>`).join("") +
       `<p class="huddle__hint">⌘⇧Space (Ctrl+Shift+Space) mutes and unmutes.</p>`
+    this.#meter(popover)
+  }
+
+  // The microphone's level, live while settings are open: "can they hear me?"
+  #meter(popover) {
+    const track = this.#room?.localParticipant.getTrackPublication("microphone")?.track?.mediaStreamTrack
+    const bar = popover.querySelector(".huddle__meter span")
+    if (!track || !bar) return
+    try {
+      const context = chime.context ??= new AudioContext()
+      context.resume()
+      const analyser = context.createAnalyser()
+      analyser.fftSize = 512
+      const source = context.createMediaStreamSource(new MediaStream([ track ]))
+      source.connect(analyser)
+      const samples = new Uint8Array(analyser.fftSize)
+      const tick = () => {
+        if (popover.hidden || !bar.isConnected) return source.disconnect()
+        analyser.getByteTimeDomainData(samples)
+        const peak = samples.reduce((max, sample) => Math.max(max, Math.abs(sample - 128)), 0)
+        const level = Math.min(100, Math.round(peak / 128 * 160))
+        bar.style.width = `${level}%`
+        bar.parentElement.setAttribute("aria-valuenow", level)
+        requestAnimationFrame(tick)
+      }
+      tick()
+    } catch {
+      // No Web Audio: no meter
+    }
+  }
+
+  copyLink() {
+    const url = `${location.origin}/rooms/${this.roomId}#huddle`
+    navigator.clipboard?.writeText(url).then(() => this.#flash("Huddle link copied"), () => this.#flash(url))
   }
 
   #flash(text) {
@@ -562,11 +601,14 @@ export async function trackHuddles() {
         huddles.clear()
         Object.entries(data.huddles).forEach(([ roomId, participants ]) => huddles.set(roomId, participants))
       } else if (data.participants.length) {
+        const started = !huddles.get(String(data.room_id))?.length
         huddles.set(String(data.room_id), data.participants)
+        if (started) invite(String(data.room_id), data.participants[0])
       } else {
         huddles.delete(String(data.room_id))
       }
       showHuddles()
+      showInvite()
     }
   })
 }
@@ -581,6 +623,58 @@ export function showHuddles() {
   huddle.dispatchEvent(new Event("change"))
 }
 
+// "Ana started a huddle in #general": like Slack ringing you in. DMs ring a few times; when the
+// tab is in the background, a system notification too (if Campfire may show them).
+let pending = null
+
+function invite(roomId, starter) {
+  if (huddle.roomId === roomId || String(starter?.user_id) === String(window.Current?.user?.id)) return
+  const link = document.querySelector(`#sidebar [data-room-id="${roomId}"]`)
+  const direct = !!link?.closest(".directs")
+  const name = link?.innerText.trim() || "a room"
+  const room = direct ? "" : ` in #${name.replace(/^#\s*/, "")}`
+  pending = { roomId, text: `${starter.name} started a huddle${room}`, roomName: direct ? name : `#${name.replace(/^#\s*/, "")}` }
+  for (let ring = 0; ring < (direct ? 3 : 1); ring++) setTimeout(() => pending?.roomId === roomId && chime(true), ring * 1500)
+  if (document.hidden && window.Notification?.permission === "granted") {
+    try { new Notification(pending.text, { tag: `huddle-${roomId}`, icon: starter.avatar_url }) } catch {}
+  }
+  setTimeout(() => { if (pending?.roomId === roomId) { pending = null; showInvite() } }, 30_000)
+}
+
+export function showInvite() {
+  if (pending && ((!pending.link && !huddles.has(pending.roomId)) || huddle.roomId === pending.roomId)) pending = null
+  let toast = document.getElementById("huddle-invite")
+  if (!pending) return toast?.remove()
+  if (!toast) {
+    toast = document.createElement("div")
+    toast.id = "huddle-invite"
+    toast.className = "huddle-invite"
+    toast.setAttribute("role", "alertdialog")
+    toast.addEventListener("click", event => {
+      const choice = event.target.closest("[data-invite]")?.dataset.invite
+      if (choice === "join" && pending) huddle.join(pending.roomId, pending.roomName)
+      if (choice) { pending = null; showInvite() }
+    })
+    document.body.append(toast)
+  }
+  toast.innerHTML = `<span class="huddle-invite__icon" aria-hidden="true">🎧</span>
+    <span class="huddle-invite__text">${escapeHTML(pending.text)}</span>
+    <button type="button" class="huddle-invite__join" data-invite="join">Join</button>
+    <button type="button" class="huddle-invite__dismiss" data-invite="dismiss" aria-label="Dismiss">✕</button>`
+}
+
+// A huddle link (rooms/1#huddle) offers to join that room's huddle. Called on every render.
+export function offerFromLink() {
+  if (location.hash !== "#huddle" || !window.Current?.room?.id) return
+  const roomId = String(Current.room.id)
+  history.replaceState(history.state, "", location.pathname + location.search)
+  if (huddle.roomId === roomId) return
+  const people = huddles.get(roomId) ?? []
+  const button = document.querySelector(`.huddle-btn[data-huddle-room-value="${roomId}"]`)
+  pending = { roomId, text: people.length ? `Join the huddle with ${people.map(person => person.name).join(", ")}?` : "Start a huddle here?", roomName: button?.dataset.huddleNameValue ?? "", link: true }
+  showInvite()
+}
+
 // ⌘⇧Space / Ctrl+Shift+Space: mute and unmute, wherever you are.
 document.addEventListener("keydown", event => {
   if (event.code === "Space" && event.shiftKey && (event.metaKey || event.ctrlKey) && huddle.connected) {
@@ -592,3 +686,6 @@ document.addEventListener("keydown", event => {
 
 // Leaving the page leaves the call cleanly.
 window.addEventListener("pagehide", () => huddle.connected && huddle.leave({ quietly: true }))
+
+// …and when only the hash changes (a huddle link to the room you're in).
+window.addEventListener("hashchange", offerFromLink)

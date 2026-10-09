@@ -39,6 +39,7 @@ pub mod presenters;
 pub mod pwa;
 pub mod qr_code;
 pub mod rooms;
+pub mod scheduled_messages;
 pub mod searches;
 pub mod sessions;
 pub mod threads;
@@ -190,6 +191,7 @@ static ROUTES: LazyLock<Vec<Route>> = LazyLock::new(|| {
         delete("/users/:user_id/ban(.:format)", "users/bans#destroy", users::bans::destroy),
         post("/users/:user_id/ban(.:format)", "users/bans#create", users::bans::create),
         get("/users/:user_id/sidebar(.:format)", "users/sidebars#show", users::sidebars::show).defaults(ME_DEFAULTS),
+        post("/users/:user_id/sidebar/positions(.:format)", "sidebar_positions#update", users::sidebars::reorder).defaults(ME_DEFAULTS),
         get("/users/:user_id/profile/new(.:format)", "users/profiles#new", action_not_found).defaults(ME_DEFAULTS),
         get("/users/:user_id/profile/edit(.:format)", "users/profiles#edit", action_not_found).defaults(ME_DEFAULTS),
         get("/users/:user_id/profile(.:format)", "users/profiles#show", users::profiles::show).defaults(ME_DEFAULTS),
@@ -231,6 +233,11 @@ static ROUTES: LazyLock<Vec<Route>> = LazyLock::new(|| {
         get("/rooms/:room_id/threads/:thread_id/refresh(.:format)", "threads#refresh", threads::refresh),
         get("/rooms/:room_id/threads/:id/@:message_id(.:format)", "threads#show", threads::show),
         get("/rooms/:room_id/threads/:id(.:format)", "threads#show", threads::show),
+        get("/rooms/:room_id/scheduled_messages(.:format)", "scheduled_messages#index", scheduled_messages::index),
+        post("/rooms/:room_id/scheduled_messages(.:format)", "scheduled_messages#create", scheduled_messages::create),
+        patch("/rooms/:room_id/scheduled_messages/:id(.:format)", "scheduled_messages#update", scheduled_messages::update),
+        delete("/rooms/:room_id/scheduled_messages/:id(.:format)", "scheduled_messages#destroy", scheduled_messages::destroy),
+        post("/rooms/:room_id/scheduled_messages/:id/deliver(.:format)", "scheduled_messages#deliver", scheduled_messages::deliver),
         get("/rooms/:room_id/refresh(.:format)", "rooms/refreshes#show", rooms::refreshes::show),
         get("/rooms/:room_id/settings(.:format)", "rooms/settings#show", missing_controller),
         get("/rooms/:room_id/involvement(.:format)", "rooms/involvements#show", rooms::involvements::show),
@@ -512,7 +519,7 @@ mod tests {
     const MISSING_CONTROLLERS: &[&str] = &["rooms/settings"];
 
     /// Controllers this app adds to the Rails routes (README, Known differences).
-    const ADDED_CONTROLLERS: &[&str] = &["threads", "huddles"];
+    const ADDED_CONTROLLERS: &[&str] = &["threads", "huddles", "sidebar_positions", "scheduled_messages"];
 
     #[test]
     fn the_table_is_rails_routes_in_order() {

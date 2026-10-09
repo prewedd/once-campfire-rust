@@ -40,6 +40,12 @@ fn without_port_markup(html: &str) -> String {
             html.replace_range(start..start + length + close.len(), "");
         }
     }
+    // The sidebar's channel order (plans/redesign.md).
+    while let Some(start) = html.find(r#" data-sorted-list-position=""#) {
+        let value = start + r#" data-sorted-list-position=""#.len();
+        let end = value + html[value..].find('"').unwrap() + 1;
+        html.replace_range(start..end, "");
+    }
     html
 }
 
@@ -375,6 +381,7 @@ fn sidebar<'a>(name: &str, ctx: &'a campfire_views::ViewContext<'a>) -> users::S
                 param_key: r["param_key"].as_str().unwrap().into(),
                 name: r["name"].as_str().unwrap().into(),
                 unread: r["unread"].as_bool().unwrap(),
+                position: None,
             })
             .collect(),
         can_create_rooms: sidebar["can_create_rooms"].as_bool().unwrap(),
@@ -542,6 +549,7 @@ fn users_partials() {
                 param_key: room["param_key"].as_str().unwrap().into(),
                 name: room_name.into(),
                 unread,
+                position: None,
             },
         }
         .render()

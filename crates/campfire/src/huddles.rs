@@ -250,12 +250,89 @@ pub async fn fetch(settings: &Settings) -> anyhow::Result<HashMap<i64, Vec<Parti
     Ok(huddles)
 }
 
+// --- Sessions: how long each huddle lasted and who came, for "Huddle ended" ----------------------
+
+/// A huddle from its start until the last person leaves: the room's "started a huddle" message,
+/// when it was started, and everyone who joined.
+/// shortcut: in memory, so a restart mid-huddle loses it (the card then stays "started"); persist
+/// it if that turns out to matter.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Session {
+    pub message_id: Option<i64>,
+    pub started_at: i64,
+    pub names: Vec<String>,
+}
+
+static SESSIONS: LazyLock<Mutex<HashMap<i64, Session>>> = LazyLock::new(Mutex::default);
+
+/// Notes the room's announcement of a huddle starting now.
+pub fn announced(room_id: i64, message_id: i64, now: i64) {
+    let mut sessions = SESSIONS.lock().unwrap();
+    let session = sessions.entry(room_id).or_insert_with(|| Session { started_at: now, ..Session::default() });
+    session.message_id = Some(message_id);
+}
+
+/// Follows a room's huddle as people come and go; the session once it's over.
+pub fn track(room_id: i64, participants: &[Participant], now: i64) -> Option<Session> {
+    let mut sessions = SESSIONS.lock().unwrap();
+    if participants.is_empty() {
+        return sessions.remove(&room_id);
+    }
+    let session = sessions.entry(room_id).or_insert_with(|| Session { started_at: now, ..Session::default() });
+    for participant in participants {
+        if !session.names.contains(&participant.name) {
+            session.names.push(participant.name.clone());
+        }
+    }
+    None
+}
+
+/// "🎧 Huddle ended · lasted 12 min · with Ana and Ben", as message HTML.
+pub fn ended_body(session: &Session, now: i64) -> String {
+    let minutes = (now - session.started_at).max(0) / 60;
+    let lasted = match minutes {
+        0 => "less than a minute".to_string(),
+        m if m < 60 => format!("{m} min"),
+        m => format!("{} hr {} min", m / 60, m % 60),
+    };
+    let names: Vec<String> = session.names.iter().map(|name| html_escape(name)).collect();
+    let with = match names.as_slice() {
+        [] => String::new(),
+        [one] => format!(" · with {one}"),
+        [rest @ .., last] if rest.len() < 3 => format!(" · with {} and {last}", rest.join(", ")),
+        [first, second, rest @ ..] => format!(" · with {first}, {second} and {} others", rest.len()),
+    };
+    format!("<p>🎧 <strong>Huddle ended</strong> · lasted {lasted}{with}</p>")
+}
+
+fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
 pub fn unix_now() -> i64 {
     now()
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_huddle_ending_says_how_long_it_lasted_and_who_came() {
+        let person = |id: i64, name: &str| Participant { user_id: id, name: name.into(), avatar_url: String::new() };
+        let room = 4242;
+        announced(room, 9, 1_000);
+        assert_eq!(track(room, &[person(1, "Ana")], 1_010), None);
+        assert_eq!(track(room, &[person(1, "Ana"), person(2, "Ben <b>")], 1_100), None);
+        assert_eq!(track(room, &[person(2, "Ben <b>")], 1_200), None);
+        let session = track(room, &[], 1_000 + 12 * 60 + 5).expect("over");
+        assert_eq!(session.message_id, Some(9));
+        assert_eq!(ended_body(&session, 1_000 + 12 * 60 + 5), "<p>🎧 <strong>Huddle ended</strong> · lasted 12 min · with Ana and Ben &lt;b&gt;</p>");
+        assert_eq!(track(room, &[], 2_000), None, "only once");
+
+        let many = Session { message_id: None, started_at: 0, names: ["A", "B", "C", "D", "E"].map(String::from).to_vec() };
+        assert_eq!(ended_body(&many, 3_700), "<p>🎧 <strong>Huddle ended</strong> · lasted 1 hr 1 min · with A, B and 3 others</p>");
+        assert!(ended_body(&many, 30).contains("less than a minute"));
+    }
+
     use super::*;
 
     fn settings() -> Settings {

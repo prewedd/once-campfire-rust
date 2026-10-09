@@ -157,7 +157,8 @@ pub fn sidebar(conn: &Connection, secrets: &Secrets, user: &User) -> campfire_db
             })
         })
         .collect::<campfire_db::Result<_>>()?;
-    let other_memberships = all_memberships
+    let positions = Membership::positions_for(conn, user.id)?;
+    let mut other_memberships: Vec<SidebarRoom> = all_memberships
         .iter()
         .filter(|(membership, _)| !direct.iter().any(|(direct, _)| direct.id == membership.id))
         .map(|(membership, room)| SidebarRoom {
@@ -165,8 +166,11 @@ pub fn sidebar(conn: &Connection, secrets: &Secrets, user: &User) -> campfire_db
             param_key: room_param_key(room.room_type).to_string(),
             name: room.name.clone().unwrap_or_default(),
             unread: membership.unread(),
+            position: positions.get(&room.id).copied(),
         })
         .collect();
+    // Rooms put in order first, in it; the rest after, as they were (stable sort).
+    other_memberships.sort_by_key(|room| room.position.unwrap_or(i64::MAX));
 
     Ok(Sidebar { direct_memberships, other_memberships, direct_placeholder_users: direct_placeholder_users(conn, secrets, user)? })
 }

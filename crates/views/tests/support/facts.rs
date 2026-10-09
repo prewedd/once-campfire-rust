@@ -84,7 +84,7 @@ pub fn with_context<R>(name: &str, request: Request, f: impl FnOnce(&ViewContext
     let assets: HashMap<String, String> =
         facts["assets"].as_object().unwrap().iter().map(|(k, v)| (k.clone(), v.as_str().unwrap().to_string())).collect();
     // Assets this app adds (the workspace redesign) aren't in the reference's map.
-    let added = |logical: &str| ["emoji.svg", "emoji/prompt.html", "palette.svg", "headphones.svg"].contains(&logical).then(|| format!("/assets/{logical}"));
+    let added = |logical: &str| ["emoji.svg", "emoji/prompt.html", "palette.svg", "headphones.svg", "clock.svg"].contains(&logical).then(|| format!("/assets/{logical}"));
     let asset_path = move |logical: &str| assets.get(logical).cloned().or_else(|| added(logical)).unwrap_or_else(|| panic!("unknown asset {logical}"));
 
     let current = str_of(&case["as"]).map(|email| user_by_email(name, &email));

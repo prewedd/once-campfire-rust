@@ -37,6 +37,11 @@
                   <span class="for-screen-reader">Rich text</span>
                 </button>
 
+                <button class="btn btn--borderless txt-small flex-item-no-shrink composer__schedule-btn" type="button" data-controller="schedule" data-action="schedule#open" data-schedule-room-value="{{ room.id }}"{% if let Some(thread_id) = thread_id %} data-schedule-thread-value="{{ thread_id }}"{% endif %} aria-haspopup="menu" aria-expanded="false" title="Schedule message">
+                  <img class="colorize--black" aria-hidden="true" src="{{ ctx.asset("clock.svg") }}" width="20" height="20" />
+                  <span class="for-screen-reader">Schedule message</span>
+                </button>
+
                 <button name="send" type="submit" data-action="composer#submit" class="btn btn--reversed flex-item-no-shrink txt-small">
                   <img aria-hidden="true" src="{{ ctx.asset("arrow-up.svg") }}" width="20" height="20" />
                   <span class="for-screen-reader">Send Message</span>

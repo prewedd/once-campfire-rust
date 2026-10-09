@@ -20,7 +20,7 @@ pub struct Golden {
 
 /// Assets this app adds (the workspace redesign), which the reference's asset map doesn't have.
 fn added_asset(logical: &str) -> Option<String> {
-    ["emoji.svg", "emoji/prompt.html", "palette.svg", "headphones.svg"].contains(&logical).then(|| format!("/assets/{logical}"))
+    ["emoji.svg", "emoji/prompt.html", "palette.svg", "headphones.svg", "clock.svg"].contains(&logical).then(|| format!("/assets/{logical}"))
 }
 
 pub fn golden(name: &str) -> Golden {
@@ -137,6 +137,7 @@ fn without_port_markup(actual: Vec<String>) -> Vec<String> {
         r#"class="message__thread""#,
         "message__toolbar-reactions",
         "composer__emoji-btn",
+        "composer__schedule-btn",
         "sidebar__workspace",
         "theme-picker",
         "presence-dot",
@@ -175,12 +176,18 @@ fn without_port_markup(actual: Vec<String>) -> Vec<String> {
 }
 
 fn without_placeholder(token: String) -> String {
+    // The sidebar's channel order (plans/redesign.md).
+    let token = without_attribute(token, " data-sorted-list-position=\"");
     if !token.starts_with("<lexxy-editor ") {
         return token;
     }
-    match token.find(" placeholder=\"") {
+    without_attribute(token, " placeholder=\"")
+}
+
+fn without_attribute(token: String, attribute: &str) -> String {
+    match token.find(attribute) {
         Some(start) => {
-            let end = start + " placeholder=\"".len() + token[start + " placeholder=\"".len()..].find('"').unwrap() + 1;
+            let end = start + attribute.len() + token[start + attribute.len()..].find('"').unwrap() + 1;
             format!("{}{}", &token[..start], &token[end..])
         }
         None => token,

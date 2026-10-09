@@ -254,6 +254,31 @@ impl Membership {
         Ok(())
     }
 
+    // The sidebar's channel order (plans/redesign.md)
+
+    /// The rooms this person has put in order, by room id.
+    pub fn positions_for(conn: &Connection, user_id: i64) -> Result<std::collections::HashMap<i64, i64>> {
+        Ok(query_all(
+            conn,
+            r#"SELECT "room_id", "position" FROM "memberships" WHERE "user_id" = ? AND "position" IS NOT NULL"#,
+            [user_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?
+        .into_iter()
+        .collect())
+    }
+
+    /// Puts this person's rooms in the given order; rooms they aren't in are ignored.
+    pub fn reorder(tx: &mut Tx<'_>, user_id: i64, room_ids: &[i64]) -> Result<()> {
+        for (position, room_id) in room_ids.iter().enumerate() {
+            tx.conn().execute_cached(
+                r#"UPDATE "memberships" SET "position" = ? WHERE "user_id" = ? AND "room_id" = ?"#,
+                params![position as i64, user_id, room_id],
+            )?;
+        }
+        Ok(())
+    }
+
     // Membership::Connectable
 
     /// `Membership.disconnect_all`

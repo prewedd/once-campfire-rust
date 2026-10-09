@@ -31,6 +31,9 @@ pub struct Pane<'a> {
     pub ctx: &'a ViewContext<'a>,
     pub user: UserSummary,
     pub transfer_id: String,
+    /// Your direct room with them, if you have one: its huddle is a click away.
+    pub direct_room_id: Option<i64>,
+    pub huddles: bool,
 }
 
 /// `users/show.html.erb`.
@@ -255,9 +258,16 @@ pub struct SidebarRoom {
     pub param_key: String,
     pub name: String,
     pub unread: bool,
+    /// Where the person put it in their sidebar, if they did.
+    pub position: Option<i64>,
 }
 
 impl SidebarRoom {
+    /// `data-sorted-list-position`: empty when it keeps its alphabetical place.
+    pub fn position_value(&self) -> String {
+        self.position.map(|position| position.to_string()).unwrap_or_default()
+    }
+
     fn class_names(&self) -> &'static str {
         if self.unread { "align-center gap room btn txt-nowrap unread" } else { "align-center gap room btn txt-nowrap" }
     }

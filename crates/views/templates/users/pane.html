@@ -1,4 +1,6 @@
-{#- The workspace redesign (plans/redesign.md): a profile in the room page's right-hand panel. -#}
+{#- The workspace redesign (plans/redesign.md): a profile in the room page's right-hand panel, laid
+    out as Slack's: photo, name, presence, then Message and Huddle, then contact details. Bots and
+    people who've left get the page's own profile. -#}
 <turbo-frame id="flexpane">
   <header class="flexpane__header">
     <h2 class="flexpane__title">Profile</h2>
@@ -6,7 +8,35 @@
       <img aria-hidden="true" src="{{ ctx.asset("remove.svg") }}" width="16" height="16" /><span class="for-screen-reader">Close</span>
     </button>
   </header>
-  <div class="flexpane__body flexpane__body--profile">
+{% if user.bot() || user.deactivated() %}  <div class="flexpane__body flexpane__body--profile">
     {% include "users/_profile.html" %}
   </div>
-</turbo-frame>
+{% else %}  <div class="flexpane__body profile-pane {% if user.banned() %}banned{% endif %}">
+    <img class="profile-pane__photo" src="{{ user.avatar_path }}" alt="" />
+    <h3 class="profile-pane__name">{{ user.name }}</h3>
+{% if let Some(bio) = user.bio.as_deref() %}{% if !bio.is_empty() %}    <p class="profile-pane__bio">{{ bio }}</p>
+{% endif %}{% endif %}    <p class="profile-pane__presence"><span class="presence-status" data-presence-user="{{ user.id }}"></span></p>
+
+    <div class="profile-pane__actions">
+{% if ctx.is_current_user(user.id) %}      <a class="profile-pane__btn" href="{{ h::routes::user_profile() }}">Edit profile</a>
+{% else if user.active() %}      {% filter button_to(h::rooms_directs_with_user(user.id), h::attrs().class("profile-pane__btn profile-pane__btn--primary")) %}Message{% endfilter %}
+{% if huddles %}{% if let Some(room_id) = direct_room_id %}      <button type="button" class="profile-pane__btn huddle-btn" data-controller="huddle" data-action="huddle#toggle" data-huddle-room-value="{{ room_id }}" data-huddle-name-value="{{ user.name }}" title="Start a huddle with {{ user.name }}">
+        <img aria-hidden="true" src="{{ ctx.asset("headphones.svg") }}" width="16" height="16" />
+        <span class="huddle-btn__people" data-huddle-target="people"></span>
+        <span class="huddle-btn__label" data-huddle-target="label">Huddle</span>
+      </button>
+{% endif %}{% endif %}{% endif %}    </div>
+
+{% if ctx.can_administer() %}{% if let Some(email) = user.email_address.as_deref() %}    <section class="profile-pane__section">
+      <h4>Contact information</h4>
+      <p><span class="profile-pane__label">Email address</span>{{ h::mail_to(email) }}</p>
+    </section>
+{% endif %}{% endif %}
+{% if ctx.can_administer() && user.active() %}    <section class="profile-pane__section">
+      {% include "users/profiles/_transfer.html" %}
+{% if !ctx.is_current_user(user.id) %}      <div class="margin-block-start">
+        {% include "users/_ban_button.html" %}
+      </div>
+{% endif %}    </section>
+{% endif %}  </div>
+{% endif %}</turbo-frame>

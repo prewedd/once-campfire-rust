@@ -43,11 +43,16 @@ pub const SCHEMA_SHA1: &str = "f75da8dad38bfb179ffd757bd7a7c2b3f818bc29";
 pub const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     // Threads (plans/threads.md): a reply's top-level message.
     ("messages", "thread_parent_id", "integer"),
+    // The sidebar's channel order, per person (plans/redesign.md): NULL keeps the alphabetical place.
+    ("memberships", "position", "integer"),
 ];
 
 /// Indexes this app adds to the Rails schema, created on boot when missing (new and existing
 /// databases alike). Additive only, so the database still works with the Rails image.
 pub const ADDITIONS: &[&str] = &[
+    // Scheduled messages (plans/scheduled-messages.md): a table of this app's own.
+    crate::models::scheduled_message::CREATE_TABLE,
+    crate::models::scheduled_message::CREATE_INDEX,
     // A room's messages are paged by `created_at` (`last_page`, `page_before`, `page_after`), and
     // with only `index_messages_on_room_id` every room page sorted the room's whole history:
     // 60 ms at 236k messages, against 0.02 ms with this index.

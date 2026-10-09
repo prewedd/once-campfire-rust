@@ -7,7 +7,7 @@ use serde_json::json;
 use crate::app::{App, AppCtx};
 use crate::concerns::{self, Before, before_actions, require_current_user};
 use crate::controllers::messages::{broadcast_create, by_bots::raw_request_body};
-use crate::controllers::presenters::{avatar_path, page::db_error};
+use crate::controllers::presenters::{avatar_path, page, page::db_error};
 use crate::huddles::{self, SETTINGS};
 
 /// `POST /rooms/:room_id/huddle`: a token to join the room's huddle, for its members. With
@@ -52,6 +52,7 @@ async fn announce_start(c: &Ctx, room: &Room, creator_id: i64) -> Result<()> {
         })
         .await
         .map_err(db_error)?;
+    huddles::announced(room_id, message.id, huddles::unix_now());
     broadcast_create(c, room, &message).await
 }
 
@@ -71,11 +72,40 @@ pub async fn webhook(c: &mut Ctx) -> Result {
     Ok(concerns::head(StatusCode::OK))
 }
 
-/// Tells the room's members who's in its huddle now.
+/// Tells the room's members who's in its huddle now; when it's over, its card says so.
 pub(crate) async fn broadcast_huddle(app: &App, room_id: i64) -> Result<()> {
     let participants = huddles::participants(room_id);
+    let ended = huddles::track(room_id, &participants, huddles::unix_now());
+    let reader = app.clone();
+    app.db.read(move |conn| reader.broadcasts.huddle(conn, room_id, &participants)).await.map_err(db_error)?;
+    if let Some(session) = ended
+        && let Some(message_id) = session.message_id
+    {
+        end_card(app, room_id, message_id, huddles::ended_body(&session, huddles::unix_now())).await?;
+    }
+    Ok(())
+}
+
+/// Turns the room's "started a huddle" message into "Huddle ended · lasted …", for everyone.
+async fn end_card(app: &App, room_id: i64, message_id: i64, body: String) -> Result<()> {
+    let message = app
+        .db
+        .write(move |tx| {
+            let mut message = Message::find(tx.conn(), message_id)?;
+            message.update_body(tx, &body)?;
+            Ok(message)
+        })
+        .await
+        .map_err(db_error)?;
     let app = app.clone();
-    app.clone().db.read(move |conn| app.broadcasts.huddle(conn, room_id, &participants)).await.map_err(db_error)
+    app.clone()
+        .db
+        .read(move |conn| {
+            let room = Room::find(conn, room_id)?;
+            crate::controllers::messages::broadcast_replace_on(conn, &app, &room, &message, page::DETACHED_BASE_URL)
+        })
+        .await
+        .map_err(db_error)
 }
 
 /// Keeps in step with LiveKit: on boot, then every minute (webhooks are best effort).

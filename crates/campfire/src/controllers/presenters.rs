@@ -414,6 +414,7 @@ impl<'a> Presenter<'a> {
             param_key: room_kind(room.room_type).param_key().to_string(),
             name: room.name.clone().unwrap_or_default(),
             unread: false,
+            position: None,
         }
     }
 

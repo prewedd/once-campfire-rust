@@ -80,8 +80,15 @@ pub async fn show(c: &mut Ctx) -> Result {
     let transfer_id = presenters::accounts::transfer_id(&secrets, user.id, c.now());
     let user = presenters::user_summary(&secrets, &user);
     if c.turbo_frame_request_id() == Some(campfire_views::threads::PANE_FRAME) {
+        let (me, them) = (concerns::require_current_user(c)?.id, user.id);
+        let direct_room_id = if me == them {
+            None
+        } else {
+            c.app().db.read(move |conn| campfire_db::Room::find_direct_for(conn, &[me, them])).await.map_err(page::db_error)?.map(|room| room.id)
+        };
+        let huddles = crate::huddles::enabled();
         return page::bare(c, StatusCode::OK, &format::HTML, |ctx| {
-            users::Pane { ctx, user: user.clone(), transfer_id: transfer_id.clone() }.render()
+            users::Pane { ctx, user: user.clone(), transfer_id: transfer_id.clone(), direct_room_id, huddles }.render()
         })
         .await;
     }

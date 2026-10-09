@@ -58,3 +58,18 @@ PreWedd's UI kit (zinc neutrals, rose `#F63D68` for what's ours or needs you).
 - `controllers/theme_controller.js` and `users/sidebars/_theme_picker.html` (the picker), a boot
   script in `layouts/application.html`; `channels/online.rs`; `threads/pane.html`,
   `users/pane.html` and `users/_profile.html` (the panel), opened by `initializers/workspace.js`.
+
+## Slack-style surfaces (2026-10-09)
+
+- **Settings as modals** (`lib/workspace/modal.js`): settings, room settings, new room/DM and the
+  other card pages open in a `<dialog>` over the conversation, showing the page's own content;
+  their forms are submitted from the modal, a redirect to another such page stays in it, anything
+  else navigates. Closing after a change refreshes the page behind.
+- **Notifications menu** (`lib/workspace/involvement.js`): the bell opens named choices with what
+  each does; every icon-only button gets a tooltip from its screen-reader label.
+- **Profiles in the panel from anywhere**, laid out as Slack's: photo, name, presence, bio,
+  Message, Huddle (when you have a DM), contact details for administrators, Edit profile for yours.
+- **Channel order** (`lib/workspace/reorder.js`): drag channels, or Alt+↑/↓, saved per person.
+- **One heartbeat per page** (`controllers/refresh_room_controller.js`): a thread in the panel
+  used to subscribe to `HeartbeatChannel` a second time, never got confirmed, and after 5 seconds
+  disabled every composer on the page as "offline".

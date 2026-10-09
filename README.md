@@ -325,6 +325,19 @@ Deliberate:
   dots (`OnlineChannel`) and a right-hand panel for threads and profiles. Mostly in
   `crates/assets/overrides` plus a few added elements in templates, which the parity goldens leave
   out.
+- **Huddles.** Drop-in voice and video calls in any room or DM, as Slack's huddles
+  ([`plans/huddles.md`](plans/huddles.md)), on a LiveKit server beside the app (`LIVEKIT_URL`,
+  `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`; without them there are no huddle buttons). Campfire signs
+  join tokens for the room's members and follows who's in each huddle from LiveKit's webhooks; the
+  room's "started a huddle" message becomes "Huddle ended · lasted …" when it's over.
+- **Scheduled messages.** The composer's clock posts a message later
+  ([`plans/scheduled-messages.md`](plans/scheduled-messages.md)), from a table of this app's own,
+  `scheduled_messages`, created on boot; the Rails image ignores it (and doesn't post them).
+- **Your own channel order.** Channels can be dragged into any order in the sidebar, per person, in
+  a nullable `memberships.position` column added on boot; the Rails image sorts them by name.
+- **Settings in modals, notifications as a menu.** Settings, room settings and the other card
+  screens open over the conversation; the room's bell opens a menu of named notification choices
+  instead of cycling through them.
 - **Threads.** Any top-level message can be replied to in a thread of its own, as in Slack
   ([`plans/threads.md`](plans/threads.md)). Replies live at `/rooms/:room_id/threads/:id`, stay
   out of the room's timeline (its pages, refreshes and the bot API's index), and show under their

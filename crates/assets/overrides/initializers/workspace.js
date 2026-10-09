@@ -10,7 +10,11 @@
 
 import { cable } from "@hotwired/turbo-rails"
 import { addBoost } from "lib/emoji/boosts"
-import { showHuddles, trackHuddles } from "lib/huddle/huddle"
+import { offerFromLink, showHuddles, showInvite, trackHuddles } from "lib/huddle/huddle"
+import { closeModal } from "lib/workspace/modal"
+import { addTooltips } from "lib/workspace/involvement"
+import { enableReordering } from "lib/workspace/reorder"
+import "lib/workspace/schedule"
 
 const BOOSTS = '[id^="boosts_message_"]'
 
@@ -154,15 +158,18 @@ document.addEventListener("visibilitychange", () => {
   }
 })
 
-// The right-hand panel. Links to a thread or a profile from the conversation open in it; anything
-// else (a modified click, "Open in full", other pages) navigates as before.
+// The right-hand panel. Links to a thread or a profile open in it, from anywhere on a room's page
+// (the conversation, the sidebar, a settings modal), as in Slack; anything else (a modified click,
+// "Open in full", other pages) navigates as before.
 const PANE_PATH = /^\/(rooms\/\d+\/threads\/\d+(\/@\d+)?|users\/\d+)$/
 
 function paneFrameFor(link) {
   const frame = document.getElementById("flexpane")
-  if (!frame || !link.closest("#main-content") || link.closest(".flexpane__header")) return null
+  if (!frame || link.closest(".flexpane__header")) return null
   const url = new URL(link.href, location.href)
-  return url.origin === location.origin && PANE_PATH.test(url.pathname) ? frame : null
+  if (url.origin !== location.origin || !PANE_PATH.test(url.pathname)) return null
+  if (link.closest(".ws-modal")) closeModal()
+  return frame
 }
 
 function openPane(frame, url) {
@@ -225,15 +232,19 @@ function refresh() {
     markCurrentRoom()
     showPresence()
     trackPresence()
+    addTooltips()
+    enableReordering()
     showHuddles()
+    showInvite()
     trackHuddles()
+    offerFromLink()
   })
 }
 
 // Only what can change pills or the sidebar: not every keystroke in an editor.
 function relevant(mutation) {
   const target = mutation.target.nodeType === Node.ELEMENT_NODE ? mutation.target : mutation.target.parentElement
-  return target && !target.closest(".lexxy-editor__content") && !!target.closest(".messages, #sidebar")
+  return target && !target.closest(".lexxy-editor__content") && !!target.closest(".messages, #sidebar, #nav")
 }
 
 new MutationObserver(mutations => {
