@@ -183,6 +183,10 @@ function paneFrameFor(link) {
 function openPane(frame, url) {
   frame.closest(".flexpane").hidden = false
   document.body.classList.add("flexpane-open")
+  if (!frame.childElementCount) {
+    frame.innerHTML = `<header class="flexpane__header"><h2 class="flexpane__title">Loading…</h2>
+      <button type="button" class="btn flexpane__close" data-flexpane-close title="Close">✕<span class="for-screen-reader">Close</span></button></header>`
+  }
   frame.src = url
 }
 
@@ -216,6 +220,22 @@ document.addEventListener("keydown", event => {
     event.preventDefault()
   }
 })
+
+// A frame whose response lacks it (a stale cache, a sign-in redirect, a page changed mid-request)
+// never shows Turbo's "Content missing": it loads once more, then the page itself opens instead.
+document.addEventListener("turbo:frame-missing", event => {
+  const frame = event.target
+  event.preventDefault()
+  if (!frame.dataset.retried) {
+    frame.dataset.retried = "true"
+    frame.reload()
+    return
+  }
+  delete frame.dataset.retried
+  if (frame.id === "flexpane") closePane()
+  event.detail.visit(event.detail.response)
+})
+document.addEventListener("turbo:frame-load", event => delete event.target.dataset.retried)
 
 // The panel's copy of a thread's parent would share its ids with the room's; the room's keeps them.
 // shortcut: so edits to the parent reach the room's copy only, until the panel reloads.

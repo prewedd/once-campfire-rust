@@ -13,7 +13,7 @@
   <h1 class="ws-settings__title">Conversation settings</h1>
   <section class="ws-field">
     <span class="ws-field__label">In this conversation</span>
-    <menu class="ws-rows directs--edit">
+    <menu class="ws-rows">
       {%- for user in edit.users %}
       <li class="ws-row member">
         <a class="ws-row__main txt-undecorated" title="{{ user.title }}" data-turbo-frame="_top" href="{{ user.path() }}">

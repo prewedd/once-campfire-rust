@@ -1562,7 +1562,13 @@ body {
   display: none;
 }
 
-:is(.composer__attachment-btn, .composer__rich-text-btn, .composer__emoji-btn) {
+/* The editor takes what the tools leave, so Send keeps its inset from the box's edge. */
+.composer__input .flex-item-grow {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+
+:is(.composer__attachment-btn, .composer__rich-text-btn, .composer__emoji-btn, .composer__schedule-btn) {
   --btn-border-radius: var(--ws-radius-sm);
   --btn-size: 32px;
 
@@ -1579,6 +1585,8 @@ body {
 /* Send: the page's one accent button */
 :is(#composer, #thread-composer) .btn--reversed {
   --btn-background: var(--ws-accent);
+
+  margin-inline-end: 0;
   --btn-border-radius: var(--ws-radius);
   --btn-color: var(--ws-on-accent);
   --btn-size: 32px;

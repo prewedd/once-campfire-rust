@@ -19,7 +19,7 @@
 
     <div class="profile-pane__actions">
 {% if ctx.is_current_user(user.id) %}      <a class="profile-pane__btn" href="{{ h::routes::user_profile() }}">Edit profile</a>
-{% else if user.active() %}      {% filter button_to(h::rooms_directs_with_user(user.id), h::attrs().class("profile-pane__btn profile-pane__btn--primary")) %}Message{% endfilter %}
+{% else if user.active() %}      {% filter button_to(h::rooms_directs_with_user(user.id), h::attrs().class("profile-pane__btn profile-pane__btn--primary").data("turbo_frame", "_top")) %}Message{% endfilter %}
 {% if huddles %}{% if let Some(room_id) = direct_room_id %}      <button type="button" class="profile-pane__btn huddle-btn" data-controller="huddle" data-action="huddle#toggle" data-huddle-room-value="{{ room_id }}" data-huddle-name-value="{{ user.name }}" title="Start a huddle with {{ user.name }}">
         <img aria-hidden="true" src="{{ ctx.asset("headphones.svg") }}" width="16" height="16" />
         <span class="huddle-btn__people" data-huddle-target="people"></span>
