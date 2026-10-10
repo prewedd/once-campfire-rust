@@ -9,6 +9,7 @@
 // - Alt+↑ / Alt+↓ go to the previous / next channel or conversation (as Slack's), unless a channel
 //   in the sidebar has the focus, where they move it (lib/workspace/reorder.js).
 // - Direct messages show how many unread messages they have, in a red badge, as Slack's.
+// - Ctrl/⌘+/ lists the keyboard shortcuts, as Slack's does.
 // - Ctrl/⌘+K jumps to any channel or conversation in the sidebar by name, as Slack's switcher does.
 // It uses the notifications menu's look and closing (lib/workspace/involvement.js).
 
@@ -65,6 +66,7 @@ function openWorkspaceMenu(header) {
     menuItem("Update your status", "An emoji and a few words by your name", "/users/me/profile"),
     menuItem("Pause notifications", "Quiet for a while", "/users/me/profile"),
     menuItem("Invite people", "Share the join link", "/account/edit"),
+    `<a class="involvement-menu__item" role="menuitem" href="#keyboard-shortcuts" data-show-shortcuts><span><strong>Keyboard shortcuts</strong><small>Ctrl/⌘ + /</small></span></a>`,
     canCreate ? menuItem("Create a channel", "", "/rooms/opens/new") : "",
     menuItem("Browse channels", "Join or leave channels", "/channels"),
     menuItem("Workspace settings", "Name, icon, members", "/account/edit"),
@@ -270,3 +272,48 @@ document.addEventListener("turbo:load", () => showUnreadCounts(true))
 setInterval(() => { if (document.visibilityState === "visible") showUnreadCounts(true) }, 20_000)
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") showUnreadCounts(true) })
 export { showUnreadCounts }
+
+// Ctrl/⌘+/: the keyboard shortcuts.
+const SHORTCUTS = [
+  [ "Jump to a channel or person", "⌘/Ctrl K" ],
+  [ "Previous / next channel or conversation", "Alt ↑ / Alt ↓" ],
+  [ "Move the focused channel in the sidebar", "Alt ↑ / Alt ↓" ],
+  [ "Edit your last message", "↑ in an empty message box" ],
+  [ "Send a message", "Enter" ],
+  [ "New line", "Shift Enter" ],
+  [ "Save an edited message", "⌘/Ctrl Enter" ],
+  [ "Close a panel, menu or dialog", "Esc" ],
+  [ "This list", "⌘/Ctrl /" ],
+]
+
+function showShortcuts() {
+  if (document.querySelector(".ws-shortcuts[open]")) return
+  const dialog = document.createElement("dialog")
+  dialog.className = "ws-shortcuts"
+  dialog.setAttribute("aria-labelledby", "ws-shortcuts-title")
+  dialog.innerHTML = `<header><h2 id="ws-shortcuts-title">Keyboard shortcuts</h2><button type="button" aria-label="Close" data-close>✕</button></header><dl></dl>`
+  dialog.querySelector("dl").append(...SHORTCUTS.flatMap(([ what, keys ]) => {
+    const dt = document.createElement("dt"), dd = document.createElement("dd")
+    dt.textContent = what
+    dd.append(...keys.split(" / ").flatMap((combo, i) => [ ...(i ? [ " / " ] : []), Object.assign(document.createElement("kbd"), { textContent: combo }) ]))
+    return [ dt, dd ]
+  }))
+  dialog.addEventListener("click", event => { if (event.target === dialog || event.target.closest("[data-close]")) dialog.close() })
+  dialog.addEventListener("close", () => dialog.remove())
+  document.body.append(dialog)
+  dialog.showModal()
+}
+
+window.addEventListener("keydown", event => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "/" && window.Current?.user) {
+    event.preventDefault()
+    showShortcuts()
+  }
+}, true)
+
+document.addEventListener("click", event => {
+  if (!event.target.closest("[data-show-shortcuts]")) return
+  event.preventDefault()
+  document.querySelectorAll(".workspace-menu").forEach(menu => menu.remove())
+  showShortcuts()
+})

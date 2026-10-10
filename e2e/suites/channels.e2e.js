@@ -355,6 +355,21 @@ const openModal = (p, path) => p.evaluate(path => { const a = document.createEle
     check("…and the New line marks where you left off", next === id, `${next} vs ${id}`)
   })
 
+  await step("keyboard shortcuts", async () => {
+    await ana.goto(`${BASE}/rooms/1`); await ana.waitForLoadState("networkidle")
+    await ana.keyboard.press("Control+/")
+    const dialog = ana.locator("dialog.ws-shortcuts[open]")
+    await dialog.waitFor({ timeout: 3000 })
+    check("Ctrl+/ lists the keyboard shortcuts", (await dialog.innerText()).includes("Jump to a channel or person"))
+    await ana.keyboard.press("Escape")
+    await dialog.waitFor({ state: "detached", timeout: 3000 })
+    await ana.locator("#sidebar .sidebar__workspace").click()
+    await ana.locator(".workspace-menu").getByText("Keyboard shortcuts").click()
+    await dialog.waitFor({ timeout: 3000 })
+    check("…also from the workspace menu", true)
+    await ana.keyboard.press("Escape")
+  })
+
   check("no page errors", errors.length === 0, errors.join(" | "))
   await b.close()
   console.log(`\n${results.filter(Boolean).length}/${results.length} checks passed`)

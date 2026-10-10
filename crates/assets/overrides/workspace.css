@@ -3605,3 +3605,15 @@ details:has(> summary > img[src*="/globe-"]) { display: none; }
 @media (min-width: 100ch) {
   #main-content > .panel:not(.ws-settings) { inline-size: min(560px, 100% - 32px); border: 1px solid var(--ws-border); border-radius: var(--ws-radius-lg); background: var(--ws-bg-raised); box-shadow: none; }
 }
+
+/* Keyboard shortcuts (Ctrl/⌘+/, lib/workspace/sidebar.js) */
+.ws-shortcuts { inline-size: min(520px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--ws-border); border-radius: var(--ws-radius-lg); background: var(--ws-bg-raised); color: var(--ws-ink); box-shadow: var(--ws-shadow-lg); font-family: var(--ws-font); }
+.ws-shortcuts::backdrop { background: rgb(9 9 11 / 0.45); }
+.ws-shortcuts header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 14px 20px; border-bottom: 1px solid var(--ws-border); }
+.ws-shortcuts h2 { margin: 0; font-size: 17px; font-weight: 700; }
+.ws-shortcuts [data-close] { inline-size: 32px; block-size: 32px; border-radius: var(--ws-radius); color: var(--ws-muted); cursor: pointer; }
+.ws-shortcuts [data-close]:hover { background: var(--ws-bg-hover); }
+.ws-shortcuts dl { display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; margin: 0; padding: 16px 20px 20px; font-size: 14px; }
+.ws-shortcuts dt { color: var(--ws-ink-soft); }
+.ws-shortcuts dd { margin: 0; color: var(--ws-muted); text-align: end; white-space: nowrap; }
+.ws-shortcuts kbd { padding: 1px 6px; border: 1px solid var(--ws-border-strong); border-bottom-width: 2px; border-radius: var(--ws-radius-xs); background: var(--ws-bg-subtle); color: var(--ws-ink); font: 600 12px var(--ws-font); }
