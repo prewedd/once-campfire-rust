@@ -6,7 +6,7 @@ use campfire_db::{Room, RoomType, User};
 use campfire_kit::{Ctx, Result, StatusCode};
 use campfire_views::rooms::{FormRoom, OpenFormView, OpensEdit, OpensNew};
 
-use super::{Scope, ensure_can_administer, ensure_permission_to_create_rooms, redirect_to_room, render_shared_room, room_name_param, set_room};
+use super::{Scope, ensure_can_administer, ensure_permission_to_create_rooms, redirect_to_room, render_shared_room, room_name_param, room_topic_param, set_room};
 use crate::app::AppCtx;
 use crate::concerns::{self, Before, before_actions, require_current_user};
 use crate::controllers::presenters::page::{self, db_error};
@@ -26,7 +26,7 @@ pub async fn new(c: &mut Ctx) -> Result {
     before_actions(c, Before::default()).await?;
     ensure_permission_to_create_rooms(c).await?;
     let form = OpenFormView {
-        room: FormRoom { id: None, name: Some(DEFAULT_ROOM_NAME.into()) },
+        room: FormRoom { id: None, name: Some(DEFAULT_ROOM_NAME.into()), topic: None },
         can_administer: true,
         users: active_users(c).await?,
     };
@@ -37,12 +37,17 @@ pub async fn create(c: &mut Ctx) -> Result {
     before_actions(c, Before::default()).await?;
     ensure_permission_to_create_rooms(c).await?;
     let name = room_name_param(c)?.flatten();
+    let topic = room_topic_param(c);
     let user_id = require_current_user(c)?.id;
     // Rooms::Open.create_for(room_params, users: Current.user)
     let room = c
         .app()
         .db
-        .write(move |tx| Room::create_for(tx, RoomType::Open, name.as_deref(), user_id, &[user_id]))
+        .write(move |tx| {
+            let mut room = Room::create_for(tx, RoomType::Open, name.as_deref(), user_id, &[user_id])?;
+            room.set_topic(tx, topic.as_deref())?;
+            Ok(room)
+        })
         .await
         .map_err(db_error)?;
     let partials = render_shared_room(c, &room).await?;
@@ -55,7 +60,7 @@ pub async fn edit(c: &mut Ctx) -> Result {
     let mut room = set_room(c, Scope::WithoutDirects).await?;
     room.room_type = RoomType::Open; // force_room_type
     let form = OpenFormView {
-        room: FormRoom { id: Some(room.id), name: room.name.clone() },
+        room: FormRoom { id: Some(room.id), name: room.name.clone(), topic: room.topic.clone() },
         can_administer: require_current_user(c)?.can_administer(Some(room.creator_id), false),
         users: active_users(c).await?,
     };
@@ -67,6 +72,7 @@ pub async fn update(c: &mut Ctx) -> Result {
     let room = set_room(c, Scope::WithoutDirects).await?;
     ensure_can_administer(c, &room)?;
     let name = room_name_param(c)?;
+    let topic = room_topic_param(c);
     // force_room_type, then `@room.update! room_params` saves the name and the new type.
     let room = c
         .app()
@@ -74,6 +80,9 @@ pub async fn update(c: &mut Ctx) -> Result {
         .write(move |tx| {
             let mut room = room;
             room.update(tx, name.as_ref().map(|name| name.as_deref()), Some(RoomType::Open))?;
+            if topic.is_some() {
+                room.set_topic(tx, topic.as_deref())?;
+            }
             Ok(room)
         })
         .await

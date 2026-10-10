@@ -415,5 +415,6 @@ fn room_from_prefixed_row(row: &Row<'_>) -> rusqlite::Result<Room> {
         creator_id: row.get("r_creator_id")?,
         created_at: row.get("r_created_at")?,
         updated_at: row.get("r_updated_at")?,
+        topic: row.get("r_topic").ok().flatten(),
     })
 }

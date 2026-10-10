@@ -258,3 +258,25 @@ fn user_room_scopes() {
         ]
     );
 }
+
+#[test]
+fn a_topic_is_trimmed_cut_to_its_limit_and_cleared_when_blank() {
+    let t = TestDb::new();
+    let mut watercooler = room(&t, "watercooler");
+    assert_eq!(watercooler.topic, None);
+    let saved = t.write(move |tx| {
+        watercooler.set_topic(tx, Some("  Coffee and gossip  "))?;
+        Ok(watercooler)
+    });
+    assert_eq!(saved.topic.as_deref(), Some("Coffee and gossip"));
+    assert_eq!(room(&t, "watercooler").topic.as_deref(), Some("Coffee and gossip"));
+
+    let long = "x".repeat(Room::TOPIC_LIMIT + 10);
+    let mut cut = room(&t, "watercooler");
+    t.write(move |tx| cut.set_topic(tx, Some(&long)));
+    assert_eq!(room(&t, "watercooler").topic.map(|topic| topic.chars().count()), Some(Room::TOPIC_LIMIT));
+
+    let mut cleared = room(&t, "watercooler");
+    t.write(move |tx| cleared.set_topic(tx, Some("   ")));
+    assert_eq!(room(&t, "watercooler").topic, None);
+}

@@ -166,6 +166,7 @@ impl<'a> Presenter<'a> {
             kind: room_kind(room.room_type),
             name: room.name.clone(),
             display_name: self.room_display_name(room, Some(for_user))?,
+            topic: room.topic.clone(),
         })
     }
 

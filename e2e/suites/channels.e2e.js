@@ -55,6 +55,10 @@ const openModal = (p, path) => p.evaluate(path => { const a = document.createEle
     await modal.getByRole("button", { name: "Save changes" }).waitFor({ timeout: 8000 })
     check("members are counted", (await modal.locator(".room-access .ws-field__label").innerText()).includes("Members · 2"), await modal.locator(".room-access .ws-field__label").innerText())
     check("the creator can delete it", await modal.getByRole("button", { name: /Delete/ }).isVisible())
+    await modal.locator('input[name="room[topic]"]').fill("Budgets & timelines")
+    await modal.getByRole("button", { name: "Save changes" }).click()
+    await ana.locator("#nav .ws-topic", { hasText: "Budgets & timelines" }).waitFor({ timeout: 8000 })
+    check("a topic shows in the channel's header", true)
     await ana.keyboard.press("Escape")
   })
 

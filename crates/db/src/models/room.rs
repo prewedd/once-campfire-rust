@@ -67,6 +67,8 @@ pub struct Room {
     pub creator_id: i64,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+    /// This app's own (schema::ADDED_COLUMNS): what the channel is about, shown in its header.
+    pub topic: Option<String>,
 }
 
 const SELECT_FOR_USER: &str = r#"SELECT "rooms".* FROM "rooms" INNER JOIN "memberships" ON "rooms"."id" = "memberships"."room_id" WHERE "memberships"."user_id" = ?"#;
@@ -80,6 +82,7 @@ impl Room {
             creator_id: row.get("creator_id")?,
             created_at: row.get("created_at")?,
             updated_at: row.get("updated_at")?,
+            topic: row.get("topic").ok().flatten(),
         })
     }
 
@@ -282,6 +285,25 @@ impl Room {
             let id = self.id;
             tx.after_commit(move |tx| grant_to_active_users(tx, id));
         }
+        Ok(())
+    }
+
+    /// Longest topic kept; a longer one is cut there.
+    pub const TOPIC_LIMIT: usize = 250;
+
+    /// Sets the channel's topic: blank clears it.
+    pub fn set_topic(&mut self, tx: &Tx<'_>, topic: Option<&str>) -> Result<()> {
+        let topic = topic.map(str::trim).filter(|topic| !topic.is_empty()).map(|topic| topic.chars().take(Self::TOPIC_LIMIT).collect::<String>());
+        if topic == self.topic {
+            return Ok(());
+        }
+        let now = tx.now();
+        tx.conn().execute_cached(
+            r#"UPDATE "rooms" SET "topic" = ?, "updated_at" = ? WHERE "rooms"."id" = ?"#,
+            params![topic, now, self.id],
+        )?;
+        self.topic = topic;
+        self.updated_at = now;
         Ok(())
     }
 

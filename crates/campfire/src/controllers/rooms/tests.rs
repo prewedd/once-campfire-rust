@@ -97,6 +97,16 @@ async fn open_rooms_are_created_edited_and_updated() {
     let members = app.db().read(move |conn| Membership::for_room(conn, room_id)).await.unwrap();
     assert_eq!(members.iter().map(|m| m.user_id).collect::<Vec<_>>(), vec![DAVID]);
 
+    // The topic (this app's own) is saved with the rest, and shown in the room's header.
+    let topical = david.write(Req::new(Method::PATCH, &format!("/rooms/closeds/{room_id}")).form(&[("room[name]", "Private"), ("room[topic]", "  Plans & budgets "), ("user_ids[]", &DAVID.to_string())])).await;
+    assert_eq!(topical.status, StatusCode::FOUND, "{}", topical.text());
+    let room = app.db().read(move |conn| Room::find(conn, room_id)).await.unwrap();
+    assert_eq!(room.topic.as_deref(), Some("Plans & budgets"));
+    assert!(david.get(&format!("/rooms/{room_id}")).await.text().contains(r#"<span class="ws-topic" title="Plans &amp; budgets">Plans &amp; budgets</span>"#));
+    let untouched = david.write(Req::new(Method::PATCH, &format!("/rooms/closeds/{room_id}")).form(&[("room[name]", "Private"), ("user_ids[]", &DAVID.to_string())])).await;
+    assert_eq!(untouched.status, StatusCode::FOUND);
+    assert_eq!(app.db().read(move |conn| Room::find(conn, room_id)).await.unwrap().topic.as_deref(), Some("Plans & budgets"), "a form without the field leaves it");
+
     let missing_param = david.write(Req::new(Method::POST, "/rooms/opens").form(&[("name", "x")])).await;
     assert_eq!(missing_param.status, StatusCode::BAD_REQUEST);
 }

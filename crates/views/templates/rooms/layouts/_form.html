@@ -10,8 +10,15 @@
     </span>
     <span class="ws-hint">Channels are where conversations happen around a topic. Use a name that's easy to find.</span>
   </label>
+
+  <label class="ws-field">
+    <span class="ws-field__label">Topic <span class="ws-hint">(optional)</span></span>
+    <input name="room[topic]" id="room_topic" class="ws-input" maxlength="250" placeholder="What's this channel about?" data-turbo-permanent="true" type="text"{% if let Some(topic) = room.topic %} value="{{ topic }}"{% endif %} />
+    <span class="ws-hint">Shown beside the name in the channel's header.</span>
+  </label>
   {%- else %}
   <h2 class="ws-channel-form__name"><span class="ws-row__hash">#</span>{{ room.display_name() }}</h2>
+  {%- if let Some(topic) = room.topic %}<p class="ws-hint">{{ topic }}</p>{% endif %}
   {%- endif %}
 
   {{ content|safe }}

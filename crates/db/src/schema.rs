@@ -45,6 +45,8 @@ pub const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("messages", "thread_parent_id", "integer"),
     // The sidebar's channel order, per person (plans/redesign.md): NULL keeps the alphabetical place.
     ("memberships", "position", "integer"),
+    // A channel's topic, shown in its header (plans/redesign.md).
+    ("rooms", "topic", "varchar"),
 ];
 
 /// Indexes this app adds to the Rails schema, created on boot when missing (new and existing

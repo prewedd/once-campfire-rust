@@ -12,6 +12,9 @@
       {{ room.display_name }}
     </h1>
 </span>
+  {%- if let Some(topic) = room.topic %}
+  <span class="ws-topic" title="{{ topic }}">{{ topic }}</span>
+  {%- endif %}
 
   <a class="btn" style="view-transition-name: edit-room-{{ room.id }}" data-room-id="{{ room.id }}" href="{{ room.edit_path() }}">
     <img aria-hidden="true" src="{{ ctx.asset("menu-dots-horizontal.svg") }}" width="20" height="20" />

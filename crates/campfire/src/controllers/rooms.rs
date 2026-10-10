@@ -164,6 +164,12 @@ pub(crate) fn room_name_param(c: &Ctx) -> Result<Option<Option<String>>> {
     Ok(permitted.get("name").map(|name| name.as_str().map(str::to_string)))
 }
 
+/// `params[:room][:topic]`, this app's own: `Some(topic)` when it was submitted.
+pub(crate) fn room_topic_param(c: &Ctx) -> Option<String> {
+    let room = c.params.require("room").ok()?;
+    room.permit(&campfire_kit::permit_keys(&["topic"])).get("topic").and_then(|topic| topic.as_str().map(str::to_string))
+}
+
 /// `params.fetch(:user_ids, [])` as ids `User.where(id:)` can match.
 pub(crate) fn user_ids_param(c: &Ctx) -> Vec<i64> {
     match c.param("user_ids") {

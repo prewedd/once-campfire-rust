@@ -92,6 +92,8 @@ The smallest build, the fewest tests that cover the change, the fastest deploy.
   the sidebar/composer markup change (the parity goldens filter this app's own markup: add a
   marker in `crates/views/tests/messages_support/mod.rs` and `parity_a.rs` for new markup).
   `cargo test --workspace --exclude html5ever` only before a release or a schema change.
+- In the toolchain container, pass `--ulimit nofile=65536:65536` for workspace-wide runs: without it
+  dozens of app tests fail with "Too many open files" / "unable to open database file".
 - Known, not regressions: two Rust timing tests (`parses_pathological_pages_quickly`,
   `deeply_nested_content_attachments_render_quickly`) fail in debug builds on a busy machine.
 - Never edit an existing asset's imports to a module the running dev server doesn't know (a new

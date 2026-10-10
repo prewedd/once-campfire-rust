@@ -36,6 +36,9 @@ pub struct RoomView {
     pub name: Option<String>,
     /// `room_display_name(room)` for `Current.user`.
     pub display_name: String,
+    /// This app's own: the channel's topic, for its header.
+    #[serde(default)]
+    pub topic: Option<String>,
 }
 
 impl RoomView {
@@ -159,6 +162,9 @@ pub struct RefreshShow<'a> {
 pub struct FormRoom {
     pub id: Option<i64>,
     pub name: Option<String>,
+    /// This app's own: the channel's topic.
+    #[serde(default)]
+    pub topic: Option<String>,
 }
 
 /// `rooms/opens/{new,edit}`.

@@ -150,6 +150,7 @@ fn without_port_markup(actual: Vec<String>) -> Vec<String> {
         "huddle-btn",
         r#"<section class="ws-section">"#,
         "ws-nav-search",
+        r#"<span class="ws-topic""#,
     ];
     let is_added = |t: &str| ADDED.iter().any(|marker| t.contains(marker));
     let mut out = Vec::with_capacity(actual.len());
