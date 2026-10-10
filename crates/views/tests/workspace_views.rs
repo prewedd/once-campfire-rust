@@ -63,3 +63,14 @@ fn editing_a_message_offers_emoji_too() {
     let html = g.render(|ctx| messages::Edit { ctx, edit: &edit }.render().unwrap());
     assert!(html.contains(r#"<lexxy-prompt trigger=":" name="emoji""#), "{html}");
 }
+
+#[test]
+fn an_edited_message_says_so() {
+    let g = golden("messages_show_text");
+    let mut message: MessageView = g.input();
+    let html = g.render(|ctx| messages::MessagePartial { ctx, message: &message }.render().unwrap());
+    assert!(!html.contains("(edited)"), "{html}");
+    message.edited = true;
+    let html = g.render(|ctx| messages::MessagePartial { ctx, message: &message }.render().unwrap());
+    assert!(html.contains(r#"<span class="message__edited">(edited)</span>"#), "{html}");
+}

@@ -172,3 +172,4 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
 - **Keyboard shortcuts** (Ctrl/⌘+/, or the workspace menu): a list of what this app supports.
 - **People** (`/people`, `controllers/people.rs`, `searches/people.html`): everyone active in the workspace as a compact grid of photos with presence, status and bio, filtered by name as you type; under Mentions in the sidebar.
 - **Drafts**: a channel or conversation with an unsent draft (kept per room in this browser by the composer) shows ✏️ after its name in the sidebar.
+- **(edited)** by the time of a message whose text changed after posting (its body's own `updated_at`: reactions and replies touch the message, not its body). Live edits show it after a reload.

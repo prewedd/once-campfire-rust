@@ -219,6 +219,7 @@ impl<'a> Presenter<'a> {
                 boosts: Vec::new(),
                 thread_parent_id: message.thread_parent_id,
                 thread: None,
+                edited: false,
             }),
             rendered => rendered,
         }
@@ -239,6 +240,8 @@ impl<'a> Presenter<'a> {
             boosts: self.boosts(message)?,
             thread_parent_id: message.thread_parent_id,
             thread: self.thread(message)?,
+            // Reactions and replies touch the message, not its body: the body changes on an edit.
+            edited: message.body(self.conn)?.is_some_and(|body| body.updated_at.as_microsecond() - body.created_at.as_microsecond() > 1_000_000),
         })
     }
 

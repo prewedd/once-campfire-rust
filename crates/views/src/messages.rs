@@ -87,6 +87,9 @@ pub struct MessageView {
     /// A top-level message's thread, once it has replies.
     #[serde(default)]
     pub thread: Option<ThreadView>,
+    /// This app's own: its text was changed after it was posted ("(edited)", plans/redesign.md).
+    #[serde(default)]
+    pub edited: bool,
 }
 
 /// A thread's summary under its top-level message.

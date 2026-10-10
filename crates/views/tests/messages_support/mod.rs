@@ -153,6 +153,7 @@ fn without_port_markup(actual: Vec<String>) -> Vec<String> {
         "message__save-btn",
         "message__pin-btn",
         "message__unread-btn",
+        "message__edited",
         r#"<span class="ws-topic""#,
         r#"<a class="ws-members-btn""#,
         r#"<span id="ws-last-seen""#,

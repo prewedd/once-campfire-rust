@@ -3634,3 +3634,6 @@ details:has(> summary > img[src*="/globe-"]) { display: none; }
 #sidebar a.room.has-draft > .overflow-ellipsis::after { content: " ✏️"; font-size: 12px; }
 /* A conversation's name already has its status after it, and unread hides .direct__author's ::after */
 #sidebar a.direct.has-draft .direct__author > span::before { content: "✏️ "; font-size: 12px; }
+
+/* "(edited)" by the time (messages/_message.html) */
+.message__edited { color: var(--ws-faint); font-size: 12px; font-weight: 400; }

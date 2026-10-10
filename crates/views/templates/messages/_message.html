@@ -18,6 +18,7 @@
                 <strong data-reply-target="author">{{ message.creator.name }}</strong>
               </span>
               <a target="_top" class="message__permalink" href="{{ message.at_path() }}"><time class="message__timestamp" datetime="{{ message.created_at_iso() }}" data-local-time-target="time"></time></a>
+              {%- if message.edited %}<span class="message__edited">(edited)</span>{% endif %}
               <span class="message__room">
                 <a target="_top" data-reply-target="link" href="{{ message.at_path() }}">{{ message.room_name }}</a>
               </span>
