@@ -3,7 +3,7 @@ const [, , BASE, CODE, OUT] = process.argv
 const { chromium } = require("playwright")
 const shots = [
   ["room", "/rooms/1"],
-  ["search", "/searches?q=the"],
+  ["search", "/searches?q=hello"], ["search-empty", "/searches"],
   ["settings", "/account/edit"],
   ["profile", "/users/me/profile"],
   ["new-room", "/rooms/opens/new"],

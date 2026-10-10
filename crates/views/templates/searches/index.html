@@ -1,61 +1,50 @@
-{#- reference/app/views/searches/index.html.erb, with SearchesHelper#search_results_tag -#}
+{#- reference/app/views/searches/index.html.erb, laid out as Slack's search (plans/redesign.md) -#}
 {% extends "layouts/application.html" %}
 {%- block head %}{% endblock %}
 
 {%- block nav %}
-  {%- if let Some(query) = index.query %}
-    <div class="searches__query flex align-center gap pad-block-start-half">
-      <div class="btn btn--reversed btn--faux align-center gap txt-nowrap">
-        <span class="overflow-ellipsis">“{{ query }}”</span>
-        <span class="flex-item-no-shrink">{{ index.messages.len() }}</span>
-</div>    </div>
-  {%- endif %}
-
-  <div class="searches__recents align-center gap pad-block-half overflow-y overflow-hide-scrollbar">
-    {% include "searches/_recents.html" %}
-  </div>
+  <form class="ws-search" role="search" data-controller="form" data-action="keydown.esc-&gt;form#cancel" action="{{ h::routes::searches() }}" accept-charset="UTF-8" method="post">
+    <label class="ws-search__box">
+      <img aria-hidden="true" class="ws-search__icon" src="{{ ctx.asset("search.svg") }}" width="16" height="16" />
+      <input{% if let Some(q) = index.q %} value="{{ q }}"{% endif %} class="searches__input" role="searchbox" aria-label="Search messages" placeholder="Search messages" autofocus="autofocus" required="required" type="text" name="q" id="q" />
+      <a role="button" class="searches__reset" href="{{ h::routes::searches() }}" title="Clear">✕<span class="for-screen-reader">Clear search field</span></a>
+    </label>
+    <a class="ws-btn ws-search__close" data-form-target="cancel" href="{{ h::routes::room(index.return_to_room_id) }}">Close</a>
+  </form>
 {%- endblock %}
 
-{%- block sidebar %}
-  <div class="rooms position-relative flex flex-column gap overflow-y overflow-hide-scrollbar">
-    {% include "searches/_recents.html" %}
-  </div>
-{%- endblock %}
+{%- block sidebar %}{{ h::sidebar_turbo_frame_tag(Some(h::routes::user_sidebar().as_str()), "") }}{% endblock %}
 
 {%- block content %}
-<div id="message-area" class="message-area">
-  <div class="message-area--empty min-width center">
-    <figure class="center pad">
-      <img aria-hidden="true" class="colorize--black translucent" src="{{ ctx.asset("search.svg") }}" />
-    </figure>
-  </div>
+<div id="message-area" class="message-area ws-search-page">
+  {%- if let Some(query) = index.query %}
+  <header class="ws-search__summary">
+    <h1>Results for “{{ query }}”</h1>
+    <span class="ws-hint">{{ index.messages.len() }} {% if index.messages.len() == 1 %}message{% else %}messages{% endif %}</span>
+  </header>
+  {%- if index.messages.is_empty() %}
+  <p class="ws-search__empty">No messages match. Try fewer or different words.</p>
+  {%- endif %}
+  {%- else %}
+  <section class="ws-search__start">
+    <h1>Search messages</h1>
+    <p class="ws-hint">Find words in every channel and conversation you're in.</p>
+    {%- if !index.recent_searches.is_empty() %}
+    <h2 class="ws-section__title">Recent searches</h2>
+    <menu class="ws-rows">
+      {%- for search in index.recent_searches %}
+      <li class="ws-row"><a class="ws-row__main txt-undecorated" href="{{ crate::searches::search_path(search) }}"><span class="ws-search__recent-icon" aria-hidden="true">🕘</span><span class="ws-row__name">{{ search }}</span></a></li>
+      {%- endfor %}
+    </menu>
+    <form class="button_to" method="post" action="{{ ctx.url(h::routes::clear_searches().as_str()) }}"><input type="hidden" name="_method" value="delete" /><button class="ws-btn ws-btn--link searches__btn" data-turbo-confirm="Are you sure you want to clear your recent searches?" type="submit">Clear recent searches</button></form>
+    {%- endif %}
+  </section>
+  {%- endif %}
 
   <div id="search-results" class="messages searches__results" data-controller="search-results" data-search-results-target="messages" data-search-results-me-class="message--me" data-search-results-threaded-class="message--threaded" data-search-results-mentioned-class="message--mentioned" data-search-results-formatted-class="message--formatted">
     {%- for message in index.messages %}
     {{ crate::messages::cached_message_item(ctx, message) }}
     {%- endfor %}
-  </div></div>
-{%- endblock %}
-
-{%- block footer %}
-  <div class="composer flex align-end gap">
-    <a class="btn flex-item-no-shrink margin-block-end" style="view-transition-name: input-switcher; --btn-border-radius: 0.5em" href="{{ h::routes::room(index.return_to_room_id) }}">
-      <img aria-hidden="true" src="{{ ctx.asset("arrow-left.svg") }}" />
-      <span class="for-screen-reader">Exit search </span>
-</a>
-    <form class="margin-block flex-item-grow contain flex align-center gap" data-controller="form" data-action="keydown.esc-&gt;form#cancel" action="{{ h::routes::searches() }}" accept-charset="UTF-8" method="post">
-      <div class="composer__input flex align-center flex-item-grow gap full-width input input--actor min-width">
-        <img aria-hidden="true" class="composer__input-hint colorize--black" style="view-transition-name: input-btn;" src="{{ ctx.asset("search.svg") }}" width="20" height="20" />
-
-        <input{% if let Some(q) = index.q %} value="{{ q }}"{% endif %} class="searches__input input flex-item-grow" role="searchbox" aria-label="search" autofocus="autofocus" required="required" type="text" name="q" id="q" />
-
-        <a data-form-target="cancel" role="button" class="searches__reset" href="{{ h::routes::searches() }}">
-          <img aria-hidden="true" class="colorize--black" src="{{ ctx.asset("remove.svg") }}" width="14" height="14" />
-          <span class="for-screen-reader">Clear search field</span>
-</a>
-        <button name="button" type="submit" class="btn btn--reversed flex-item-no-shrink txt-small" style="--btn-border-radius: 0.5em">
-          <img aria-hidden="true" src="{{ ctx.asset("arrow-up.svg") }}" />
-          <span class="for-screen-reader">Search</span>
-</button>      </div>
-</form>  </div>
+  </div>
+</div>
 {%- endblock %}

@@ -106,3 +106,7 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
   Workspace settings and Your profile, each in the modal.
 - **Header**: the channel's name (with ▾) opens its settings; huddle, notifications and ⋯ sit on the
   right; phones get a visible menu button.
+- **Search** (`searches/index.html`): a "Search <workspace>" pill in every room's header opens it;
+  the box sits in the header, results head with "Results for “…”" and a count, each labelled
+  "in #channel"; with no query, recent searches as a list. The composer's magnifier is gone, and
+  the normal sidebar stays.

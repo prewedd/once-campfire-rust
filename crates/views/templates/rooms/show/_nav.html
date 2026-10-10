@@ -18,6 +18,8 @@
     <span class="for-screen-reader">Settings for this {{ room.noun() }}</span>
 </a>
 
+  <a class="ws-nav-search" href="{{ h::routes::searches() }}" title="Search messages"><img aria-hidden="true" src="{{ ctx.asset("search.svg") }}" width="14" height="14" />Search {{ ctx.account.name }}</a>
+
   {% include "rooms/involvements/_bell.html" %}
 {%- if show.huddles %}
   <button type="button" class="btn huddle-btn" data-controller="huddle" data-action="huddle#toggle" data-huddle-room-value="{{ room.id }}" data-huddle-name-value="{% if !room.is_direct() %}#{% endif %}{{ room.display_name }}" title="Start a huddle">

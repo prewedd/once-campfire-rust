@@ -105,6 +105,20 @@ const openModal = (p, path) => p.evaluate(path => { const a = document.createEle
     await ana.keyboard.press("Escape")
   })
 
+  await step("search", async () => {
+    await ana.locator("#nav .ws-nav-search").click()
+    await ana.waitForURL(/\/searches/)
+    const box = ana.locator('#nav .ws-search input[name="q"]')
+    check("search lives in the header", await box.isVisible())
+    await box.fill(`ben${t}`)
+    await box.press("Enter")
+    await ana.locator(".ws-search__summary").waitFor({ timeout: 8000 })
+    check("results say what was searched and how many", /Results for/.test(await ana.locator(".ws-search__summary").innerText()))
+    await ana.locator("#nav .ws-search__close").click()
+    await ana.waitForURL(/rooms\/\d+/)
+    check("Close goes back to the room", true)
+  })
+
   check("no page errors", errors.length === 0, errors.join(" | "))
   await b.close()
   console.log(`\n${results.filter(Boolean).length}/${results.length} checks passed`)

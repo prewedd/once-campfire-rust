@@ -19,7 +19,7 @@ const { chromium } = require("playwright")
     const out = []
     for (let e = document.querySelector(sel); e && e !== document.body; e = e.parentElement) {
       const s = getComputedStyle(e)
-      out.push(`${e.tagName.toLowerCase()}.${[...e.classList].join(".")} w=${e.getBoundingClientRect().width} inline-size=${s.width} max=${s.maxWidth} margin=${s.marginLeft}/${s.marginRight} display=${s.display} cols=${s.gridTemplateColumns} jself=${s.justifySelf} jitems=${s.justifyItems} col=${s.gridColumn}`)
+      out.push(`${e.tagName.toLowerCase()}.${[...e.classList].join(".")} w=${e.getBoundingClientRect().width} top=${Math.round(e.getBoundingClientRect().top)} h=${Math.round(e.getBoundingClientRect().height)} jc=${s.justifyContent} ac=${s.alignContent} inline-size=${s.width} max=${s.maxWidth} margin=${s.marginLeft}/${s.marginRight} display=${s.display} cols=${s.gridTemplateColumns} jself=${s.justifySelf} jitems=${s.justifyItems} col=${s.gridColumn}`)
     }
     const el = document.querySelector(sel), rules = []
     const walk = list => { for (const r of list) { if (r.cssRules) walk(r.cssRules); if (r.selectorText) { try { if (el.matches(r.selectorText) && /width|inline-size|justify|margin|grid|place/.test(r.style.cssText)) rules.push(r.selectorText + " { " + r.style.cssText + " }") } catch {} } } }
