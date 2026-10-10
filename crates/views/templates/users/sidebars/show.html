@@ -18,6 +18,10 @@
         <span>Threads</span>
         <span class="sidebar__shortcut-badge" data-threads-badge hidden></span>
       </button>
+      <a class="sidebar__shortcut" href="{{ h::routes::saved() }}">
+        {{ h::image_tag(ctx, "bookmark.svg", h::attrs().size(18).aria_hidden()) }}
+        <span>Saved</span>
+      </a>
     </nav>
     <turbo-frame id="direct_rooms_control" target="_top">
       <div class="directs gap overflow-x overflow-hide-scrollbar">

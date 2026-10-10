@@ -118,3 +118,7 @@ path!(user_status, "/users/me/status");
 // Browse channels (plans/redesign.md).
 path!(channels, "/channels");
 path!(channel_membership(room_id), "/channels/{room_id}/membership");
+
+// Saved for later (plans/redesign.md).
+path!(saved, "/saved");
+path!(message_save(message_id), "/messages/{message_id}/save");

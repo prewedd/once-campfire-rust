@@ -40,6 +40,7 @@ pub mod presenters;
 pub mod pwa;
 pub mod qr_code;
 pub mod rooms;
+pub mod saved;
 pub mod scheduled_messages;
 pub mod searches;
 pub mod sessions;
@@ -187,6 +188,10 @@ static ROUTES: LazyLock<Vec<Route>> = LazyLock::new(|| {
         get("/join/:join_code(.:format)", "users#new", users::new),
         post("/join/:join_code(.:format)", "users#create", users::create),
         get("/qr_code/:id(.:format)", "qr_code#show", qr_code::show),
+        get("/saved(.:format)", "saved#index", saved::index),
+        get("/saved/ids(.:format)", "saved#ids", saved::ids),
+        post("/messages/:message_id/save(.:format)", "saved#create", saved::create),
+        delete("/messages/:message_id/save(.:format)", "saved#destroy", saved::destroy),
         get("/channels(.:format)", "channels#index", channels::index),
         post("/channels/:room_id/membership(.:format)", "channels#join", channels::join),
         delete("/channels/:room_id/membership(.:format)", "channels#leave", channels::leave),
@@ -529,7 +534,7 @@ mod tests {
     const MISSING_CONTROLLERS: &[&str] = &["rooms/settings"];
 
     /// Controllers this app adds to the Rails routes (README, Known differences).
-    const ADDED_CONTROLLERS: &[&str] = &["threads", "huddles", "sidebar_positions", "scheduled_messages", "user_statuses", "channels"];
+    const ADDED_CONTROLLERS: &[&str] = &["threads", "huddles", "sidebar_positions", "scheduled_messages", "user_statuses", "channels", "saved"];
 
     #[test]
     fn the_table_is_rails_routes_in_order() {

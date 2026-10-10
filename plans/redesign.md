@@ -131,3 +131,8 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
   by name with members, topic and a filter; Leave sets your involvement to "invisible" (out of the
   sidebar, no notifications) and Join sets it back to "mentions", with the bell's broadcasts. It's
   in the workspace menu and in "Add channel", which now offers Create a new channel / Browse channels.
+- **Saved for later** (`saved_messages`, a table of this app's own; `controllers/saved.rs`,
+  `lib/workspace/saved.js`, `searches/saved.html`): "Save for later" in a message's ⋯ menu (it reads
+  "Remove from saved" once saved, from `/saved/ids`, since message HTML is cached and shared), a
+  toast to confirm, and "Saved" under Threads in the sidebar, listing them newest first with their
+  channels. Only messages you can still reach are saved or listed.

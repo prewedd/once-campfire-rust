@@ -55,3 +55,21 @@ mod tests {
         assert_eq!(search_path(r#"pizza & "pie" *~"#), "/searches?q=pizza+%26+%22pie%22+%2A~");
     }
 }
+
+/// "Saved for later" (plans/redesign.md), this app's own: the messages you've saved, newest first.
+#[derive(Template)]
+#[template(path = "searches/saved.html", blocks = ["head", "content"])]
+pub struct Saved<'a> {
+    pub ctx: &'a ViewContext<'a>,
+    pub messages: &'a [MessageItem],
+}
+
+impl Page for Saved<'_> {
+    fn page_title(&self) -> Option<String> {
+        Some("Saved for later".into())
+    }
+
+    fn body_class(&self) -> Option<&str> {
+        Some("sidebar searches saved")
+    }
+}

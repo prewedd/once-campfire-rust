@@ -27,7 +27,7 @@ affected() {
       *schedul*) echo schedule ;;
       *thread*|*refresh_room*|*scroll_manager*|*composer*|*messages_controller*) echo threads threadsview ui3 ;;
       *modal*|*involvement*|*workspace/sidebar*|*reorder*|*sorted_list*|users/pane*|*sidebars*|*memberships*) echo ui4 channels ;;
-      */rooms/opens/*|*/rooms/closeds/*|*/rooms/layouts/*|*/accounts/*|*/users/profiles/*|*/searches/*|*/rooms/show/_nav*|*status*|*channels.rs|*rooms/browse*) echo channels ;;
+      */rooms/opens/*|*/rooms/closeds/*|*/rooms/layouts/*|*/accounts/*|*/users/profiles/*|*/searches/*|*/rooms/show/_nav*|*status*|*channels.rs|*rooms/browse*|*saved*|*messages/_actions*) echo channels ;;
       *emoji*|*boost*|*reaction*|*initializers/workspace.js) echo workspace ui3 ;;
       *online*|*presence*|*theme*) echo ui3 ;;
       crates/assets/overrides/*.css) echo ui3 ;;
