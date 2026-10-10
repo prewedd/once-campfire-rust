@@ -3541,3 +3541,24 @@ body.saved #sidebar a.sidebar__shortcut[href="/saved"] { background: var(--ws-si
   #nav .huddle-btn__label { display: none; }
   .sidebar #nav:has(> .room--current) > .account-logo { display: none; }
 }
+
+/* "Notifications aren't allowed" (rooms/involvements/_bell.html), as the other dialogs */
+dialog[data-notifications-target="notAllowedNotice"] {
+  inline-size: min(460px, calc(100vw - 32px));
+  padding: 20px 24px 24px;
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-radius-lg);
+  background: var(--ws-bg-raised);
+  color: var(--ws-ink);
+  box-shadow: var(--ws-shadow-lg);
+  font-family: var(--ws-font);
+}
+dialog[data-notifications-target="notAllowedNotice"]::backdrop { background: rgb(9 9 11 / 0.45); }
+dialog[data-notifications-target="notAllowedNotice"] > div { position: relative; align-items: stretch; text-align: start; }
+dialog[data-notifications-target="notAllowedNotice"] .btn--faux { display: none; }
+dialog[data-notifications-target="notAllowedNotice"] h1 { padding-inline-end: 36px; font-size: 18px; font-weight: 800; text-align: start; }
+dialog[data-notifications-target="notAllowedNotice"] h1::after { content: "Allow notifications to hear about mentions and direct messages."; display: block; margin-top: 6px; color: var(--ws-muted); font-size: 14px; font-weight: 400; }
+dialog[data-notifications-target="notAllowedNotice"] form[method="dialog"] { position: absolute; inset: -6px -10px auto auto; }
+dialog[data-notifications-target="notAllowedNotice"] .dialog__close { --btn-background: transparent; --btn-border-color: transparent; --btn-size: 32px; }
+dialog[data-notifications-target="notAllowedNotice"] .dialog__close img { inline-size: 14px; filter: var(--ws-ink-filter); opacity: 0.6; }
+dialog[data-notifications-target="notAllowedNotice"] details > summary.btn { --btn-border-radius: var(--ws-radius); --btn-background: var(--ws-bg-subtle); --btn-border-color: var(--ws-border); font-size: 14px; }
