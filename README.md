@@ -12,6 +12,26 @@ The port ships as a single `campfire` executable (plus libvips and ffmpeg). It r
 Redis, Resque and Thruster. Against the Rails app it replaces, it serves pages, posts and real-time
 delivery 20–95× faster, and holds 10,000 connected clients in a fifth of the memory.
 
+## This fork
+
+[PreWedd](https://prewedd.com)'s edition, maintained by Oleg Pustovit, runs our team chat. It keeps
+the port's speed and compatibility (an existing Campfire install's database, storage and sign-ins
+carry over) and replaces Campfire's own look with a compact, Slack-style workspace:
+
+- **Navigation:** a sidebar with Threads, Mentions, People and Saved, foldable Channels and Direct
+  messages, unread counts and drafts, your own channel order, a workspace menu, a quick switcher
+  (Ctrl/⌘+K) and Slack's keyboard shortcuts (Ctrl/⌘+/ lists them).
+- **Conversations:** threads in a right-hand panel, profiles in the same panel, reactions as pills,
+  an emoji picker, Save for later, pins, Mark unread, scheduled messages, and channel topics.
+- **People:** custom statuses, presence, paused notifications, and huddles (voice, video and screen
+  sharing over LiveKit) in any channel or DM.
+- **Settings:** your profile, workspace settings, channel and DM settings, bots and Browse channels
+  as Slack-style forms and modals, plus Slack-style error pages.
+
+Every divergence from Campfire, with the tables and columns it adds (all created on boot and ignored
+by the Rails app, so an upgrade can still roll back), is listed under
+[Known differences](#known-differences).
+
 ## What was done
 
 The Rails app lives in `reference/` as a git submodule, pinned to the commit being matched. It is
@@ -325,6 +345,9 @@ Deliberate:
   dots (`OnlineChannel`) and a right-hand panel for threads and profiles. Mostly in
   `crates/assets/overrides` plus a few added elements in templates, which the parity goldens leave
   out.
+- **No "Content missing".** A Turbo frame (the sidebar, the right-hand panel) whose response lacks
+  it loads once more, then opens the page itself, where Turbo would print "Content missing"
+  (`initializers/workspace.js`).
 - **Slack-style settings pages.** Your profile, workspace settings and the channel forms are laid
   out as Slack's: labelled fields and text buttons in place of Campfire's icon-only ones, the photo
   beside the fields, a Members list with Make admin and Remove, Public/Private as two choices and
