@@ -7,7 +7,7 @@ const shots = [
   ["settings", "/account/edit"],
   ["profile", "/users/me/profile"],
   ["new-room", "/rooms/opens/new"],
-  ["new-dm", "/rooms/directs/new"],
+  ["new-dm", "/rooms/directs/new"], ["user", "/users/3"],
 ]
 ;(async () => {
   const b = await chromium.launch()
@@ -71,6 +71,11 @@ const shots = [
       await p.waitForTimeout(1500)
       await p.screenshot({ path: `${OUT}/tour-${tag}-${name}.png` })
     }
+    await p.goto(BASE + "/rooms/1"); await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {})
+    await p.evaluate(() => { const a = document.createElement("a"); a.href = "/account/edit"; document.body.append(a); a.click() })
+    await p.locator("dialog.ws-modal[open] a[href^='/qr_code/']").first().click().catch(e => console.log("qr", e.message))
+    await p.waitForTimeout(1200)
+    await p.screenshot({ path: `${OUT}/tour-${tag}-m-qr.png` })
     await ctx.close()
   }
   for (const [w, h, tag, scheme] of [[1440, 900, "desk", "light"], [390, 844, "phone", "light"], [1440, 900, "dark", "dark"]]) {

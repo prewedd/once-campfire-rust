@@ -3512,3 +3512,18 @@ body.saved #sidebar a.sidebar__shortcut[href="/saved"] { background: var(--ws-si
 .ws-auth__help { display: grid; gap: 4px; text-align: center; font-size: 14px; }
 .ws-auth__help p { margin: 0; }
 @media (max-width: 480px) { .ws-auth { padding-top: 24px; } .ws-auth__card { padding: 24px 18px; box-shadow: none; } }
+
+/* Someone's profile page: "Message", as Slack's, not a black bar with an icon */
+#main-content .panel form.button_to .btn--reversed:has(> img[src*="/messages-"]:not([src*="outlined"])) {
+  --btn-background: var(--ws-accent);
+  --btn-border-color: var(--ws-accent);
+  --btn-color: var(--ws-on-accent);
+  --btn-border-radius: var(--ws-radius);
+  gap: 8px;
+  font-size: 15px;
+}
+#main-content .panel form.button_to .btn--reversed:has(> img[src*="/messages-"]:not([src*="outlined"]))::after { content: "Message"; }
+#main-content .panel form.button_to .btn--reversed > img[src*="/messages-"] { inline-size: 18px; filter: var(--ws-on-accent-filter); }
+
+/* A QR code at a size you can scan, on a card */
+.lightbox__image[src*="/qr_code/"] { inline-size: min(360px, 80vw); block-size: auto; padding: 16px; border-radius: var(--ws-radius-lg); background: #fff; box-shadow: var(--ws-shadow-lg); }
