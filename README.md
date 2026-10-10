@@ -343,6 +343,8 @@ Deliberate:
   join and leave, as the "invisible" involvement (the room stays a membership).
 - **Last read.** A nullable `memberships.last_read_at`, added on boot and written beside Rails' own
   membership updates (reading, connecting, staying, leaving), for unread counts and the "New" line.
+- **Error pages.** `crates/assets/public/` shadows the reference's `public/`: Slack-style 404, 422,
+  500 and 502 pages (the static-file test checks their content type, not the reference's bytes).
 - **Channel topics.** A nullable `rooms.topic` column, added on boot (the Rails image ignores it),
   set in a channel's settings and shown in its header.
 - **Huddles.** Drop-in voice and video calls in any room or DM, as Slack's huddles

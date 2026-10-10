@@ -238,7 +238,11 @@ fn public_files_are_served_like_action_dispatch_static() {
         // Our manifest lists the same entries in load-path order rather than the build
         // machine's readdir order, so its length and bytes can't match; an overridden file's
         // length, ETag and bytes are its own.
-        if request.path == "/assets/.manifest.json" || override_of.is_some() {
+        // This app's own public/ pages (its error pages) shadow the reference's, so the same.
+        let own_public = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("public");
+        let bare = path.trim_matches('/');
+        let own = [bare.to_string(), format!("{bare}.html")].iter().any(|p| own_public.join(p).is_file());
+        if request.path == "/assets/.manifest.json" || override_of.is_some() || own {
             assert_eq!(
                 ours.get("content-type"),
                 theirs.get("content-type"),

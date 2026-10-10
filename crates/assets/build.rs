@@ -45,6 +45,10 @@ fn main() {
         "cargo:rerun-if-changed={}",
         crate_dir.join("overrides").display()
     );
+    println!(
+        "cargo:rerun-if-changed={}",
+        crate_dir.join("public").display()
+    );
     println!("cargo:rerun-if-changed=build");
     println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
 
@@ -124,8 +128,19 @@ fn main() {
     all_files(&public, &mut public_files);
     // A stray precompile inside the submodule mustn't shadow what we build.
     public_files.retain(|file| !file.starts_with(public.join("assets")));
-    for (i, file) in public_files.iter().enumerate() {
-        let url = format!("/{}", file.strip_prefix(&public).unwrap().display());
+    // This app's own public/ (its error pages) shadows the reference's, file by file.
+    let mut by_url: std::collections::BTreeMap<String, PathBuf> =
+        public_files.iter().map(|file| (format!("/{}", file.strip_prefix(&public).unwrap().display()), file.clone())).collect();
+    let own_public = crate_dir.join("public");
+    let mut own_files = Vec::new();
+    if own_public.is_dir() {
+        all_files(&own_public, &mut own_files);
+    }
+    for file in own_files {
+        by_url.insert(format!("/{}", file.strip_prefix(&own_public).unwrap().display()), file);
+    }
+    for (i, (url, file)) in by_url.iter().enumerate() {
+        let url = url.clone();
         writeln!(
             code,
             "static PUBLIC_{i}: &[u8] = include_bytes!({:?});",

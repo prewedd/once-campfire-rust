@@ -156,3 +156,7 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
   a new token in everyone's sidebar `#ws_statuses_signal` over `:rooms` (`statuses_change`), and
   pages read the statuses again. The timers went (statuses keep a five-minute check for ones that
   clear themselves).
+- **Error pages** (`crates/assets/public/`, which shadows the reference's `public/` file by file in
+  `build.rs`): 404, 422, 500 and 502 as a card with what happened and "Back to Campfire", light and
+  dark. The two remaining "translate" globes (the welcome message, the incompatible-browser page) are
+  hidden. `e2e/tour/more.js` screenshots the less-visited screens.

@@ -3573,3 +3573,6 @@ dialog[data-notifications-target="notAllowedNotice"] details > summary.btn { --b
 .ws-new-line::before { flex: 0 0 0; }
 .ws-new-line span { order: 2; padding: 0 2px; }
 .ws-new-line::after { order: 1; }
+
+/* Campfire's "translate this" globes: Slack has none */
+details:has(> summary > img[src*="/globe-"]) { display: none; }
