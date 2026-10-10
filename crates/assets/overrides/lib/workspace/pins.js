@@ -1,8 +1,8 @@
 // Pinned messages (plans/redesign.md): a "📌 N" in the channel's header (opening its pins in the
 // modal), a "Pinned" label on pinned messages, and "Pin to channel" / "Unpin from channel" in the
-// "⋯" menu. Messages are cached and shared, so the channel's pins come from /rooms/:id/pins/ids:
-// when it opens, every 30 seconds while it's in view, on coming back to it, and right after you
-// change one.
+// "⋯" menu. Messages are cached and shared, so the channel's pins come from /rooms/:id/pins/ids
+// when it opens, and live after that: a change is broadcast into the header's hidden
+// #ws_pins_room_<id> (controllers/pins.rs), read here.
 import { toast } from "lib/workspace/saved"
 
 let room = null
@@ -56,8 +56,22 @@ function label(button) {
   button.setAttribute("aria-label", button.title)
 }
 
+// A broadcast change: the room's pinned ids, as JSON.
+function fromSignal() {
+  const id = window.Current?.room?.id
+  const text = document.getElementById(`ws_pins_room_${id}`)?.textContent.trim()
+  if (!text || text === fromSignal.last) return
+  fromSignal.last = text
+  try {
+    pinned = new Set(JSON.parse(text))
+    room = id
+    loadedAt = Date.now()
+  } catch {}
+}
+
 export function showPins() {
   if (!window.Current?.user || !window.Current?.room) return
+  fromSignal()
   paint()
   load().then(set => set && paint())
 }
@@ -88,5 +102,4 @@ document.addEventListener("click", async event => {
   toast(unpinning ? "Unpinned from the channel" : "Pinned to the channel")
 })
 
-setInterval(() => { if (document.visibilityState === "visible") showPins() }, 30_000)
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { loadedAt = 0; showPins() } })

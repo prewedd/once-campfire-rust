@@ -55,8 +55,20 @@ function paint() {
   })
 }
 
+// A broadcast change (controllers/users/statuses.rs): a new token in the sidebar's hidden
+// #ws_statuses_signal means read them again.
+let signal = null
+function changed() {
+  const token = document.getElementById("ws_statuses_signal")?.textContent.trim()
+  if (token && token !== signal) {
+    if (signal !== null) fetchedAt = 0
+    signal = token
+  }
+}
+
 export function showStatuses() {
   if (!window.Current?.user) return // signed out: nobody's to show
+  changed()
   paint()
   load().then(paint)
 }
@@ -91,6 +103,6 @@ document.addEventListener("submit", event => {
   if (form.matches?.(".ws-status__form, form[action$='/users/me/status']")) fetchedAt = 0
 }, true)
 
-// While the page is in view, and on coming back to it.
-setInterval(() => { if (document.visibilityState === "visible") showStatuses() }, MAX_AGE)
+// Changes arrive live; this catches statuses that clear themselves, and missed broadcasts.
+setInterval(() => { if (document.visibilityState === "visible") { fetchedAt = 0; showStatuses() } }, 5 * 60_000)
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { fetchedAt = 0; showStatuses() } })

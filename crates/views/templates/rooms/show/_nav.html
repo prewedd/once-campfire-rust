@@ -12,6 +12,7 @@
       {{ room.display_name }}
     </h1>
 </span>
+  <span id="ws_pins_room_{{ room.id }}" class="ws-pins-signal" hidden></span>
   {%- if !room.is_direct() && show.member_count > 0 %}
   <a class="ws-members-btn" href="{{ room.edit_path() }}" title="{{ show.member_count }} {% if show.member_count == 1 %}member{% else %}members{% endif %}: see who's in it">👥 {{ show.member_count }}</a>
   {%- endif %}

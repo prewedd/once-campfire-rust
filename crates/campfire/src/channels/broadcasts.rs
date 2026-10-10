@@ -182,6 +182,20 @@ impl Broadcasts {
         self.to(&Self::room_messages(room), Action::Remove, &dom_id("boost", boost.id, None), None, &[]);
     }
 
+    // This app's own (plans/redesign.md): pins and statuses, live.
+
+    /// A room's pins changed: its pinned ids, into the header's `ws_pins_room_<id>`.
+    pub fn pins_change(&self, room: &Room, ids: &[i64]) {
+        let json = serde_json::to_string(ids).unwrap_or_default();
+        self.to(&Self::room_messages(room), Action::Update, &format!("ws_pins_room_{}", room.id), Some(&json), &[]);
+    }
+
+    /// Someone's status changed: a new token in everyone's sidebar (`ws_statuses_signal`), so
+    /// pages read the statuses again.
+    pub fn statuses_change(&self, token: i64) {
+        self.to(&[ROOMS.to_string()], Action::Update, "ws_statuses_signal", Some(&token.to_string()), &[]);
+    }
+
     // The sidebar's room lists (users/sidebars/show.html.erb streams from `:rooms` and
     // `[Current.user, :rooms]`).
 

@@ -151,3 +151,8 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
 - **Unread badges on direct messages** (`Membership::unread_direct_counts`, `GET /users/me/sidebar/unread_counts`, `lib/workspace/sidebar.js`): a red count of messages from others since you last read the conversation (`memberships.last_read_at`, this app's own, set on reading, connecting, staying and leaving; without one, just the latest message counts, since `unread_at` only holds that message's time), refreshed on load, every 20 seconds in view and on coming back.
 - **The "New" line** (`lib/workspace/unread.js`): opening a room, a red "New" rule above the first
   message from someone else since your `last_read_at` (passed as `#ws-last-seen`).
+- **Live pins and statuses**: pinning broadcasts the room's pinned ids into the header's hidden
+  `#ws_pins_room_<id>` over the room's own stream (`Broadcasts::pins_change`); a status change puts
+  a new token in everyone's sidebar `#ws_statuses_signal` over `:rooms` (`statuses_change`), and
+  pages read the statuses again. The timers went (statuses keep a five-minute check for ones that
+  clear themselves).

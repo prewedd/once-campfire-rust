@@ -35,6 +35,7 @@ pub async fn update(c: &mut Ctx) -> Result {
     let now = now();
     let clears_at = value("clear_in").trim().parse::<i64>().ok().filter(|minutes| *minutes > 0).map(|minutes| now + minutes.min(LONGEST_MINUTES) * 60);
     c.app().db.write(move |tx| UserStatus::set(tx, user_id, &emoji, &text, clears_at, now)).await.map_err(Error::internal)?;
+    c.app().broadcasts.statuses_change(now);
     back_to_profile(c)
 }
 
@@ -43,6 +44,7 @@ pub async fn destroy(c: &mut Ctx) -> Result {
     concerns::before_actions(c, Before::default()).await?;
     let user_id = concerns::require_current_user(c)?.id;
     c.app().db.write(move |tx| UserStatus::clear(tx, user_id)).await.map_err(Error::internal)?;
+    c.app().broadcasts.statuses_change(now());
     back_to_profile(c)
 }
 

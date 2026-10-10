@@ -161,6 +161,7 @@ const openModal = (p, path) => p.evaluate(path => { const a = document.createEle
     const modal = ana.locator("dialog.ws-modal[open]")
     await modal.locator('[data-status-preset^="📅"]').click()
     check("a suggestion fills in the status", (await modal.locator('input[name="status[text]"]').inputValue()) === "In a meeting" && (await modal.locator('select[name="status[clear_in]"]').inputValue()) === "60")
+    await ben.goto(`${BASE}/rooms/1`); await ben.waitForLoadState("networkidle")
     await modal.getByRole("button", { name: "Save status" }).click()
     await modal.getByRole("button", { name: "Clear status" }).waitFor({ timeout: 8000 })
     check("…and saves", (await modal.locator('input[name="status[text]"]').inputValue()) === "In a meeting")
@@ -174,6 +175,8 @@ const openModal = (p, path) => p.evaluate(path => { const a = document.createEle
     const statuses = await ben.evaluate(async () => (await fetch("/users/statuses.json")).json())
     const anaId = await ana.evaluate(() => Current.user.id)
     check("everyone can read it", statuses[anaId]?.text === "In a meeting", JSON.stringify(statuses[anaId]))
+    await ben.waitForFunction(id => [ ...document.querySelectorAll("#sidebar a.direct") ].some(link => link.querySelector(`.presence-dot[data-presence-user="${id}"]`) && link.querySelector(".direct__author > span")?.dataset.statusEmoji === "📅"), anaId, { timeout: 10000 })
+    check("…and it appears by their name for others, live", true)
     await openModal(ana, "/users/me/profile")
     await ana.locator("dialog.ws-modal[open]").getByRole("button", { name: "Clear status" }).click()
     await ana.locator('dialog.ws-modal[open] input[name="status[text]"][value=""], dialog.ws-modal[open] input[name="status[text]"]:not([value])').waitFor({ timeout: 8000 })
@@ -228,6 +231,7 @@ const openModal = (p, path) => p.evaluate(path => { const a = document.createEle
 
   await step("pins", async () => {
     await ana.goto(`${BASE}/rooms/1`); await ana.waitForLoadState("networkidle")
+    await ben.goto(`${BASE}/rooms/1`); await ben.waitForLoadState("networkidle")
     const message = ana.locator(".messages .message:not(.message--me)").last()
     await message.hover()
     await message.locator("summary.message__options-btn").click()
@@ -241,11 +245,9 @@ const openModal = (p, path) => p.evaluate(path => { const a = document.createEle
     const count = ana.locator("#nav .ws-pins-btn")
     await count.waitFor({ timeout: 5000 })
     check("…and puts 📌 in the header", /📌 \d+/.test(await count.innerText()))
-    await ben.goto(`${BASE}/rooms/1`).catch(() => {})
-    await ben.waitForLoadState("networkidle")
-    await ben.evaluate(() => document.dispatchEvent(new Event("visibilitychange")))
+    // Ben has had General open since before the pin: it arrives live
     await ben.locator(`.message--pinned[data-message-id="${await message.getAttribute("data-message-id")}"]`).waitFor({ timeout: 8000 })
-    check("…which others see too, without reloading", true)
+    check("…which others see live", true)
     const id = await message.getAttribute("data-message-id")
     await count.click()
     const modal = ana.locator("dialog.ws-modal[open]")

@@ -35,7 +35,8 @@ pub async fn create(c: &mut Ctx) -> Result {
     before_actions(c, Before::default()).await?;
     let (user_id, message_id) = (require_current_user(c)?.id, message_id(c)?);
     let now = crate::huddles::unix_now();
-    c.app().db.write(move |tx| PinnedMessage::pin(tx, user_id, message_id, now)).await.map_err(db_error)?.ok_or(Error::NotFound)?;
+    let room_id = c.app().db.write(move |tx| PinnedMessage::pin(tx, user_id, message_id, now)).await.map_err(db_error)?.ok_or(Error::NotFound)?;
+    broadcast(c, room_id).await?;
     Ok(concerns::head(StatusCode::NO_CONTENT))
 }
 
@@ -43,8 +44,21 @@ pub async fn create(c: &mut Ctx) -> Result {
 pub async fn destroy(c: &mut Ctx) -> Result {
     before_actions(c, Before::default()).await?;
     let (user_id, message_id) = (require_current_user(c)?.id, message_id(c)?);
-    c.app().db.write(move |tx| PinnedMessage::unpin(tx, user_id, message_id)).await.map_err(db_error)?.ok_or(Error::NotFound)?;
+    let room_id = c.app().db.write(move |tx| PinnedMessage::unpin(tx, user_id, message_id)).await.map_err(db_error)?.ok_or(Error::NotFound)?;
+    broadcast(c, room_id).await?;
     Ok(concerns::head(StatusCode::NO_CONTENT))
+}
+
+/// Everyone in the room sees the change (lib/workspace/pins.js reads the header's signal).
+async fn broadcast(c: &Ctx, room_id: i64) -> Result<()> {
+    let (room, ids) = c
+        .app()
+        .db
+        .read(move |conn| Ok((campfire_db::Room::find(conn, room_id)?, PinnedMessage::ids(conn, room_id)?)))
+        .await
+        .map_err(db_error)?;
+    c.app().broadcasts.pins_change(&room, &ids);
+    Ok(())
 }
 
 fn message_id(c: &Ctx) -> Result<i64> {
