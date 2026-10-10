@@ -3631,4 +3631,6 @@ details:has(> summary > img[src*="/globe-"]) { display: none; }
 .ws-person__bio { color: var(--ws-muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* An unsent draft (lib/workspace/sidebar.js) */
-#sidebar :is(a.room, a.direct).has-draft > :is(.overflow-ellipsis, .direct__author)::after { content: " ✏️"; font-size: 12px; }
+#sidebar a.room.has-draft > .overflow-ellipsis::after { content: " ✏️"; font-size: 12px; }
+/* A conversation's name already has its status after it, and unread hides .direct__author's ::after */
+#sidebar a.direct.has-draft .direct__author > span::before { content: "✏️ "; font-size: 12px; }
