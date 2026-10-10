@@ -3576,3 +3576,19 @@ dialog[data-notifications-target="notAllowedNotice"] details > summary.btn { --b
 
 /* Campfire's "translate this" globes: Slack has none */
 details:has(> summary > img[src*="/globe-"]) { display: none; }
+
+/* Editing a message (messages/edit.html), as Slack's: labelled Save and Cancel, Delete as a quiet link */
+.message__body-content--editing .message__edit-btns { flex-direction: row-reverse; justify-content: flex-start; gap: 8px; }
+.message__body-content--editing .message__edit-btns .btn {
+  --hover-size: 0;
+  inline-size: auto; block-size: 32px; aspect-ratio: auto;
+  padding: 0 14px; border-radius: var(--ws-radius); font-size: 14px; font-weight: 600;
+}
+.message__body-content--editing .message__edit-btns .btn img { display: none; }
+.message__body-content--editing .message__edit-btns .btn .for-screen-reader { position: static; inline-size: auto; block-size: auto; overflow: visible; clip: auto; clip-path: none; white-space: nowrap; }
+.message__body-content--editing .message__edit-btns .btn--reversed { --btn-background: var(--ws-accent); --btn-border-color: var(--ws-accent); --btn-color: var(--ws-on-accent); }
+.message__body-content--editing .message__edit-btns .btn--negative { --btn-background: transparent; --btn-border-color: transparent; --btn-color: var(--color-negative); margin-inline-end: auto; }
+.message__body-content--editing .message__edit-btns .btn--negative:hover { --btn-background: color-mix(in srgb, var(--color-negative) 8%, transparent); }
+.message__edit-close-btn { --btn-size: auto; inline-size: auto; aspect-ratio: auto; padding: 0 12px; block-size: 32px; border: 1px solid var(--ws-border-strong); border-radius: var(--ws-radius); font-size: 14px; font-weight: 600; }
+.message__edit-close-btn img { display: none; }
+.message__edit-close-btn::after { content: "Cancel"; }

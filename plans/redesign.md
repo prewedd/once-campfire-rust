@@ -160,3 +160,4 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
   `build.rs`): 404, 422, 500 and 502 as a card with what happened and "Back to Campfire", light and
   dark. The two remaining "translate" globes (the welcome message, the incompatible-browser page) are
   hidden. `e2e/tour/more.js` screenshots the less-visited screens.
+- **Editing a message**: labelled "Save changes" (blue) and "Cancel", with "Delete message" as a red link, in place of ✓, ✕ and a trash icon (CSS over the parity-pinned markup).
