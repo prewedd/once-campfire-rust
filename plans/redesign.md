@@ -127,3 +127,7 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
   minute) and show the emoji after names on messages and conversations, a badge on your own
   picture, and a line on profiles, without changing the server's (cached) markup. The workspace
   menu offers "Update your status".
+- **Browse channels** (`/channels`, `controllers/channels.rs`, `rooms/browse.html`): your channels
+  by name with members, topic and a filter; Leave sets your involvement to "invisible" (out of the
+  sidebar, no notifications) and Join sets it back to "mentions", with the bell's broadcasts. It's
+  in the workspace menu and in "Add channel", which now offers Create a new channel / Browse channels.

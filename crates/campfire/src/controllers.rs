@@ -32,6 +32,7 @@ use crate::active_storage;
 // view models. Controller agents add their `pub mod` lines here.
 pub mod accounts;
 pub mod autocompletable;
+pub mod channels;
 pub mod first_runs;
 pub mod huddles;
 pub mod messages;
@@ -186,6 +187,9 @@ static ROUTES: LazyLock<Vec<Route>> = LazyLock::new(|| {
         get("/join/:join_code(.:format)", "users#new", users::new),
         post("/join/:join_code(.:format)", "users#create", users::create),
         get("/qr_code/:id(.:format)", "qr_code#show", qr_code::show),
+        get("/channels(.:format)", "channels#index", channels::index),
+        post("/channels/:room_id/membership(.:format)", "channels#join", channels::join),
+        delete("/channels/:room_id/membership(.:format)", "channels#leave", channels::leave),
         get("/users/statuses(.:format)", "user_statuses#index", users::statuses::index),
         put("/users/:user_id/status(.:format)", "user_statuses#update", users::statuses::update).defaults(ME_DEFAULTS),
         delete("/users/:user_id/status(.:format)", "user_statuses#destroy", users::statuses::destroy).defaults(ME_DEFAULTS),
@@ -525,7 +529,7 @@ mod tests {
     const MISSING_CONTROLLERS: &[&str] = &["rooms/settings"];
 
     /// Controllers this app adds to the Rails routes (README, Known differences).
-    const ADDED_CONTROLLERS: &[&str] = &["threads", "huddles", "sidebar_positions", "scheduled_messages", "user_statuses"];
+    const ADDED_CONTROLLERS: &[&str] = &["threads", "huddles", "sidebar_positions", "scheduled_messages", "user_statuses", "channels"];
 
     #[test]
     fn the_table_is_rails_routes_in_order() {

@@ -352,3 +352,30 @@ mod filters {
         Ok(Html::from(askama::filters::Safe(layout.render()?)))
     }
 }
+
+/// A channel in "Browse channels" (plans/redesign.md).
+#[derive(Clone, Debug)]
+pub struct BrowsedChannel {
+    pub id: i64,
+    pub name: String,
+    pub topic: Option<String>,
+    pub private: bool,
+    pub members: i64,
+    /// Not left: its involvement isn't "invisible".
+    pub joined: bool,
+}
+
+/// "Browse channels": the channels you're in, to join again or leave (this app's own).
+#[derive(Template)]
+#[template(path = "rooms/browse.html", blocks = ["head", "content"])]
+pub struct Browse<'a> {
+    pub ctx: &'a ViewContext<'a>,
+    pub channels: Vec<BrowsedChannel>,
+    pub can_create: bool,
+}
+
+impl Page for Browse<'_> {
+    fn page_title(&self) -> Option<String> {
+        Some("Browse channels".into())
+    }
+}

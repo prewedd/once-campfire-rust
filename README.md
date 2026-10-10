@@ -333,6 +333,8 @@ Deliberate:
   comparisons. The translate (globe) buttons are gone from these pages.
 - **Custom statuses.** A `user_statuses` table of this app's own (created on boot, ignored by the
   Rails image), `PUT`/`DELETE /users/me/status` and `GET /users/statuses.json`.
+- **Browse channels.** `GET /channels`, `POST`/`DELETE /channels/:room_id/membership`: Slack's
+  join and leave, as the "invisible" involvement (the room stays a membership).
 - **Channel topics.** A nullable `rooms.topic` column, added on boot (the Rails image ignores it),
   set in a channel's settings and shown in its header.
 - **Huddles.** Drop-in voice and video calls in any room or DM, as Slack's huddles

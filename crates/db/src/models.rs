@@ -27,7 +27,7 @@ pub use membership::{Involvement, Membership};
 pub use message::{ContentType, Message, NewMessage, ThreadSummary, Timeline};
 pub use push_subscription::{MAX_PAYLOAD_BODY_BYTES, MAX_PAYLOAD_TITLE_BYTES, PushPayload, PushSubscription};
 pub use rich_text_record::RichTextRecord;
-pub use room::{Room, RoomType};
+pub use room::{BrowsedRoom, Room, RoomType};
 pub use scheduled_message::{NewScheduledMessage, ScheduledMessage};
 pub use search::Search;
 pub use session::Session;

@@ -59,6 +59,14 @@ impl FromSql for RoomType {
     }
 }
 
+/// A channel as "Browse channels" lists it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrowsedRoom {
+    pub room: Room,
+    pub involvement: Option<crate::Involvement>,
+    pub member_count: i64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Room {
     pub id: i64,
@@ -286,6 +294,22 @@ impl Room {
             tx.after_commit(move |tx| grant_to_active_users(tx, id));
         }
         Ok(())
+    }
+
+    /// The channels (not direct rooms) someone belongs to, by name, for "Browse channels"
+    /// (plans/redesign.md): with how many active people are in each and their involvement.
+    pub fn browse_for(conn: &Connection, user_id: i64) -> Result<Vec<BrowsedRoom>> {
+        query_all(
+            conn,
+            r#"SELECT "rooms".*, "memberships"."involvement" AS "my_involvement",
+                 (SELECT COUNT(*) FROM "memberships" AS "others" INNER JOIN "users" ON "users"."id" = "others"."user_id"
+                   WHERE "others"."room_id" = "rooms"."id" AND "users"."status" = 0) AS "member_count"
+               FROM "rooms" INNER JOIN "memberships" ON "memberships"."room_id" = "rooms"."id"
+               WHERE "memberships"."user_id" = ? AND "rooms"."type" IN ('Rooms::Open', 'Rooms::Closed')
+               ORDER BY LOWER("rooms"."name"), "rooms"."id""#,
+            [user_id],
+            |row| Ok(BrowsedRoom { room: Room::from_row(row)?, involvement: row.get("my_involvement")?, member_count: row.get("member_count")? }),
+        )
     }
 
     /// Longest topic kept; a longer one is cut there.

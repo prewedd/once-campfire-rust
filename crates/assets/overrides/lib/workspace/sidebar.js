@@ -5,6 +5,7 @@
 // - The workspace's name opens a menu: invite people, create a channel, settings, your profile.
 // - The channel's name in the header opens its settings, as Slack's channel details do.
 // - The + by Direct messages opens "New message" in the modal rather than in the sidebar.
+// - "Add channel" offers Create a channel and Browse channels; Browse channels filters as you type.
 // - Ctrl/⌘+K jumps to any channel or conversation in the sidebar by name, as Slack's switcher does.
 // It uses the notifications menu's look and closing (lib/workspace/involvement.js).
 
@@ -61,6 +62,7 @@ function openWorkspaceMenu(header) {
     menuItem("Update your status", "An emoji and a few words by your name", "/users/me/profile"),
     menuItem("Invite people", "Share the join link", "/account/edit"),
     canCreate ? menuItem("Create a channel", "", "/rooms/opens/new") : "",
+    menuItem("Browse channels", "Join or leave channels", "/channels"),
     menuItem("Workspace settings", "Name, icon, members", "/account/edit"),
     menuItem("Your profile", "Name, photo, notifications", "/users/me/profile"),
   ].join("")
@@ -72,6 +74,28 @@ function openWorkspaceMenu(header) {
   header.setAttribute("aria-expanded", "true")
   menu.querySelector("a")?.focus()
 }
+
+function openAddChannelMenu(button) {
+  document.querySelectorAll(".involvement-menu").forEach(menu => menu.remove())
+  const menu = document.createElement("div")
+  menu.className = "involvement-menu workspace-menu"
+  menu.setAttribute("role", "menu")
+  menu.innerHTML = menuItem("Create a new channel", "", "/rooms/opens/new") + menuItem("Browse channels", "", "/channels")
+  const anchor = button.getBoundingClientRect()
+  menu.style.top = `${Math.min(anchor.bottom + 4, innerHeight - 120)}px`
+  menu.style.left = `${anchor.left}px`
+  menu.addEventListener("click", event => { if (event.target.closest("a")) menu.remove() })
+  document.body.append(menu)
+  menu.querySelector("a")?.focus()
+}
+
+document.addEventListener("input", event => {
+  if (!event.target.matches?.("[data-browse-filter]")) return
+  const query = event.target.value.trim().toLowerCase()
+  event.target.closest(".ws-settings")?.querySelectorAll(".ws-browse > [data-name]").forEach(row => {
+    row.hidden = !!query && !row.dataset.name.includes(query)
+  })
+})
 
 function enableWorkspaceMenu() {
   const header = document.querySelector("#sidebar .sidebar__workspace:not([role])")
@@ -92,6 +116,12 @@ window.addEventListener("click", event => {
     if (open) open.remove()
     else openWorkspaceMenu(header)
     return
+  }
+  const addChannel = event.target.closest?.("#sidebar a.rooms__new-btn")
+  if (addChannel && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+    event.preventDefault()
+    event.stopPropagation()
+    return openAddChannelMenu(addChannel)
   }
   const newMessage = event.target.closest?.("#sidebar a.direct__new")
   if (newMessage && !event.metaKey && !event.ctrlKey && !event.shiftKey) {

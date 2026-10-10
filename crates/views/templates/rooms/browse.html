@@ -1,0 +1,31 @@
+{#- "Browse channels", this app's own (plans/redesign.md): Slack's join and leave, as showing and hiding a channel -#}
+{% extends "layouts/application.html" %}
+{%- block head %}{% endblock %}
+
+{% block nav %}  <div class="flex-item-justify-start">
+    {{ h::link_back_to_last_room_visited(ctx) }}
+  </div>
+{% endblock %}
+{% block content %}<section class="panel ws-settings">
+  <h1 class="ws-settings__title">Browse channels</h1>
+  <div class="ws-section ws-section--split ws-section--first">
+    <input type="search" class="ws-input ws-browse__filter" placeholder="Search channels" aria-label="Search channels" data-browse-filter>
+{% if can_create %}    <a class="ws-btn" href="{{ h::routes::new_rooms_open() }}">Create a channel</a>
+{% endif %}  </div>
+  <p class="ws-hint">Leaving a channel takes it out of your sidebar and stops its notifications. Join again any time.</p>
+  <menu class="ws-rows ws-browse">
+{% for channel in channels %}    <li class="ws-row" data-name="{{ channel.name.to_lowercase() }}">
+      <a class="ws-row__main txt-undecorated" href="{{ h::routes::room(channel.id) }}">
+        <span class="ws-row__text">
+          <span class="ws-row__name">{% if channel.private %}<span class="ws-row__hash ws-row__lock" title="Private"></span>{% else %}<span class="ws-row__hash">#</span>{% endif %}{{ channel.name }}</span>
+          <span class="ws-row__sub">{% if !channel.joined %}<strong>Left</strong> · {% endif %}{{ channel.members }} {% if channel.members == 1 %}member{% else %}members{% endif %}{% if let Some(topic) = channel.topic %} · {{ topic }}{% endif %}</span>
+        </span>
+      </a>
+      <span class="ws-row__actions">
+{% if channel.joined %}        {% filter button_to(h::routes::channel_membership(channel.id), h::attrs().method("delete").class("ws-btn")) %}Leave<span class="for-screen-reader"> {{ channel.name }}</span>{% endfilter %}
+{% else %}        {% filter button_to(h::routes::channel_membership(channel.id), h::attrs().class("ws-btn ws-btn--primary")) %}Join<span class="for-screen-reader"> {{ channel.name }}</span>{% endfilter %}
+{% endif %}      </span>
+    </li>
+{% endfor %}  </menu>
+</section>
+{% endblock %}

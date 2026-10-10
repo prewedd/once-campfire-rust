@@ -280,3 +280,18 @@ fn a_topic_is_trimmed_cut_to_its_limit_and_cleared_when_blank() {
     t.write(move |tx| cleared.set_topic(tx, Some("   ")));
     assert_eq!(room(&t, "watercooler").topic, None);
 }
+
+#[test]
+fn browsing_lists_your_channels_with_their_members_and_your_involvement() {
+    let t = TestDb::new();
+    let david = id("david");
+    let browsed = t.read(move |c| Room::browse_for(c, david));
+    assert!(!browsed.is_empty());
+    assert!(browsed.iter().all(|b| b.room.room_type != RoomType::Direct), "no direct rooms");
+    let names: Vec<_> = browsed.iter().map(|b| b.room.name.clone().unwrap_or_default().to_lowercase()).collect();
+    let mut sorted = names.clone();
+    sorted.sort();
+    assert_eq!(names, sorted, "by name");
+    let watercooler = browsed.iter().find(|b| b.room.id == id("watercooler")).expect("david is in the watercooler");
+    assert_eq!(watercooler.member_count, t.read(|c| Room::find(c, id("watercooler"))?.user_ids(c)).len() as i64);
+}

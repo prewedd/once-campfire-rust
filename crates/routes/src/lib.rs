@@ -114,3 +114,7 @@ pub fn fresh_account_logo(v: Option<&str>, size: Option<&str>) -> String {
 // Custom statuses (plans/redesign.md).
 path!(user_statuses, "/users/statuses");
 path!(user_status, "/users/me/status");
+
+// Browse channels (plans/redesign.md).
+path!(channels, "/channels");
+path!(channel_membership(room_id), "/channels/{room_id}/membership");

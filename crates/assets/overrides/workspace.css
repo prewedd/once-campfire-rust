@@ -3456,3 +3456,8 @@ body:not(.sidebar) > #main-content .ws-new-dm { max-inline-size: 640px; margin: 
 .ws-chip:hover { border-color: var(--ws-border-strong); background: var(--ws-bg-hover); color: var(--ws-ink); }
 .ws-status__form { display: grid; gap: 10px; }
 @media (max-width: 640px) { .ws-status__fields .ws-status__clear { flex-basis: 100%; } }
+
+/* Browse channels (rooms/browse.html) */
+.ws-browse__filter { flex: 1; }
+.ws-browse > [hidden] { display: none; }
+.ws-browse .ws-row__sub strong { color: var(--ws-ink-soft); font-weight: 600; }
