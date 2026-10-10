@@ -3461,3 +3461,9 @@ body:not(.sidebar) > #main-content .ws-new-dm { max-inline-size: 640px; margin: 
 .ws-browse__filter { flex: 1; }
 .ws-browse > [hidden] { display: none; }
 .ws-browse .ws-row__sub strong { color: var(--ws-ink-soft); font-weight: 600; }
+
+/* Phones: with the sidebar open, its menu button sits at the header's right, clear of the workspace's name */
+@media (max-width: 100ch) {
+  #sidebar.open .sidebar__toggle { inset-block-start: 9px; inset-inline: auto 12px; }
+  #sidebar.open .sidebar__workspace { padding-inline-end: 56px; }
+}

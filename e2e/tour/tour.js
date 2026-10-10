@@ -42,6 +42,16 @@ const shots = [
       await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {})
       await p.screenshot({ path: `${OUT}/tour-${tag}-${name}.png` })
     }
+    await p.goto(BASE + "/rooms/1"); await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {})
+    if (tag === "phone") {
+      await p.locator("#sidebar .sidebar__toggle").click().catch(e => console.log("toggle", e.message))
+      await p.waitForTimeout(800)
+      await p.screenshot({ path: `${OUT}/tour-${tag}-sidebar.png` })
+      await p.locator("#sidebar .sidebar__toggle").click().catch(() => {})
+    }
+    await p.locator(".message:not(.message--me) .message__avatar a").last().click().catch(e => console.log("avatar", e.message))
+    await p.waitForTimeout(1500)
+    await p.screenshot({ path: `${OUT}/tour-${tag}-person.png` })
     if (tag !== "phone") {
       await p.goto(BASE + "/rooms/1"); await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {})
       const row = p.locator(".message:not(.message--me)").last()
