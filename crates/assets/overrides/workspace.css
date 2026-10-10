@@ -3527,3 +3527,7 @@ body.saved #sidebar a.sidebar__shortcut[href="/saved"] { background: var(--ws-si
 
 /* A QR code at a size you can scan, on a card */
 .lightbox__image[src*="/qr_code/"] { inline-size: min(360px, 80vw); block-size: auto; padding: 16px; border-radius: var(--ws-radius-lg); background: #fff; box-shadow: var(--ws-shadow-lg); }
+
+/* Notifications not yet allowed: a quiet red dot on the bell, not a pulsing box */
+#nav .button_to_change_notifying .btn--pulsing { position: relative; animation: none; box-shadow: none; outline: none; --btn-border-color: transparent; }
+#nav .button_to_change_notifying .btn--pulsing::after { content: ""; position: absolute; inset: 5px 5px auto auto; inline-size: 8px; block-size: 8px; border-radius: 999px; background: #e5484d; box-shadow: 0 0 0 2px var(--ws-bg); }
