@@ -56,9 +56,10 @@ impl RoomView {
         }
     }
 
-    /// "Ping" for direct rooms, "room" otherwise.
+    /// "conversation" for direct rooms, "channel" otherwise.
     pub fn noun(&self) -> &'static str {
-        if self.is_direct() { "Ping" } else { "room" }
+        // Slack's words (plans/redesign.md), not Campfire's "Ping" and "room".
+        if self.is_direct() { "conversation" } else { "channel" }
     }
 }
 

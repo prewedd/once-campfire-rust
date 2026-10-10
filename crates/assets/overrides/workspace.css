@@ -3376,3 +3376,15 @@ textarea.ws-input { resize: vertical; }
   .ws-row:has(.ws-row__actions > *) .ws-row__main { flex-basis: 60%; }
   .ws-row__actions:has(> *) { flex-basis: 100%; justify-content: flex-end; }
 }
+
+/* "New message" (rooms/directs/new.html): To: and the people you pick, then Start */
+.ws-new-dm { display: grid; gap: 10px; padding: 0; background: none; }
+.ws-new-dm__form { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border: 1px solid var(--ws-border-strong); border-radius: var(--ws-radius); background: var(--ws-bg); }
+.ws-new-dm__form:focus-within { border-color: var(--ws-accent); box-shadow: var(--ws-ring); }
+.ws-new-dm__to { color: var(--ws-muted); font-weight: 600; }
+.ws-new-dm .autocomplete__container { flex: 1; min-inline-size: 0; border: 0; box-shadow: none; background: none; }
+.ws-new-dm .autocomplete__container .input { border: 0; box-shadow: none; background: none; color: var(--ws-ink); font-size: 15px; }
+.ws-new-dm__cancel { display: none; }
+#sidebar .ws-new-dm__cancel { display: block; color: var(--ws-side-ink); font-size: 20px; text-decoration: none; }
+#sidebar .ws-new-dm .ws-hint { color: var(--ws-side-ink); }
+body:not(.sidebar) > #main-content .ws-new-dm { max-inline-size: 640px; margin: 48px auto; padding-inline: 16px; }

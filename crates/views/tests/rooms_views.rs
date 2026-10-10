@@ -85,15 +85,21 @@ fn edit_closed_room() {
 
 #[test]
 fn new_direct_room() {
+    // "New message", Slack's way (plans/redesign.md): checked for what it offers.
     let g = golden("rooms_directs_new");
-    g.assert_dom(&g.render(|ctx| rooms::DirectsNew { ctx }.render().unwrap()));
+    let html = g.render(|ctx| rooms::DirectsNew { ctx }.render().unwrap());
+    for part in [r#"<turbo-frame id="direct_rooms_control" target="_top">"#, r#"action="/rooms/directs""#, r#"data-controller="autocomplete""#, r#"name="user_ids[]""#, ">To:</label>", ">Start</button>"] {
+        assert!(html.contains(part), "no {part:?}: {html}");
+    }
 }
 
 #[test]
 fn edit_direct_room() {
     let g = golden("rooms_directs_edit");
     let edit: DirectEditView = g.input();
-    g.assert_dom(&g.render(|ctx| rooms::DirectsEdit { ctx, edit: &edit }.render().unwrap()));
+    let html = g.render(|ctx| rooms::DirectsEdit { ctx, edit: &edit }.render().unwrap());
+    assert_eq!(html.matches(r#"<li class="ws-row member">"#).count(), edit.users.len(), "{html}");
+    assert!(html.contains(&format!("/rooms/directs/{}\"", edit.room_id)) && html.contains("Delete conversation"), "{html}");
 }
 
 #[test]

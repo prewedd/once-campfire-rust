@@ -4,7 +4,10 @@
 //   folded section still shows the room you're in and anything unread.
 // - The workspace's name opens a menu: invite people, create a channel, settings, your profile.
 // - The channel's name in the header opens its settings, as Slack's channel details do.
+// - The + by Direct messages opens "New message" in the modal rather than in the sidebar.
 // It uses the notifications menu's look and closing (lib/workspace/involvement.js).
+
+import { openModal } from "lib/workspace/modal"
 
 const SECTIONS = [ [ ".rooms", "Channels" ], [ ".directs", "Direct messages" ] ]
 
@@ -86,6 +89,12 @@ window.addEventListener("click", event => {
     if (open) open.remove()
     else openWorkspaceMenu(header)
     return
+  }
+  const newMessage = event.target.closest?.("#sidebar a.direct__new")
+  if (newMessage && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+    event.preventDefault()
+    event.stopPropagation()
+    return openModal(newMessage.href)
   }
   // The channel's name in the header: its settings
   if (event.target.closest?.("#nav .room--current")) document.querySelector("#nav a[data-room-id]")?.click()

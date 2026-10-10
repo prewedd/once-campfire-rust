@@ -177,10 +177,15 @@ fn without_replaced(expected: Vec<String>) -> Vec<String> {
         if REPLACED.contains(&token.as_str()) {
             skip_element(&token, &mut tokens);
         } else {
-            out.push(token);
+            out.push(with_slack_nouns(token));
         }
     }
     out
+}
+
+/// A room's noun in its labels is Slack's: "this channel", "this conversation" (`RoomView::noun`).
+fn with_slack_nouns(token: String) -> String {
+    token.replace("for this room", "for this channel").replace("for this Ping", "for this conversation")
 }
 
 /// Consumes the rest of the element `start` opened, through its end tag.

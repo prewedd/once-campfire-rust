@@ -110,3 +110,6 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
   the box sits in the header, results head with "Results for “…”" and a count, each labelled
   "in #channel"; with no query, recent searches as a list. The composer's magnifier is gone, and
   the normal sidebar stays.
+- **New message** (`rooms/directs/new.html`): the + by Direct messages opens it in the modal: "To:"
+  with the people autocomplete, then Start. **Conversation settings** list who's in it and offer
+  "Delete conversation". Labels and tooltips say "channel" and "conversation", not "room" and "Ping".

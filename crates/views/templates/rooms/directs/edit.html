@@ -9,21 +9,28 @@
 {%- endblock %}
 
 {%- block content %}
-<div class="panel txt-align-center">
-  <section class="directs--edit margin-block-end">
-    {%- for user in edit.users %}
-      <div class="member flex flex-column gap fill-shade pad border-radius">
-        <figure class="avatar center" style="--avatar-border-radius: 10ch; --avatar-size: 10ch;" >
-          <a title="{{ user.title }}" class="btn avatar" data-turbo-frame="_top" href="{{ user.path() }}"><img aria-hidden="true" loading="lazy" src="{{ user.avatar_url }}" width="48" height="48" /></a>
-        </figure>
-
-        <strong>{{ user.name }}</strong>
-      </div>
-    {%- endfor %}
+<section class="panel ws-settings">
+  <h1 class="ws-settings__title">Conversation settings</h1>
+  <section class="ws-field">
+    <span class="ws-field__label">In this conversation</span>
+    <menu class="ws-rows directs--edit">
+      {%- for user in edit.users %}
+      <li class="ws-row member">
+        <a class="ws-row__main txt-undecorated" title="{{ user.title }}" data-turbo-frame="_top" href="{{ user.path() }}">
+          <img class="ws-row__avatar" aria-hidden="true" loading="lazy" src="{{ user.avatar_url }}" width="32" height="32" />
+          <span class="ws-row__name">{{ user.name }}</span>
+        </a>
+      </li>
+      {%- endfor %}
+    </menu>
   </section>
 
-  <form class="button_to" method="post" action="{{ ctx.url(h::routes::rooms_direct(edit.room_id).as_str()) }}"><input type="hidden" name="_method" value="delete" /><button class="btn btn--negative center" aria-label="Delete Ping" data-turbo-confirm="Are you sure you want to delete this ping and all messages in it? This can’t be undone." type="submit">
-    <img aria-hidden="true" src="{{ ctx.asset("trash.svg") }}" />
-    Ping
-</button></form></div>
+  <section class="ws-section ws-section--split">
+    <div>
+      <h2 class="ws-section__title">Delete this conversation</h2>
+      <p class="ws-hint">Deletes it and every message in it, for everyone in it. This can't be undone.</p>
+    </div>
+    <form class="button_to" method="post" action="{{ ctx.url(h::routes::rooms_direct(edit.room_id).as_str()) }}"><input type="hidden" name="_method" value="delete" /><button class="ws-btn ws-btn--danger" data-turbo-confirm="Are you sure you want to delete this conversation and all messages in it? This can’t be undone." type="submit">Delete conversation</button></form>
+  </section>
+</section>
 {%- endblock %}
