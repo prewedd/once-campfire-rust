@@ -136,3 +136,11 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
   "Remove from saved" once saved, from `/saved/ids`, since message HTML is cached and shared), a
   toast to confirm, and "Saved" under Threads in the sidebar, listing them newest first with their
   channels. Only messages you can still reach are saved or listed.
+- **Pinned messages** (`pinned_messages`, a table of this app's own; `controllers/pins.rs`,
+  `lib/workspace/pins.js`, `searches/pinned.html`): any member pins from a message's ⋯ menu ("Pin to
+  channel" / "Unpin from channel"); pinned messages get a "📌 Pinned" label and a pale yellow wash;
+  the header shows "📌 N", which opens the channel's pins in the modal. Refreshed on load, every 30
+  seconds, and after a change. Painting writes only what changed (the header is watched, so writing
+  it unconditionally looped).
+- Huddles: the mini-window is wider so its controls fit; the "started a huddle" invite sits under
+  the header (it covered the header's huddle button once that moved right).

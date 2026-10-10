@@ -6,11 +6,13 @@ let loadedAt = 0
 
 async function load() {
   if (saved && Date.now() - loadedAt < 60_000) return saved
-  const response = await fetch("/saved/ids", { headers: { Accept: "application/json" } }).catch(() => null)
-  if (response?.ok) {
-    saved = new Set(await response.json())
-    loadedAt = Date.now()
-  }
+  try {
+    const response = await fetch("/saved/ids", { headers: { Accept: "application/json" } })
+    if (response.ok) {
+      saved = new Set(await response.json())
+      loadedAt = Date.now()
+    }
+  } catch {} // interrupted (leaving the page): next time
   return saved ?? new Set()
 }
 
@@ -21,7 +23,7 @@ function label(button) {
   button.setAttribute("aria-label", button.title)
 }
 
-function toast(text) {
+export function toast(text) {
   document.querySelector(".ws-toast")?.remove()
   const note = document.createElement("div")
   note.className = "ws-toast"
@@ -49,8 +51,8 @@ document.addEventListener("click", async event => {
   const response = await fetch(`/messages/${id}/save`, {
     method: removing ? "DELETE" : "POST",
     headers: { "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content ?? "" },
-  })
-  if (!response.ok) return toast("Couldn't save that message")
+  }).catch(() => null)
+  if (!response?.ok) return toast("Couldn't save that message")
   removing ? saved.delete(id) : saved.add(id)
   label(button)
   button.closest("details")?.removeAttribute("open")

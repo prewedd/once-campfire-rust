@@ -59,6 +59,9 @@
         <button class="btn message__action-btn center full-width" title="Copy link" aria-label="Copy link" data-controller="copy-to-clipboard" data-action="copy-to-clipboard#copy" data-copy-to-clipboard-success-class="btn--success" data-copy-to-clipboard-url-value="{{ message.at_path() }}">
           <img class="colorize--black" aria-hidden="true" src="{{ ctx.asset("link.svg") }}" width="20" height="20" />
 </button>
+        <button type="button" class="btn message__action-btn center full-width message__pin-btn" title="Pin to channel" aria-label="Pin to channel" data-message-id="{{ message.id }}">
+          <img class="colorize--black" aria-hidden="true" src="{{ ctx.asset("pin.svg") }}" width="20" height="20" />
+</button>
         <button type="button" class="btn message__action-btn center full-width message__save-btn" title="Save for later" aria-label="Save for later" data-message-id="{{ message.id }}">
           <img class="colorize--black" aria-hidden="true" src="{{ ctx.asset("bookmark.svg") }}" width="20" height="20" />
 </button>

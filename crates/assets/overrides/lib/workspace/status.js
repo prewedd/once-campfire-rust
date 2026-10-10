@@ -22,6 +22,7 @@ async function load() {
 }
 
 function mark(element, status) {
+  if (status && element.dataset.statusEmoji === status.emoji && element.title.endsWith(status.text)) return
   if (status) {
     element.dataset.statusEmoji = status.emoji
     element.title = status.text ? `${status.emoji} ${status.text}` : status.emoji
@@ -49,7 +50,8 @@ function paint() {
       line.className = "ws-status-line"
       presence.after(line)
     }
-    line.textContent = `${status.emoji} ${status.text}`.trim()
+    const text = `${status.emoji} ${status.text}`.trim()
+    if (line.textContent !== text) line.textContent = text
   })
 }
 

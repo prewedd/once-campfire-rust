@@ -6,7 +6,7 @@ const { privateRoom } = require("../support")
 const t = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
 const results = []
 const check = (name, ok, detail = "") => { results.push(!!ok); console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? " — " + detail : ""}`) }
-async function step(name, fn) { try { await fn() } catch (e) { check(name, false, String(e.message).split("\n")[0]) } }
+async function step(name, fn) { try { await fn() } catch (e) { check(name, false, String(e.message).split("\n").slice(0, 12).join(" / ")); for (const p of globalThis.pages ?? []) await p.screenshot({ path: `${OUT}/screen-fail-${Date.now()}.png` }).catch(() => {}) } }
 async function join(b, name) {
   const p = await (await b.newContext({ viewport: { width: 1440, height: 900 }, permissions: ["microphone", "camera"] })).newPage()
   p.on("pageerror", e => e.name !== "AbortError" && console.log(`${name} pageerror: ${e.message}`))
@@ -23,6 +23,7 @@ async function join(b, name) {
   const b = await chromium.launch({ args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", "--auto-select-desktop-capture-source=Entire screen", "--auto-accept-this-tab-capture", "--autoplay-policy=no-user-gesture-required"] })
   const ana = await join(b, `Ana${t}`), ben = await join(b, `Ben${t}`)
   await privateRoom(BASE, ana, ben)
+  globalThis.pages = [ ana, ben ]
   await step("share", async () => {
     await ana.locator(".huddle-btn").click()
     await ana.locator("#huddle .huddle__timer").filter({ hasText: /\d:\d\d/ }).waitFor({ timeout: 15000 })

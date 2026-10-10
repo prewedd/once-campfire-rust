@@ -73,3 +73,21 @@ impl Page for Saved<'_> {
         Some("sidebar searches saved")
     }
 }
+
+/// A channel's pinned messages (plans/redesign.md), this app's own: shown in the modal.
+#[derive(Template)]
+#[template(path = "searches/pinned.html", blocks = ["head", "content"])]
+pub struct Pinned<'a> {
+    pub ctx: &'a ViewContext<'a>,
+    pub messages: &'a [MessageItem],
+}
+
+impl Page for Pinned<'_> {
+    fn page_title(&self) -> Option<String> {
+        Some("Pinned messages".into())
+    }
+
+    fn body_class(&self) -> Option<&str> {
+        Some("searches pinned")
+    }
+}

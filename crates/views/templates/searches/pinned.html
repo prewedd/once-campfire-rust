@@ -1,0 +1,15 @@
+{#- A channel's pinned messages, this app's own (plans/redesign.md): shown in the modal -#}
+{% extends "layouts/application.html" %}
+{%- block head %}{% endblock %}
+
+{%- block content %}
+<section class="panel ws-settings ws-pins">
+  <h1 class="ws-settings__title">Pinned messages</h1>
+  <p class="ws-hint">{% if messages.is_empty() %}Nothing's pinned yet: pin a message from its ⋯ menu to keep it here for everyone.{% else %}{{ messages.len() }} pinned · unpin one from its ⋯ menu in the channel{% endif %}</p>
+  <div id="search-results" class="messages searches__results" data-controller="search-results" data-search-results-target="messages" data-search-results-me-class="message--me" data-search-results-threaded-class="message--threaded" data-search-results-mentioned-class="message--mentioned" data-search-results-formatted-class="message--formatted">
+    {%- for message in messages %}
+    {{ crate::messages::cached_message_item(ctx, message) }}
+    {%- endfor %}
+  </div>
+</section>
+{%- endblock %}

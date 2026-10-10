@@ -336,6 +336,9 @@ Deliberate:
 - **Saved for later.** A `saved_messages` table of this app's own, `POST`/`DELETE
   /messages/:message_id/save`, `GET /saved` and `/saved/ids`; a "Save for later" item in the
   message menu (its own markup, left out of the parity comparison).
+- **Pinned messages.** A `pinned_messages` table of this app's own, `POST`/`DELETE
+  /messages/:message_id/pin`, `GET /rooms/:room_id/pins` and `/pins/ids`; a "Pin to channel" item in
+  the message menu (its own markup, left out of the parity comparison).
 - **Browse channels.** `GET /channels`, `POST`/`DELETE /channels/:room_id/membership`: Slack's
   join and leave, as the "invisible" involvement (the room stays a membership).
 - **Channel topics.** A nullable `rooms.topic` column, added on boot (the Rails image ignores it),

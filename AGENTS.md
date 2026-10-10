@@ -96,6 +96,8 @@ The smallest build, the fewest tests that cover the change, the fastest deploy.
   dozens of app tests fail with "Too many open files" / "unable to open database file".
 - Known, not regressions: two Rust timing tests (`parses_pathological_pages_quickly`,
   `deeply_nested_content_attachments_render_quickly`) fail in debug builds on a busy machine.
+- After many suite runs the dev LiveKit degrades: `screen`'s "stopping removes it" and huddle
+  checks start failing even alone. `docker restart livekit-dev` (dev only) and rerun.
 - Never edit an existing asset's imports to a module the running dev server doesn't know (a new
   file) while suites run: restart the dev server first.
 - A new feature gets a suite in `e2e/suites/<name>.e2e.js` (copy `smoke`'s shape: `check()`,

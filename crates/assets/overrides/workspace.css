@@ -448,6 +448,7 @@ body {
 /* Slack's header: the channel's name on the left, its actions on the right (huddle, notifications, ⋯) */
 #nav:has(> .room--current) {
   > .ws-nav-search { order: 1; }
+  > .ws-pins-btn { order: 2; }
   > .huddle-btn { order: 2; }
   > span:has(.button_to_change_notifying) { order: 3; }
   > a[data-room-id] { order: 4; }
@@ -2199,7 +2200,7 @@ body:has(#huddle:not([hidden], .huddle--expanded)) #sidebar .sidebar__container 
   z-index: 40;
   inset-inline-start: 12px;
   inset-block-end: 12px;
-  width: 300px;
+  width: 352px;
   max-width: calc(100vw - 24px);
   font-family: var(--ws-font);
 }
@@ -2326,6 +2327,7 @@ body:has(#huddle:not([hidden], .huddle--expanded)) #sidebar .sidebar__container 
 
 .huddle__controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
 }
@@ -2334,8 +2336,8 @@ body:has(#huddle:not([hidden], .huddle--expanded)) #sidebar .sidebar__container 
   display: inline-grid;
   place-items: center;
   height: 34px;
-  min-width: 34px;
-  padding: 0 8px;
+  min-width: 32px;
+  padding: 0 7px;
   border: 0;
   border-radius: var(--ws-radius);
   background: var(--ws-bg-subtle);
@@ -2499,7 +2501,8 @@ body:has(#huddle:not([hidden], .huddle--expanded)) #sidebar .sidebar__container 
 .huddle-invite {
   position: fixed;
   z-index: 41;
-  inset-block-start: 16px;
+  /* Under the header, clear of its huddle button */
+  inset-block-start: 60px;
   inset-inline-end: 16px;
   display: flex;
   align-items: center;
@@ -3475,3 +3478,14 @@ body:not(.sidebar) > #main-content .ws-new-dm { max-inline-size: 640px; margin: 
 #sidebar a.sidebar__shortcut { text-decoration: none; }
 body.saved #sidebar a.sidebar__shortcut[href="/saved"] { background: var(--ws-side-active); color: var(--ws-on-accent); }
 .ws-toast { position: fixed; inset: auto auto 88px 50%; z-index: 80; transform: translateX(-50%); padding: 8px 14px; border-radius: var(--ws-radius); background: var(--ws-ink); color: var(--ws-bg); font-family: var(--ws-font); font-size: 14px; font-weight: 600; box-shadow: var(--ws-shadow-lg); animation: huddle-invite-in 120ms ease-out; }
+
+/* Pinned messages (lib/workspace/pins.js) */
+.message__actions-menu .message__actions-grid > .message__pin-btn[data-pinned]::after { content: "Unpin from channel"; }
+.ws-pins-btn { display: inline-flex; align-items: center; block-size: 30px; padding-inline: 10px; border-radius: var(--ws-radius); color: var(--ws-ink-soft); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; pointer-events: auto; }
+.ws-pins-btn:hover { background: var(--ws-bg-subtle); color: var(--ws-ink); }
+.messages .message--pinned { background: color-mix(in srgb, #f5b800 9%, transparent); }
+.messages .message--pinned .message__body-content::before { content: "📌 Pinned"; display: block; margin-block: 2px; color: #a16207; font-size: 12px; font-weight: 600; }
+.ws-pins .message--pinned { background: none; }
+.ws-pins .message--pinned .message__body-content::before { content: none; }
+.ws-pins .messages { padding: 0; }
+.ws-pins .message__actions { display: none !important; }
