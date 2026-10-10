@@ -370,6 +370,14 @@ const openModal = (p, path) => p.evaluate(path => { const a = document.createEle
     await ana.keyboard.press("Escape")
   })
 
+  await step("people", async () => {
+    await ana.locator('#sidebar a.sidebar__shortcut[href="/people"]').click()
+    await ana.waitForURL(/\/people$/)
+    await ana.locator("[data-browse-filter]").fill(`ben${t}`)
+    const shown = ana.locator(".ws-people > li:not([hidden])")
+    check("People lists everyone, filtered by name", (await shown.count()) === 1 && (await shown.innerText()).includes(`Ben${t}`), String(await shown.count()))
+  })
+
   check("no page errors", errors.length === 0, errors.join(" | "))
   await b.close()
   console.log(`\n${results.filter(Boolean).length}/${results.length} checks passed`)

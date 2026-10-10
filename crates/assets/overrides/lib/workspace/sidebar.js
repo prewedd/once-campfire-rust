@@ -98,7 +98,7 @@ function openAddChannelMenu(button) {
 document.addEventListener("input", event => {
   if (!event.target.matches?.("[data-browse-filter]")) return
   const query = event.target.value.trim().toLowerCase()
-  event.target.closest(".ws-settings")?.querySelectorAll(".ws-browse > [data-name]").forEach(row => {
+  event.target.closest(".ws-settings, .ws-search-page")?.querySelectorAll(".ws-browse > [data-name]").forEach(row => {
     row.hidden = !!query && !row.dataset.name.includes(query)
   })
 })

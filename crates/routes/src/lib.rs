@@ -126,3 +126,4 @@ path!(message_save(message_id), "/messages/{message_id}/save");
 // Mentions (plans/redesign.md).
 path!(mentions, "/mentions");
 path!(notifications_pause, "/users/me/notifications_pause");
+path!(people, "/people");

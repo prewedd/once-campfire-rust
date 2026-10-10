@@ -23,6 +23,10 @@
         {{ h::image_tag(ctx, "at.svg", h::attrs().size(18).aria_hidden()) }}
         <span>Mentions</span>
       </a>
+      <a class="sidebar__shortcut" href="{{ h::routes::people() }}">
+        {{ h::image_tag(ctx, "people.svg", h::attrs().size(18).aria_hidden()) }}
+        <span>People</span>
+      </a>
       <a class="sidebar__shortcut" href="{{ h::routes::saved() }}">
         {{ h::image_tag(ctx, "bookmark.svg", h::attrs().size(18).aria_hidden()) }}
         <span>Saved</span>

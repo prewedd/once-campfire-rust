@@ -93,7 +93,7 @@ pub async fn update(c: &mut Ctx) -> Result {
 }
 
 /// `User.active.ordered`
-pub(super) async fn active_users(c: &Ctx) -> Result<Vec<campfire_views::messages::UserView>> {
+pub(crate) async fn active_users(c: &Ctx) -> Result<Vec<campfire_views::messages::UserView>> {
     let secrets = c.app().secrets.clone();
     c.app()
         .db

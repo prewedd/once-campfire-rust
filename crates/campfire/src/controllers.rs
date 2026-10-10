@@ -37,6 +37,7 @@ pub mod first_runs;
 pub mod huddles;
 pub mod mentions;
 pub mod messages;
+pub mod people;
 pub mod pins;
 pub mod presenters;
 pub mod pwa;
@@ -195,6 +196,7 @@ static ROUTES: LazyLock<Vec<Route>> = LazyLock::new(|| {
         post("/messages/:message_id/pin(.:format)", "pins#create", pins::create),
         delete("/messages/:message_id/pin(.:format)", "pins#destroy", pins::destroy),
         get("/mentions(.:format)", "mentions#index", mentions::index),
+        get("/people(.:format)", "people#index", people::index),
         get("/saved(.:format)", "saved#index", saved::index),
         get("/saved/ids(.:format)", "saved#ids", saved::ids),
         post("/messages/:message_id/save(.:format)", "saved#create", saved::create),
@@ -545,7 +547,7 @@ mod tests {
     const MISSING_CONTROLLERS: &[&str] = &["rooms/settings"];
 
     /// Controllers this app adds to the Rails routes (README, Known differences).
-    const ADDED_CONTROLLERS: &[&str] = &["threads", "huddles", "sidebar_positions", "scheduled_messages", "user_statuses", "channels", "saved", "pins", "mentions"];
+    const ADDED_CONTROLLERS: &[&str] = &["threads", "huddles", "sidebar_positions", "scheduled_messages", "user_statuses", "channels", "saved", "pins", "mentions", "people"];
 
     #[test]
     fn the_table_is_rails_routes_in_order() {

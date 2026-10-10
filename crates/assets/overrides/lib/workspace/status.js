@@ -36,6 +36,9 @@ function paint() {
   document.querySelectorAll(".message[data-user-id] .message__author strong").forEach(name => {
     mark(name, statuses[name.closest(".message").dataset.userId])
   })
+  document.querySelectorAll(".ws-person__name:has(.presence-dot[data-presence-user])").forEach(name => {
+    mark(name, statuses[name.querySelector(".presence-dot").dataset.presenceUser])
+  })
   document.querySelectorAll("#sidebar a.direct:has(.presence-dot[data-presence-user]) .direct__author > span").forEach(name => {
     mark(name, statuses[name.closest("a.direct").querySelector(".presence-dot").dataset.presenceUser])
   })

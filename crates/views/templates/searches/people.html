@@ -1,0 +1,28 @@
+{#- "People", this app's own (plans/redesign.md): everyone in the workspace, filtered as you type -#}
+{% extends "layouts/application.html" %}
+{%- block head %}{% endblock %}
+
+{%- block nav %}
+  <span class="btn btn--reversed btn--faux room--current thread--current"><h1 class="room__contents txt-medium overflow-ellipsis">People</h1></span>
+{%- endblock %}
+
+{%- block sidebar %}{{ h::sidebar_turbo_frame_tag(Some(h::routes::user_sidebar().as_str()), "") }}{% endblock %}
+
+{%- block content %}
+<div id="message-area" class="message-area ws-search-page">
+  <header class="ws-search__summary ws-people__head">
+    <h1>People</h1>
+    <span class="ws-hint">{{ users.len() }} in the workspace</span>
+    <input type="search" class="ws-input" placeholder="Search by name" aria-label="Search people" data-browse-filter autofocus>
+  </header>
+  <menu class="ws-browse ws-people">
+{% for user in users %}    <li data-name="{{ user.name.to_lowercase() }}">
+      <a class="ws-person" href="{{ user.path() }}">
+        <img class="ws-person__photo" src="{{ user.avatar_url }}" alt="" loading="lazy" />
+        <span class="ws-person__name"><span class="presence-dot" data-presence-user="{{ user.id }}"></span>{{ user.name }}</span>
+        {%- if user.title.len() > user.name.len() %}<span class="ws-person__bio">{{ user.title[user.name.len()..].trim_start_matches(" – ") }}</span>{% endif %}
+      </a>
+    </li>
+{% endfor %}  </menu>
+</div>
+{%- endblock %}

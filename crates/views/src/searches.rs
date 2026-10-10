@@ -109,3 +109,21 @@ impl Page for Mentions<'_> {
         Some("sidebar searches mentions")
     }
 }
+
+/// "People" (plans/redesign.md), this app's own: everyone in the workspace, to find and message.
+#[derive(Template)]
+#[template(path = "searches/people.html", blocks = ["head", "content"])]
+pub struct People<'a> {
+    pub ctx: &'a ViewContext<'a>,
+    pub users: &'a [crate::messages::UserView],
+}
+
+impl Page for People<'_> {
+    fn page_title(&self) -> Option<String> {
+        Some("People".into())
+    }
+
+    fn body_class(&self) -> Option<&str> {
+        Some("sidebar people")
+    }
+}
