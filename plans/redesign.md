@@ -146,3 +146,4 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
   the header (it covered the header's huddle button once that moved right).
 - **Header members**: "👥 N" (active members) beside a channel's name opens its settings.
   **Alt+↑ / Alt+↓** go to the previous / next channel or conversation, in the sidebar's order.
+- **Sign in and Join** (`sessions/new.html`, `users/new.html`): a card with the workspace icon, "Sign in to …" / "Join …", labelled Email and Password (and Full name, an optional photo), a full-width primary button, "Already have an account? Sign in", and "Trouble signing in? Email …" in place of the lanyard badge and icon buttons.

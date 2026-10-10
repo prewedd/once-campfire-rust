@@ -83,7 +83,11 @@ fn sessions_new() {
         let html = with_context(name, request, |ctx| {
             sessions::New { ctx, email_address: email.map(Into::into), help_contact: help_contact(name) }.render().unwrap()
         });
-        assert_parity(name, "html", html);
+        // Laid out as Slack's sign-in (plans/redesign.md): checked for what it offers.
+        assert!(html.contains("Sign in to ") && html.contains(r#"name="email_address""#) && html.contains(r#"name="password""#) && html.contains(r#"name="log_in""#), "{name}: {html}");
+        assert_eq!(html.contains(r#"value="x@y.com""#) || html.contains(r#"value="david@37signals.com""#), email.is_some(), "{name}: the email is kept");
+        assert_eq!(html.contains("ws-auth__card shake"), alert.is_some(), "{name}: a rejected sign-in shakes");
+        assert_eq!(html.contains("Trouble signing in?"), help_contact(name).is_some(), "{name}");
     }
 }
 
@@ -295,7 +299,12 @@ fn users_new() {
             .render()
             .unwrap()
     });
-    assert_parity(name, "html", html);
+    // Laid out as Slack's join page (plans/redesign.md): checked for what it offers.
+    for field in ["user[name]", "user[email_address]", "user[password]", "user[avatar]"] {
+        assert!(html.contains(&format!(r#"name="{field}""#)), "no {field}: {html}");
+    }
+    let join_code = account_fact(name, "join_code");
+    assert!(html.contains(&format!(r#"action="/join/{}""#, join_code.as_str().unwrap())) && html.contains("Create account"), "{html}");
 }
 
 #[test]

@@ -3495,3 +3495,20 @@ body.saved #sidebar a.sidebar__shortcut[href="/saved"] { background: var(--ws-si
 .ws-members-btn { display: inline-flex; align-items: center; block-size: 30px; padding-inline: 10px; border: 1px solid var(--ws-border); border-radius: var(--ws-radius); color: var(--ws-ink-soft); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; pointer-events: auto; }
 .ws-members-btn:hover { background: var(--ws-bg-subtle); color: var(--ws-ink); }
 @media (max-width: 100ch) { .ws-members-btn { display: none; } }
+
+/* Signing in and joining (sessions/new.html, users/new.html), as Slack's */
+.ws-auth { display: grid; justify-items: center; gap: 16px; min-block-size: 100dvh; padding: 56px 16px 32px; align-content: start; font-family: var(--ws-font); color: var(--ws-ink); }
+.ws-auth__card { display: grid; gap: 16px; inline-size: min(420px, 100%); padding: 32px; border: 1px solid var(--ws-border); border-radius: var(--ws-radius-lg); background: var(--ws-bg-raised); box-shadow: var(--ws-shadow); }
+.ws-auth__form { display: grid; gap: 16px; }
+.ws-auth__logo { justify-self: center; inline-size: 56px; block-size: 56px; margin: 0; font-size: 28px; border-radius: var(--ws-radius-lg); }
+.ws-auth__logo img { inline-size: 56px; block-size: 56px; border-radius: var(--ws-radius-lg); }
+.ws-auth__title { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em; text-align: center; }
+.ws-auth__lede { margin: -8px 0 0; text-align: center; }
+.ws-auth__submit { min-block-size: 42px; font-size: 15px; }
+.ws-auth__switch { margin: 0; text-align: center; }
+.ws-auth__switch a, .ws-auth__help a { color: var(--ws-accent-ink); font-weight: 600; }
+.ws-auth__photo { display: flex; align-items: center; gap: 12px; }
+.ws-auth__avatar { inline-size: 48px; block-size: 48px; border-radius: var(--ws-radius); background: var(--ws-bg-subtle); object-fit: cover; }
+.ws-auth__help { display: grid; gap: 4px; text-align: center; font-size: 14px; }
+.ws-auth__help p { margin: 0; }
+@media (max-width: 480px) { .ws-auth { padding-top: 24px; } .ws-auth__card { padding: 24px 18px; box-shadow: none; } }

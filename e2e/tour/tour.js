@@ -73,5 +73,14 @@ const shots = [
     }
     await ctx.close()
   }
+  for (const [w, h, tag, scheme] of [[1440, 900, "desk", "light"], [390, 844, "phone", "light"], [1440, 900, "dark", "dark"]]) {
+    const ctx = await b.newContext({ viewport: { width: w, height: h }, colorScheme: scheme })
+    const p = await ctx.newPage()
+    for (const [name, path] of [["signin", "/session/new"], ["join", `/join/${CODE}`]]) {
+      await p.goto(BASE + path); await p.waitForTimeout(800)
+      await p.screenshot({ path: `${OUT}/tour-${tag}-${name}.png` })
+    }
+    await ctx.close()
+  }
   await b.close()
 })()

@@ -1,8 +1,5 @@
-{% if let Some(owner) = help_contact %}  <div class="txt-align-center margin-block-double full-width">
-    {% filter link_to("mailto:\"" ~ owner.name ~ "\" <" ~ owner.email_address ~ ">", h::attrs().class("btn center").title("Email " ~ owner.name)) %}
-      {{ h::image_tag(ctx, "lifebuoy.svg", h::attrs().aria_hidden()) }}
-      <span>{{ owner.email_address }}</span>
-{% endfilter %}
-    <div class="txt-align-center center margin-block txt-subtle">Campfire&trade; version {{ h::version_badge(ctx) }}</div>
+{% if let Some(owner) = help_contact %}  <div class="ws-auth__help">
+    <p>Trouble signing in? {% filter link_to("mailto:\"" ~ owner.name ~ "\" <" ~ owner.email_address ~ ">", h::attrs().title("Email " ~ owner.name)) %}Email {{ owner.name }}{% endfilter %}</p>
+    <p class="ws-hint">Campfire&trade; version {{ h::version_badge(ctx) }}</p>
   </div>
 {% endif %}

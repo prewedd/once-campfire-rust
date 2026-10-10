@@ -2,34 +2,23 @@
 
 {% block head %}{{ h::turbo_page_requires_reload_tag() }}{% endblock %}
 
-{% block content %}<section class="txt-align-center">
-  <div class="panel {% if ctx.flash_alert.is_some() %}shake{% endif %}">
-    {{ h::account_logo_tag(ctx, Some("center margin-block-end txt-xx-large")) }}
+{% block content %}<section class="ws-auth">
+  <div class="ws-auth__card {% if ctx.flash_alert.is_some() %}shake{% endif %}">
+    {{ h::account_logo_tag(ctx, Some("ws-auth__logo")) }}
+    <h1 class="ws-auth__title">Sign in to {{ ctx.account.name }}</h1>
 
-{% let form = h::form_with(ctx.url(h::routes::session().as_str())).class("flex flex-column gap") %}    {% filter form_with(form) %}
-      <fieldset class="flex flex-column gap center-block upad">
-        <legend class="txt-large txt-align-center"><strong>{{ ctx.account.name }}</strong></legend>
+{% let form = h::form_with(ctx.url(h::routes::session().as_str())).class("ws-auth__form") %}    {% filter form_with(form) %}
+      <label class="ws-field">
+        <span class="ws-field__label">Email</span>
+        {{ form.email_field("email_address", None, h::attrs().required(true).class("ws-input").autofocus().autocomplete("username").placeholder("name@work-email.com").attr_opt("value", email_address.as_deref())) }}
+      </label>
 
-        <div class="flex align-center gap">
-          {{ h::translation_button(ctx, "email_address") }}
-          <label class="flex align-center gap input input--actor txt-large">
-            {{ form.email_field("email_address", None, h::attrs().required(true).class("input").autofocus().autocomplete("username").placeholder("Enter your email address").attr_opt("value", email_address.as_deref())) }}
-            {{ h::image_tag(ctx, "email.svg", h::attrs().aria_hidden().size(24).class("colorize--black")) }}
-          </label>
-        </div>
+      <label class="ws-field">
+        <span class="ws-field__label">Password</span>
+        {{ form.password_field("password", h::attrs().required(true).class("ws-input").autocomplete("current-password").placeholder("Your password").maxlength(72)) }}
+      </label>
 
-        <div class="flex align-center gap">
-          {{ h::translation_button(ctx, "password") }}
-          <label class="flex align-center gap input input--actor txt-large">
-            {{ form.password_field("password", h::attrs().required(true).class("input").autocomplete("current-password").placeholder("Enter your password").maxlength(72)) }}
-            {{ h::image_tag(ctx, "password.svg", h::attrs().aria_hidden().size(24).class("colorize--black")) }}
-          </label>
-        </div>
-
-        {% filter button(h::attrs().class("btn btn--reversed center txt-large").type_("submit").name("log_in")) %}
-          {{ h::image_tag(ctx, "arrow-right.svg", h::attrs().aria_hidden()) }}
-          <span class="for-screen-reader">Go</span>
-{% endfilter %}      </fieldset>
+      {% filter button(h::attrs().class("ws-btn ws-btn--primary ws-btn--block ws-auth__submit").type_("submit").name("log_in")) %}Sign in{% endfilter %}
 {% endfilter %}  </div>
 
   {% include "accounts/_help_contact.html" %}
