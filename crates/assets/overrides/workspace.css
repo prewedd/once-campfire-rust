@@ -3629,3 +3629,6 @@ details:has(> summary > img[src*="/globe-"]) { display: none; }
 .ws-person__name { display: flex; font-size: 14px; align-items: center; gap: 6px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-person__name[data-status-emoji]::after { content: attr(data-status-emoji); font-weight: 400; }
 .ws-person__bio { color: var(--ws-muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* An unsent draft (lib/workspace/sidebar.js) */
+#sidebar :is(a.room, a.direct).has-draft > :is(.overflow-ellipsis, .direct__author)::after { content: " ✏️"; font-size: 12px; }

@@ -9,6 +9,8 @@
 // - Alt+↑ / Alt+↓ go to the previous / next channel or conversation (as Slack's), unless a channel
 //   in the sidebar has the focus, where they move it (lib/workspace/reorder.js).
 // - Direct messages show how many unread messages they have, in a red badge, as Slack's.
+// - A channel or conversation with an unsent draft (composer_controller.js keeps them in this
+//   browser) shows a pencil, as Slack's.
 // - Ctrl/⌘+/ lists the keyboard shortcuts, as Slack's does.
 // - Ctrl/⌘+K jumps to any channel or conversation in the sidebar by name, as Slack's switcher does.
 // It uses the notifications menu's look and closing (lib/workspace/involvement.js).
@@ -146,7 +148,17 @@ document.addEventListener("keydown", event => {
   }
 })
 
+function markDrafts() {
+  document.querySelectorAll("#sidebar :is(a.room, a.direct)[href^='/rooms/']").forEach(link => {
+    let draft = null
+    try { draft = localStorage.getItem(`composer-draft-${link.getAttribute("href").split("/")[2]}`) } catch {}
+    const has = !!draft && !link.matches(".room--active")
+    if (link.classList.contains("has-draft") !== has) link.classList.toggle("has-draft", has)
+  })
+}
+
 export function enhanceSidebar() {
+  markDrafts()
   addSectionToggles()
   enableWorkspaceMenu()
   showUnreadCounts()

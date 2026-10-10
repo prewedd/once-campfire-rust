@@ -378,6 +378,19 @@ const openModal = (p, path) => p.evaluate(path => { const a = document.createEle
     check("People lists everyone, filtered by name", (await shown.count()) === 1 && (await shown.innerText()).includes(`Ben${t}`), String(await shown.count()))
   })
 
+  await step("drafts", async () => {
+    await ana.goto(`${BASE}/rooms/1`); await ana.waitForLoadState("networkidle")
+    await ana.locator("#composer [contenteditable]").first().click()
+    await ana.keyboard.type(`unsent ${t}`)
+    await ana.locator("#sidebar a.room", { hasText: channel }).click()
+    await ana.waitForURL(url => !url.href.endsWith("/rooms/1"))
+    await ana.locator('#sidebar a.room.has-draft[href="/rooms/1"]').waitFor({ timeout: 8000 })
+    check("a channel with an unsent draft shows a pencil", true)
+    await ana.locator('#sidebar a.room[href="/rooms/1"]').click()
+    await ana.waitForURL(/\/rooms\/1$/)
+    check("…and the draft is still there", (await ana.locator("#composer [contenteditable]").first().innerText()).includes(`unsent ${t}`))
+  })
+
   check("no page errors", errors.length === 0, errors.join(" | "))
   await b.close()
   console.log(`\n${results.filter(Boolean).length}/${results.length} checks passed`)
