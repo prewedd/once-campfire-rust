@@ -135,6 +135,22 @@ const openModal = (p, path) => p.evaluate(path => { const a = document.createEle
     check("Start opens the conversation", (await ana.locator("#nav").innerText()).includes(`Ben${t}`), await ana.locator("#nav").innerText())
   })
 
+  await step("quick switcher", async () => {
+    await ana.goto(`${BASE}/rooms/1`); await ana.waitForLoadState("networkidle")
+    await ana.keyboard.press("Control+k")
+    const input = ana.locator(".ws-switcher[open] input")
+    await input.waitFor({ timeout: 3000 })
+    check("Ctrl+K opens Jump to", true)
+    await input.fill(channel.slice(0, 9))
+    const first = ana.locator('.ws-switcher__item[aria-selected="true"]')
+    check("…matching by name, private channels with a lock", (await first.innerText()).includes(channel) && (await first.innerText()).includes("🔒"), await first.innerText())
+    await input.fill(`ben${t}`)
+    check("…people too, by name only", (await first.locator(".ws-switcher__name").innerText()).trim() === `Ben${t}`, await first.innerText())
+    await input.fill(channel)
+    await Promise.all([ana.waitForURL(url => !url.href.endsWith("/rooms/1"), { timeout: 8000 }), input.press("Enter")])
+    check("…and Enter goes there", (await ana.locator("#nav").innerText()).includes(channel))
+  })
+
   check("no page errors", errors.length === 0, errors.join(" | "))
   await b.close()
   console.log(`\n${results.filter(Boolean).length}/${results.length} checks passed`)

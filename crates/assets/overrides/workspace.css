@@ -3388,3 +3388,15 @@ textarea.ws-input { resize: vertical; }
 #sidebar .ws-new-dm__cancel { display: block; color: var(--ws-side-ink); font-size: 20px; text-decoration: none; }
 #sidebar .ws-new-dm .ws-hint { color: var(--ws-side-ink); }
 body:not(.sidebar) > #main-content .ws-new-dm { max-inline-size: 640px; margin: 48px auto; padding-inline: 16px; }
+
+/* The quick switcher (Ctrl/⌘+K, lib/workspace/sidebar.js) */
+.ws-switcher { width: min(560px, calc(100vw - 32px)); margin-top: 12vh; padding: 0; border: 1px solid var(--ws-border); border-radius: var(--ws-radius-lg); background: var(--ws-bg-raised); color: var(--ws-ink); box-shadow: var(--ws-shadow-lg); font-family: var(--ws-font); }
+.ws-switcher::backdrop { background: rgb(9 9 11 / 0.35); }
+.ws-switcher__input { width: 100%; padding: 16px 18px; border: 0; border-bottom: 1px solid var(--ws-border); outline: 0; background: none; color: var(--ws-ink); font: inherit; font-size: 17px; }
+.ws-switcher__list { display: grid; max-height: 50vh; margin: 0; padding: 6px; overflow-y: auto; list-style: none; }
+.ws-switcher__item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--ws-radius); cursor: pointer; font-size: 15px; }
+.ws-switcher__item[aria-selected="true"] { background: var(--ws-accent); color: var(--ws-on-accent); }
+.ws-switcher__kind { inline-size: 16px; color: inherit; opacity: 0.6; text-align: center; font-size: 13px; }
+.ws-switcher__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-switcher__empty { padding: 12px 10px; color: var(--ws-muted); }
+.ws-switcher__hint { margin: 0; padding: 8px 16px; border-top: 1px solid var(--ws-border); color: var(--ws-muted); font-size: 12px; }

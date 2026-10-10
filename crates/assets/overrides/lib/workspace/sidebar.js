@@ -5,8 +5,10 @@
 // - The workspace's name opens a menu: invite people, create a channel, settings, your profile.
 // - The channel's name in the header opens its settings, as Slack's channel details do.
 // - The + by Direct messages opens "New message" in the modal rather than in the sidebar.
+// - Ctrl/⌘+K jumps to any channel or conversation in the sidebar by name, as Slack's switcher does.
 // It uses the notifications menu's look and closing (lib/workspace/involvement.js).
 
+import { Turbo } from "@hotwired/turbo-rails"
 import { openModal } from "lib/workspace/modal"
 
 const SECTIONS = [ [ ".rooms", "Channels" ], [ ".directs", "Direct messages" ] ]
@@ -111,3 +113,79 @@ export function enhanceSidebar() {
   addSectionToggles()
   enableWorkspaceMenu()
 }
+
+// The quick switcher: the sidebar's own links, filtered as you type.
+// What a sidebar link shows, without its screen-reader-only words ("Ping with") or presence.
+function shownName(link) {
+  const copy = link.cloneNode(true)
+  copy.querySelectorAll(".for-screen-reader, .presence-dot, .presence-status").forEach(node => node.remove())
+  return copy.textContent.replace(/\s+/g, " ").trim()
+}
+
+function destinations() {
+  const rooms = [ ...document.querySelectorAll("#sidebar .rooms a.room[href]:not(.rooms__new-btn)") ]
+    .map(link => ({ name: shownName(link), href: link.href, kind: link.id.startsWith("list_rooms_closed_") ? "🔒" : "#" }))
+  const people = [ ...document.querySelectorAll("#sidebar a.direct[href]:not(.direct__new)") ]
+    .map(link => ({ name: shownName(link), href: link.href, kind: "@" }))
+  return [ ...rooms, ...people ].filter(item => item.name)
+}
+
+export function matches(items, query) {
+  const q = query.trim().toLowerCase()
+  if (!q) return items
+  const starts = items.filter(item => item.name.toLowerCase().startsWith(q))
+  return [ ...starts, ...items.filter(item => !starts.includes(item) && item.name.toLowerCase().includes(q)) ]
+}
+
+function openSwitcher() {
+  if (document.querySelector(".ws-switcher")) return
+  const items = destinations()
+  const dialog = document.createElement("dialog")
+  dialog.className = "ws-switcher"
+  dialog.setAttribute("aria-label", "Jump to")
+  dialog.innerHTML = `<input class="ws-switcher__input" type="text" placeholder="Jump to a channel or person…" aria-label="Jump to" role="combobox" aria-expanded="true" aria-controls="ws-switcher-list" autocomplete="off"><ul class="ws-switcher__list" id="ws-switcher-list" role="listbox"></ul><p class="ws-switcher__hint">↑↓ to move · Enter to go · Esc to close</p>`
+  const input = dialog.querySelector("input"), list = dialog.querySelector("ul")
+  let shown = [], selected = 0
+  const render = () => {
+    shown = matches(items, input.value).slice(0, 12)
+    selected = Math.min(selected, Math.max(shown.length - 1, 0))
+    list.replaceChildren(...shown.map((item, index) => {
+      const li = document.createElement("li")
+      li.className = "ws-switcher__item"
+      li.setAttribute("role", "option")
+      li.setAttribute("aria-selected", String(index === selected))
+      li.innerHTML = `<span class="ws-switcher__kind" aria-hidden="true"></span><span class="ws-switcher__name"></span>`
+      li.firstChild.textContent = item.kind
+      li.lastChild.textContent = item.name
+      li.addEventListener("mousedown", event => { event.preventDefault(); go(item) })
+      return li
+    }))
+    if (!shown.length) list.innerHTML = `<li class="ws-switcher__empty">Nothing by that name</li>`
+  }
+  const go = item => { dialog.close(); if (item) Turbo.visit(item.href) }
+  input.addEventListener("input", () => { selected = 0; render() })
+  input.addEventListener("keydown", event => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault()
+      selected = (selected + (event.key === "ArrowDown" ? 1 : -1) + shown.length) % Math.max(shown.length, 1)
+      render()
+    } else if (event.key === "Enter") {
+      event.preventDefault()
+      go(shown[selected])
+    }
+  })
+  dialog.addEventListener("click", event => { if (event.target === dialog) dialog.close() })
+  dialog.addEventListener("close", () => dialog.remove())
+  document.body.append(dialog)
+  render()
+  dialog.showModal()
+  input.focus()
+}
+
+window.addEventListener("keydown", event => {
+  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "k" && document.querySelector("#sidebar")) {
+    event.preventDefault()
+    event.stopPropagation()
+    openSwitcher()
+  }
+}, true)
