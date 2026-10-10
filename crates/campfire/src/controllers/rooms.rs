@@ -234,6 +234,7 @@ async fn render_show(c: &mut Ctx, room: Room) -> Result {
                 messages_stream_name: rails_compat::turbo::signed_stream_name(&app.secrets, &[&room_gid, "messages"]),
                 huddles: crate::huddles::enabled(),
                 member_count: Room::active_member_count(conn, room.id)?,
+                last_seen_ms: campfire_db::Membership::last_read_at(conn, room.id, user.id)?.map(|at| at.jiff().as_millisecond()),
             })
         })
         .await

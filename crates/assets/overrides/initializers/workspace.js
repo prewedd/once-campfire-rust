@@ -20,6 +20,7 @@ import { enhanceSidebar } from "lib/workspace/sidebar"
 import { showStatuses } from "lib/workspace/status"
 import "lib/workspace/saved"
 import { showPins } from "lib/workspace/pins"
+import { showNewLine } from "lib/workspace/unread"
 import "lib/workspace/schedule"
 import "lib/workspace/threads"
 
@@ -244,6 +245,7 @@ function refresh() {
     enhanceSidebar()
     showStatuses()
     showPins()
+    showNewLine()
     showHuddles()
     showInvite()
     trackHuddles()

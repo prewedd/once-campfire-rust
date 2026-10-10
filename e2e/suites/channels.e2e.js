@@ -294,6 +294,12 @@ const openModal = (p, path) => p.evaluate(path => { const a = document.createEle
     const badge = ana.locator(`#sidebar a.direct[href$="${new URL(dm).pathname}"] .ws-count`)
     await badge.waitFor({ timeout: 10000 })
     check("a direct message counts its unread messages", Number(await badge.innerText()) >= 2, await badge.innerText())
+    await ana.locator(`#sidebar a.direct[href$="${new URL(dm).pathname}"]`).click()
+    await ana.waitForURL(dm)
+    const line = ana.locator(".messages > .ws-new-line")
+    await line.waitFor({ timeout: 10000 })
+    const next = await line.evaluate(el => el.nextElementSibling?.textContent ?? "")
+    check("opening it draws the New line above what you missed", next.includes(`ping one ${t}`), next.trim().slice(0, 80))
   })
 
   check("no page errors", errors.length === 0, errors.join(" | "))

@@ -88,6 +88,10 @@ pub struct ShowView {
     /// This app's own: how many active people are in the room, for the header (plans/redesign.md).
     #[serde(default)]
     pub member_count: i64,
+    /// This app's own: when you were last in the room (ms since the epoch), for the "New" line
+    /// above what others posted after (the room may already be marked read by the time it renders).
+    #[serde(default)]
+    pub last_seen_ms: Option<i64>,
 }
 
 /// `rooms/show`.

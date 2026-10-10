@@ -189,7 +189,7 @@ fn reading_is_a_noop_when_already_read() {
 }
 
 #[test]
-fn unread_direct_rooms_count_others_messages_since_they_were_last_there() {
+fn unread_direct_rooms_count_others_messages_since_they_last_read_them() {
     let t = TestDb::new();
     let david = id("david");
     assert!(t.read(move |c| Membership::unread_direct_counts(c, david)).is_empty(), "nothing unread");
@@ -201,7 +201,7 @@ fn unread_direct_rooms_count_others_messages_since_they_were_last_there() {
         )?)
     });
     t.write(move |tx| {
-        tx.conn().execute(r#"UPDATE "memberships" SET "unread_at" = '2030-01-01 00:00:00.000000', "connected_at" = NULL WHERE "room_id" = ? AND "user_id" = ?"#, [room_id, david])?;
+        tx.conn().execute(r#"UPDATE "memberships" SET "unread_at" = '2030-01-01 00:00:00.000000', "last_read_at" = '2000-01-01 00:00:00.000000' WHERE "room_id" = ? AND "user_id" = ?"#, [room_id, david])?;
         Ok(())
     });
     let expected: i64 = t.read(move |c| Ok(c.query_row(r#"SELECT COUNT(*) FROM "messages" WHERE "room_id" = ? AND "creator_id" != ?"#, [room_id, david], |row| row.get(0))?));
@@ -210,5 +210,14 @@ fn unread_direct_rooms_count_others_messages_since_they_were_last_there() {
         assert_eq!(counts, vec![(room_id, expected)]);
     } else {
         assert!(counts.is_empty());
+    }
+
+    // Without a last read time (memberships from before this app kept one), only the latest counts.
+    t.write(move |tx| {
+        tx.conn().execute(r#"UPDATE "memberships" SET "last_read_at" = NULL, "unread_at" = (SELECT MAX("created_at") FROM "messages" WHERE "room_id" = ? AND "creator_id" != ?) WHERE "room_id" = ? AND "user_id" = ?"#, [room_id, david, room_id, david])?;
+        Ok(())
+    });
+    if expected > 0 {
+        assert_eq!(t.read(move |c| Membership::unread_direct_counts(c, david)), vec![(room_id, 1)]);
     }
 }

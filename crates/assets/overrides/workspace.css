@@ -3566,3 +3566,10 @@ dialog[data-notifications-target="notAllowedNotice"] details > summary.btn { --b
 /* Unread counts on direct messages (lib/workspace/sidebar.js), as Slack's red badges */
 #sidebar a.direct > .ws-count { margin-inline-start: auto; min-inline-size: 18px; padding: 0 6px; border-radius: 999px; background: #e5484d; color: #fff; font-size: 12px; font-weight: 700; line-height: 18px; text-align: center; }
 #sidebar a.direct:has(> .ws-count)::after { display: none; }
+
+/* The "New" line (lib/workspace/unread.js) */
+.ws-new-line { display: flex; align-items: center; gap: 8px; margin: 8px var(--ws-gutter); color: #e5484d; font-size: 12px; font-weight: 700; }
+.ws-new-line::before, .ws-new-line::after { content: ""; flex: 1; border-top: 1px solid #e5484d; }
+.ws-new-line::before { flex: 0 0 0; }
+.ws-new-line span { order: 2; padding: 0 2px; }
+.ws-new-line::after { order: 1; }

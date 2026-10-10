@@ -224,14 +224,14 @@ impl Membership {
     }
 
     /// For the sidebar's badges (plans/redesign.md): how many messages from others each of
-    /// someone's unread direct rooms has had since they were last in it (`connected_at`;
-    /// `unread_at` is the latest message's time, not the first unread's), as (room id, count).
+    /// someone's unread direct rooms has had since they last read it (`last_read_at`; without
+    /// one, just the latest: `unread_at` is that message's time), as (room id, count).
     pub fn unread_direct_counts(conn: &Connection, user_id: i64) -> Result<Vec<(i64, i64)>> {
         crate::sql::query_all(
             conn,
             r#"SELECT "memberships"."room_id", COUNT("messages"."id") FROM "memberships"
                INNER JOIN "rooms" ON "rooms"."id" = "memberships"."room_id" AND "rooms"."type" = 'Rooms::Direct'
-               INNER JOIN "messages" ON "messages"."room_id" = "memberships"."room_id" AND "messages"."created_at" > COALESCE("memberships"."connected_at", '')
+               INNER JOIN "messages" ON "messages"."room_id" = "memberships"."room_id" AND (CASE WHEN "memberships"."last_read_at" IS NULL THEN "messages"."created_at" >= "memberships"."unread_at" ELSE "messages"."created_at" > "memberships"."last_read_at" END)
                  AND "messages"."creator_id" != "memberships"."user_id"
                WHERE "memberships"."user_id" = ? AND "memberships"."unread_at" IS NOT NULL
                GROUP BY "memberships"."room_id""#,
@@ -247,6 +247,7 @@ impl Membership {
         }
         let now = tx.now();
         tx.conn().execute_cached(r#"UPDATE "memberships" SET "unread_at" = ?, "updated_at" = ? WHERE "memberships"."id" = ?"#, params![None::<Timestamp>, now, self.id])?;
+        Self::mark_read_at(tx, self.id, now)?;
         self.unread_at = None;
         self.updated_at = now;
         Ok(())
@@ -313,7 +314,24 @@ impl Membership {
             r#"UPDATE "memberships" SET "connections" = ?, "connected_at" = ?, "unread_at" = ? WHERE "memberships"."id" = ?"#,
             params![connections, tx.now(), None::<Timestamp>, id],
         )?;
+        Self::mark_read_at(tx, id, tx.now())
+    }
+
+    /// This app's own `last_read_at` (schema::ADDED_COLUMNS), beside Rails' own updates.
+    fn mark_read_at(tx: &Tx<'_>, id: i64, at: Timestamp) -> Result<()> {
+        tx.conn().execute_cached(r#"UPDATE "memberships" SET "last_read_at" = ? WHERE "memberships"."id" = ?"#, params![at, id])?;
         Ok(())
+    }
+
+    /// When they last had it open or read it, if this app has seen them do so.
+    pub fn last_read_at(conn: &Connection, room_id: i64, user_id: i64) -> Result<Option<Timestamp>> {
+        Ok(query_one(
+            conn,
+            r#"SELECT "last_read_at" FROM "memberships" WHERE "room_id" = ? AND "user_id" = ?"#,
+            params![room_id, user_id],
+            |row| row.get::<_, Option<Timestamp>>(0),
+        )?
+        .flatten())
     }
 
     /// `connected?`
@@ -350,7 +368,7 @@ impl Membership {
             self.connected_at = None;
             self.updated_at = now;
         }
-        Ok(())
+        Self::mark_read_at(tx, self.id, tx.now())
     }
 
     /// `refresh_connection`
@@ -413,6 +431,7 @@ impl Membership {
             r#"UPDATE "memberships" SET "updated_at" = ?, "connected_at" = ? WHERE "memberships"."id" = ?"#,
             params![now, now, self.id],
         )?;
+        Self::mark_read_at(tx, self.id, now)?;
         self.connected_at = Some(now);
         self.updated_at = now;
         Ok(())

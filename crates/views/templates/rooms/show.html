@@ -12,6 +12,7 @@
 
 {%- block content %}
 <div id="message-area" class="message-area" contents="true" data-controller="messages presence drop-target" data-action="turbo:before-stream-render@document-&gt;messages#beforeStreamRender keydown.up@document-&gt;messages#editMyLastMessage dragenter-&gt;drop-target#dragenter dragover-&gt;drop-target#dragover drop-&gt;drop-target#drop visibilitychange@document-&gt;presence#visibilityChanged" data-messages-first-of-day-class="message--first-of-day" data-messages-formatted-class="message--formatted" data-messages-me-class="message--me" data-messages-mentioned-class="message--mentioned" data-messages-threaded-class="message--threaded" data-messages-page-url-value="{{ ctx.url(h::routes::room_messages(show.room.id).as_str()) }}">
+  {%- if let Some(ms) = show.last_seen_ms %}<span id="ws-last-seen" data-at="{{ ms }}" hidden></span>{% endif %}
   {%- let user = &show.user %}
   {% include "messages/_template.html" %}
 

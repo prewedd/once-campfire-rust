@@ -154,6 +154,7 @@ fn without_port_markup(actual: Vec<String>) -> Vec<String> {
         "message__pin-btn",
         r#"<span class="ws-topic""#,
         r#"<a class="ws-members-btn""#,
+        r#"<span id="ws-last-seen""#,
     ];
     let is_added = |t: &str| ADDED.iter().any(|marker| t.contains(marker));
     let mut out = Vec::with_capacity(actual.len());

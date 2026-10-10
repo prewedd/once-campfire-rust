@@ -341,6 +341,8 @@ Deliberate:
   the message menu (its own markup, left out of the parity comparison).
 - **Browse channels.** `GET /channels`, `POST`/`DELETE /channels/:room_id/membership`: Slack's
   join and leave, as the "invisible" involvement (the room stays a membership).
+- **Last read.** A nullable `memberships.last_read_at`, added on boot and written beside Rails' own
+  membership updates (reading, connecting, staying, leaving), for unread counts and the "New" line.
 - **Channel topics.** A nullable `rooms.topic` column, added on boot (the Rails image ignores it),
   set in a channel's settings and shown in its header.
 - **Huddles.** Drop-in voice and video calls in any room or DM, as Slack's huddles

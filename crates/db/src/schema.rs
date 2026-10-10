@@ -45,6 +45,10 @@ pub const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("messages", "thread_parent_id", "integer"),
     // The sidebar's channel order, per person (plans/redesign.md): NULL keeps the alphabetical place.
     ("memberships", "position", "integer"),
+    // When someone last had the room open or read it (plans/redesign.md): unread counts and the
+    // "New" line count from here. (`unread_at` is the latest message's time; `connected_at` goes
+    // when they leave.)
+    ("memberships", "last_read_at", "datetime(6)"),
     // A channel's topic, shown in its header (plans/redesign.md).
     ("rooms", "topic", "varchar"),
 ];
