@@ -92,7 +92,6 @@ document.addEventListener("click", async event => {
   const unpinning = pinned.has(id)
   const response = await fetch(`/messages/${id}/pin`, {
     method: unpinning ? "DELETE" : "POST",
-    headers: { "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content ?? "" },
   }).catch(() => null)
   if (!response?.ok) return toast("Couldn't pin that message")
   button.closest("details")?.removeAttribute("open")

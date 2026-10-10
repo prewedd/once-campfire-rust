@@ -21,7 +21,6 @@ function save(list) {
   fetch("/users/me/sidebar/positions", {
     method: "POST",
     body,
-    headers: { "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content ?? "" },
   }).catch(error => console.error("reorder:", error))
 }
 

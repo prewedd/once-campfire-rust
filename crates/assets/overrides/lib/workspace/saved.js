@@ -50,7 +50,6 @@ document.addEventListener("click", async event => {
   const removing = saved.has(id)
   const response = await fetch(`/messages/${id}/save`, {
     method: removing ? "DELETE" : "POST",
-    headers: { "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content ?? "" },
   }).catch(() => null)
   if (!response?.ok) return toast("Couldn't save that message")
   removing ? saved.delete(id) : saved.add(id)
@@ -67,7 +66,6 @@ document.addEventListener("click", async event => {
   event.preventDefault()
   const response = await fetch(`/messages/${button.dataset.messageId}/unread`, {
     method: "POST",
-    headers: { "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content ?? "" },
   }).catch(() => null)
   button.closest("details")?.removeAttribute("open")
   // The sidebar ignores "unread" for the room you're in; this one you asked for.

@@ -328,11 +328,11 @@ impl Membership {
     /// Slack's "Mark unread" (plans/redesign.md): unread from `message` on, for this person.
     /// `false` when they aren't in its room.
     pub fn mark_unread_from(tx: &mut Tx<'_>, user_id: i64, message: &crate::Message) -> Result<bool> {
+        // A millisecond before it: the page compares milliseconds (rooms/show's #ws-last-seen).
+        let before = message.created_at.ago(SignedDuration::from_millis(1));
         let changed = tx.conn().execute_cached(
-            r#"UPDATE "memberships" SET "unread_at" = ?1,
-                 "last_read_at" = strftime('%Y-%m-%d %H:%M:%f', ?1, '-0.001 seconds')
-               WHERE "memberships"."room_id" = ?2 AND "memberships"."user_id" = ?3"#,
-            params![message.created_at, message.room_id, user_id],
+            r#"UPDATE "memberships" SET "unread_at" = ?, "last_read_at" = ? WHERE "memberships"."room_id" = ? AND "memberships"."user_id" = ?"#,
+            params![message.created_at, before, message.room_id, user_id],
         )?;
         Ok(changed > 0)
     }
