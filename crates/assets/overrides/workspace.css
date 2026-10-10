@@ -3531,3 +3531,13 @@ body.saved #sidebar a.sidebar__shortcut[href="/saved"] { background: var(--ws-si
 /* Notifications not yet allowed: a quiet red dot on the bell, not a pulsing box */
 #nav .button_to_change_notifying .btn--pulsing { position: relative; animation: none; box-shadow: none; outline: none; --btn-border-color: transparent; }
 #nav .button_to_change_notifying .btn--pulsing::after { content: ""; position: absolute; inset: 5px 5px auto auto; inline-size: 8px; block-size: 8px; border-radius: 999px; background: #e5484d; box-shadow: 0 0 0 2px var(--ws-bg); }
+
+/* Phones: a header that fits — smaller buttons, the channel's name gives way first */
+@media (max-width: 100ch) {
+  .sidebar #nav:has(> .room--current) { column-gap: 2px; }
+  #nav:has(> .room--current) .btn:not(.room--current):not(.avatar) { --btn-size: 30px; }
+  #nav:has(> .room--current) > .room--current { flex: 0 1 auto; min-inline-size: 0; }
+  #nav .ws-pins-btn { padding-inline: 6px; }
+  #nav .huddle-btn__label { display: none; }
+  .sidebar #nav:has(> .room--current) > .account-logo { display: none; }
+}
