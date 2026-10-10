@@ -85,6 +85,9 @@ pub struct ShowView {
     /// Huddles are set up (plans/huddles.md): the header offers one.
     #[serde(default)]
     pub huddles: bool,
+    /// This app's own: how many active people are in the room, for the header (plans/redesign.md).
+    #[serde(default)]
+    pub member_count: i64,
 }
 
 /// `rooms/show`.

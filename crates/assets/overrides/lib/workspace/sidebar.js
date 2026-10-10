@@ -6,6 +6,8 @@
 // - The channel's name in the header opens its settings, as Slack's channel details do.
 // - The + by Direct messages opens "New message" in the modal rather than in the sidebar.
 // - "Add channel" offers Create a channel and Browse channels; Browse channels filters as you type.
+// - Alt+↑ / Alt+↓ go to the previous / next channel or conversation (as Slack's), unless a channel
+//   in the sidebar has the focus, where they move it (lib/workspace/reorder.js).
 // - Ctrl/⌘+K jumps to any channel or conversation in the sidebar by name, as Slack's switcher does.
 // It uses the notifications menu's look and closing (lib/workspace/involvement.js).
 
@@ -220,3 +222,22 @@ window.addEventListener("keydown", event => {
     openSwitcher()
   }
 }, true)
+
+// Alt+↑ / Alt+↓: the previous / next room in the sidebar, as it's shown (channels, then people).
+function sidebarLinks() {
+  return [ ...document.querySelectorAll("#sidebar .rooms a.room[href]:not(.rooms__new-btn), #sidebar a.direct[href]:not(.direct__new)") ]
+    .filter(link => link.offsetParent)
+    .sort((a, b) => Number(!!a.closest(".directs")) - Number(!!b.closest(".directs")))
+}
+
+window.addEventListener("keydown", event => {
+  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !/^Arrow(Up|Down)$/.test(event.key)) return
+  if (document.activeElement?.closest?.("#shared_rooms") || document.querySelector("dialog[open]")) return
+  const links = sidebarLinks()
+  const here = links.findIndex(link => new URL(link.href).pathname === location.pathname)
+  if (here < 0 && !links.length) return
+  const next = links[(here + (event.key === "ArrowDown" ? 1 : -1) + links.length) % links.length]
+  if (!next) return
+  event.preventDefault()
+  Turbo.visit(next.href)
+})

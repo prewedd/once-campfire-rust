@@ -449,6 +449,7 @@ body {
 #nav:has(> .room--current) {
   > .ws-nav-search { order: 1; }
   > .ws-pins-btn { order: 2; }
+  > .ws-members-btn { order: 2; }
   > .huddle-btn { order: 2; }
   > span:has(.button_to_change_notifying) { order: 3; }
   > a[data-room-id] { order: 4; }
@@ -3489,3 +3490,8 @@ body.saved #sidebar a.sidebar__shortcut[href="/saved"] { background: var(--ws-si
 .ws-pins .message--pinned .message__body-content::before { content: none; }
 .ws-pins .messages { padding: 0; }
 .ws-pins .message__actions { display: none !important; }
+
+/* The channel's members, in its header: opens its settings */
+.ws-members-btn { display: inline-flex; align-items: center; block-size: 30px; padding-inline: 10px; border: 1px solid var(--ws-border); border-radius: var(--ws-radius); color: var(--ws-ink-soft); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; pointer-events: auto; }
+.ws-members-btn:hover { background: var(--ws-bg-subtle); color: var(--ws-ink); }
+@media (max-width: 100ch) { .ws-members-btn { display: none; } }

@@ -144,3 +144,5 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
   it unconditionally looped).
 - Huddles: the mini-window is wider so its controls fit; the "started a huddle" invite sits under
   the header (it covered the header's huddle button once that moved right).
+- **Header members**: "👥 N" (active members) beside a channel's name opens its settings.
+  **Alt+↑ / Alt+↓** go to the previous / next channel or conversation, in the sidebar's order.

@@ -312,6 +312,15 @@ impl Room {
         )
     }
 
+    /// How many active people are in it.
+    pub fn active_member_count(conn: &Connection, room_id: i64) -> Result<i64> {
+        Ok(conn.query_row(
+            r#"SELECT COUNT(*) FROM "memberships" INNER JOIN "users" ON "users"."id" = "memberships"."user_id" WHERE "memberships"."room_id" = ? AND "users"."status" = 0"#,
+            [room_id],
+            |row| row.get(0),
+        )?)
+    }
+
     /// Longest topic kept; a longer one is cut there.
     pub const TOPIC_LIMIT: usize = 250;
 

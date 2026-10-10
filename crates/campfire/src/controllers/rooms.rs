@@ -233,6 +233,7 @@ async fn render_show(c: &mut Ctx, room: Room) -> Result {
                 join_code: Account::first(conn)?.map(|account| account.join_code).unwrap_or_default(),
                 messages_stream_name: rails_compat::turbo::signed_stream_name(&app.secrets, &[&room_gid, "messages"]),
                 huddles: crate::huddles::enabled(),
+                member_count: Room::active_member_count(conn, room.id)?,
             })
         })
         .await
