@@ -110,3 +110,7 @@ pub fn fresh_account_logo(v: Option<&str>, size: Option<&str>) -> String {
     if let Some(v) = v { query.push(format!("v={v}")); }
     if query.is_empty() { account_logo() } else { format!("{}?{}", account_logo(), query.join("&")) }
 }
+
+// Custom statuses (plans/redesign.md).
+path!(user_statuses, "/users/statuses");
+path!(user_status, "/users/me/status");

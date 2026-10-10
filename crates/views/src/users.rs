@@ -119,6 +119,8 @@ impl ProfileMembership {
 pub struct ProfileShow<'a> {
     pub ctx: &'a ViewContext<'a>,
     pub user: UserSummary,
+    /// This app's own: your custom status, as (emoji, text).
+    pub status: Option<(String, String)>,
     pub avatar_attached: bool,
     pub transfer_id: String,
     pub shared_memberships: Vec<ProfileMembership>,

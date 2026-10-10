@@ -3,5 +3,5 @@
 E2E=$(cd "$(dirname "$0")/.." && pwd)
 CODE=$(python3 -I -c "import sqlite3; print(sqlite3.connect('file:/root/campfire-dev/storage/db/production.sqlite3?mode=ro', uri=True).execute('select join_code from accounts').fetchone()[0])")
 python3 -I -c "import sqlite3; c = sqlite3.connect('/root/campfire-dev/storage/db/production.sqlite3'); c.execute(\"update users set role = 1 where email_address like 'tour-%@x.test'\"); c.commit()"
-docker run --rm --network host --ipc=host -v "$E2E":/e2e -w /e2e mcr.microsoft.com/playwright:v1.47.2-noble node tour/tour.js "${BASE:-http://127.0.0.1:3090}" "$CODE" /e2e/out
+docker run --rm --network host --ipc=host -v "$E2E":/e2e -w /e2e mcr.microsoft.com/playwright:v1.47.2-noble node tour/tour.js "${BASE:-http://127.0.0.1:3090}" "$CODE" /e2e/out || { echo "tour: failed (screenshots may be stale)"; exit 1; }
 python3 -I -c "import sqlite3; c = sqlite3.connect('/root/campfire-dev/storage/db/production.sqlite3'); c.execute(\"update users set role = 1 where email_address like 'tour-%@x.test'\"); c.commit()"

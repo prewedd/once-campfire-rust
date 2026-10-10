@@ -342,6 +342,7 @@ fn users_profiles_show() {
             users::ProfileShow {
                 ctx,
                 user: user_summary(me),
+                status: (ua == "kevin").then(|| ("🌴".to_string(), "Vacationing".to_string())),
                 avatar_attached: me["avatar_attached"].as_bool().unwrap(),
                 transfer_id: me["transfer_id"].as_str().unwrap().into(),
                 shared_memberships: profile_memberships(&data(name)["profile"]["shared"]),
@@ -355,6 +356,8 @@ fn users_profiles_show() {
         }
         assert!(html.contains(r#"name="user[name]""#) && html.contains(r#"name="user[avatar]""#), "{name}: {html}");
         assert_eq!(html.contains("Remove photo"), ua == "with_avatar", "{name}");
+        assert!(html.contains(r#"name="status[text]""#) && html.contains("Save status"), "{name}: the status form");
+        assert_eq!(html.contains(r#"value="Vacationing""#) && html.contains("Clear status"), ua == "kevin", "{name}: the current status");
     }
 }
 

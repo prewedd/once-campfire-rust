@@ -9,6 +9,35 @@
 {% block content %}<section class="panel ws-settings" style="view-transition-name: avatar-{{ user.id }}">
   <h1 class="ws-settings__title">Edit your profile</h1>
 
+  <section class="ws-status">
+    <h2 class="ws-section__title">Status</h2>
+{% let form = h::form_with(h::routes::user_status()).model("status").method("put").class("ws-status__form") %}    {% filter form_with(form) %}
+      <div class="ws-inline ws-status__fields">
+        <input class="ws-input ws-status__emoji" type="text" name="status[emoji]" maxlength="16" placeholder="💬" aria-label="Status emoji"{% if let Some((emoji, _)) = status %} value="{{ emoji }}"{% endif %}>
+        <input class="ws-input ws-status__text" type="text" name="status[text]" maxlength="100" placeholder="What's your status?" aria-label="Status"{% if let Some((_, text)) = status %} value="{{ text }}"{% endif %}>
+        <select class="ws-input ws-status__clear" name="status[clear_in]" aria-label="Clear after">
+          <option value="">Don't clear</option>
+          <option value="30">30 minutes</option>
+          <option value="60">1 hour</option>
+          <option value="240">4 hours</option>
+          <option value="480" data-until="today">Today</option>
+          <option value="10080" data-until="week">This week</option>
+        </select>
+      </div>
+      <div class="ws-status__presets" aria-label="Suggestions">
+        <button type="button" class="ws-chip" data-status-preset="📅|In a meeting|60">📅 In a meeting</button>
+        <button type="button" class="ws-chip" data-status-preset="🚌|Commuting|30">🚌 Commuting</button>
+        <button type="button" class="ws-chip" data-status-preset="🤒|Out sick|today">🤒 Out sick</button>
+        <button type="button" class="ws-chip" data-status-preset="🌴|Vacationing|">🌴 Vacationing</button>
+        <button type="button" class="ws-chip" data-status-preset="🏡|Working remotely|today">🏡 Working remotely</button>
+      </div>
+      <div class="ws-actions">
+{% if status.is_some() %}        <button type="submit" form="ws-status-clear" class="ws-btn ws-btn--link">Clear status</button>
+{% endif %}        <button type="submit" class="ws-btn ws-btn--primary">Save status</button>
+      </div>
+{% endfilter %}{% if status.is_some() %}    <form id="ws-status-clear" class="button_to" method="post" action="{{ h::routes::user_status() }}"><input type="hidden" name="_method" value="delete" /></form>
+{% endif %}  </section>
+
   <div class="ws-profile">
     <div class="ws-profile__photo" data-controller="upload-preview">
       <span class="ws-field__label">Profile photo</span>

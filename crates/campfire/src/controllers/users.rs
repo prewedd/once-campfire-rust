@@ -6,6 +6,7 @@ pub mod bans;
 pub mod profiles;
 pub mod push_subscriptions;
 pub mod sidebars;
+pub mod statuses;
 
 use askama::Template;
 use campfire_db::{Account, NewUser, User};

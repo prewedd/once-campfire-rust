@@ -12,6 +12,7 @@ mod room_test;
 mod scheduled_message_test;
 mod thread_test;
 mod user_test;
+mod user_status_test;
 
 use std::sync::Arc;
 

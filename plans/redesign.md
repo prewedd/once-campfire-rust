@@ -119,3 +119,11 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
   Create a channel / Channel settings (trimmed, 250 characters at most, blank clears it; a form
   without the field leaves it), shown beside the name in the header on wider screens.
 - **Message "⋯" menu**: a list of named actions (Reply in thread, Quote in reply, Copy link, Edit message, Download/Share for files) from each button's title; its emoji row stays only on phones, where there is no hover toolbar.
+- **Custom status** (`user_statuses`, a table of this app's own created on boot;
+  `users/statuses.rs`, `lib/workspace/status.js`): an emoji and up to 100 characters, set at the top
+  of your profile (suggestions: In a meeting, Commuting, Out sick, Vacationing, Working remotely;
+  "Clear after" 30 minutes to This week, the last two in your own time zone) or cleared. A status
+  past its time reads as none. Pages read everyone's from `/users/statuses.json` (at most once a
+  minute) and show the emoji after names on messages and conversations, a badge on your own
+  picture, and a line on profiles, without changing the server's (cached) markup. The workspace
+  menu offers "Update your status".

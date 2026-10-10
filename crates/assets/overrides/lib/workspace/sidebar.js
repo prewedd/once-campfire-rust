@@ -58,6 +58,7 @@ function openWorkspaceMenu(header) {
   menu.className = "involvement-menu workspace-menu"
   menu.setAttribute("role", "menu")
   menu.innerHTML = `<p class="involvement-menu__title">${name.replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`)}</p>` + [
+    menuItem("Update your status", "An emoji and a few words by your name", "/users/me/profile"),
     menuItem("Invite people", "Share the join link", "/account/edit"),
     canCreate ? menuItem("Create a channel", "", "/rooms/opens/new") : "",
     menuItem("Workspace settings", "Name, icon, members", "/account/edit"),

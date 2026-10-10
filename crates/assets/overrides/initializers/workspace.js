@@ -8,6 +8,7 @@
 // - Presence: who's online or away (OnlineChannel), on everything marked `data-presence-user`.
 // - The right-hand panel: threads and profiles open beside the conversation, as in Slack.
 // - The sidebar's folding sections and workspace menu (lib/workspace/sidebar.js).
+// - Custom statuses by people's names (lib/workspace/status.js).
 
 import { cable } from "@hotwired/turbo-rails"
 import { addBoost } from "lib/emoji/boosts"
@@ -16,6 +17,7 @@ import { closeModal } from "lib/workspace/modal"
 import { addTooltips } from "lib/workspace/involvement"
 import { enableReordering } from "lib/workspace/reorder"
 import { enhanceSidebar } from "lib/workspace/sidebar"
+import { showStatuses } from "lib/workspace/status"
 import "lib/workspace/schedule"
 import "lib/workspace/threads"
 
@@ -238,6 +240,7 @@ function refresh() {
     addTooltips()
     enableReordering()
     enhanceSidebar()
+    showStatuses()
     showHuddles()
     showInvite()
     trackHuddles()

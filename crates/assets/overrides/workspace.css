@@ -3441,3 +3441,18 @@ body:not(.sidebar) > #main-content .ws-new-dm { max-inline-size: 640px; margin: 
 /* A channel's topic, beside its name in the header */
 .ws-topic { order: 0; flex: 0 1 auto; min-inline-size: 0; max-inline-size: 36ch; padding-inline-start: 10px; border-inline-start: 1px solid var(--ws-border); color: var(--ws-muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 100ch) { .ws-topic { display: none; } }
+
+/* Custom statuses (lib/workspace/status.js) */
+.message__author strong[data-status-emoji]::after,
+#sidebar .direct__author > span[data-status-emoji]::after { content: " " attr(data-status-emoji); font-weight: 400; }
+#sidebar .sidebar__tools a[data-status-emoji] { position: relative; overflow: visible; }
+#sidebar .sidebar__tools a[data-status-emoji]::after { content: attr(data-status-emoji); position: absolute; inset: auto -6px -4px auto; display: grid; place-items: center; inline-size: 18px; block-size: 18px; border-radius: 999px; background: var(--ws-side-bg); font-size: 11px; line-height: 1; }
+.ws-status-line { margin: 4px 0 0; color: var(--ws-ink-soft); font-size: 14px; }
+.ws-status { display: grid; gap: 10px; }
+.ws-status__fields .ws-status__emoji { flex: 0 0 56px; text-align: center; font-size: 18px; }
+.ws-status__fields .ws-status__clear { flex: 0 0 150px; }
+.ws-status__presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.ws-chip { padding: 4px 10px; border: 1px solid var(--ws-border); border-radius: 999px; background: var(--ws-bg-raised); color: var(--ws-ink-soft); font-size: 13px; cursor: pointer; }
+.ws-chip:hover { border-color: var(--ws-border-strong); background: var(--ws-bg-hover); color: var(--ws-ink); }
+.ws-status__form { display: grid; gap: 10px; }
+@media (max-width: 640px) { .ws-status__fields .ws-status__clear { flex-basis: 100%; } }

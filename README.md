@@ -331,6 +331,8 @@ Deliberate:
   members as a checklist. Their parity cases became tests of what they offer (`parity_a.rs`,
   `rooms_views.rs`); the sign-in link and the invite link are taken out of the other pages'
   comparisons. The translate (globe) buttons are gone from these pages.
+- **Custom statuses.** A `user_statuses` table of this app's own (created on boot, ignored by the
+  Rails image), `PUT`/`DELETE /users/me/status` and `GET /users/statuses.json`.
 - **Channel topics.** A nullable `rooms.topic` column, added on boot (the Rails image ignores it),
   set in a channel's settings and shown in its header.
 - **Huddles.** Drop-in voice and video calls in any room or DM, as Slack's huddles

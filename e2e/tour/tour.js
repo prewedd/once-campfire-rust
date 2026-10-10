@@ -12,22 +12,30 @@ const shots = [
 ;(async () => {
   const b = await chromium.launch()
   for (const [w, h, tag, scheme] of [[1440, 900, "desk", "light"], [1440, 900, "dark", "dark"], [390, 844, "phone", "light"]]) {
-    const ctx = await b.newContext({ viewport: { width: w, height: h }, colorScheme: scheme })
+    // Signed in once, then the saved session is reused: signing in is rate-limited.
+    const state = `${OUT}/.tour-${tag}.json`
+    const ctx = await b.newContext({ viewport: { width: w, height: h }, colorScheme: scheme, storageState: require("fs").existsSync(state) ? state : undefined })
     const p = await ctx.newPage()
     p.on("pageerror", e => console.log(`${tag} pageerror: ${e.message}`))
-    // Stable accounts: tour/run makes them administrators, so every admin screen shows.
-    const email = `tour-${tag}@x.test`, password = "tour-password-1234"
-    await p.goto(`${BASE}/session/new`)
-    await p.fill('input[name="email_address"]', email)
-    await p.fill('input[name="password"]', password)
-    await p.evaluate(() => document.querySelector('input[name="password"]').form.requestSubmit())
-    await p.waitForURL(url => /rooms\/\d+|email_address=/.test(url.href), { timeout: 10000 }).catch(() => {})
+    await p.goto(`${BASE}/rooms/1`, { waitUntil: "commit" })
     if (!/rooms\/\d+/.test(p.url())) {
-      await p.goto(`${BASE}/join/${CODE}`)
-      await p.fill('input[name="user[name]"]', `Tour ${tag}`)
-      await p.fill('input[name="user[email_address]"]', email)
-      await p.fill('input[name="user[password]"]', password)
-      await Promise.all([p.waitForURL(/rooms\/\d+/), p.locator('input[name="user[password]"]').press("Enter")])
+      const email = `tour-${tag}@x.test`, password = "tour-password-1234"
+      await p.goto(`${BASE}/session/new`)
+      await p.evaluate(async ([ email, password ]) => {
+        const form = document.querySelector('form[action$="/session"]'), data = new FormData(form)
+        data.set("email_address", email)
+        data.set("password", password)
+        await fetch(form.action, { method: "POST", body: data })
+      }, [ email, password ])
+      await p.goto(`${BASE}/rooms/1`, { waitUntil: "commit" })
+      if (!/rooms\/\d+/.test(p.url())) {
+        await p.goto(`${BASE}/join/${CODE}`)
+        await p.fill('input[name="user[name]"]', `Tour ${tag}`)
+        await p.fill('input[name="user[email_address]"]', email)
+        await p.fill('input[name="user[password]"]', password)
+        await Promise.all([p.waitForURL(/rooms\/\d+/), p.locator('input[name="user[password]"]').press("Enter")])
+      }
+      await ctx.storageState({ path: state })
     }
     for (const [name, path] of shots) {
       await p.goto(BASE + path).catch(e => console.log(name, e.message))

@@ -15,6 +15,7 @@ pub mod search;
 pub mod session;
 pub mod sound;
 pub mod user;
+pub mod user_status;
 pub mod webhook;
 
 pub use account::{Account, AccountSettings};
@@ -32,4 +33,5 @@ pub use search::Search;
 pub use session::Session;
 pub use sound::Sound;
 pub use user::{NewUser, PasswordDigest, Role, Status, User, UserChanges};
+pub use user_status::UserStatus;
 pub use webhook::Webhook;
