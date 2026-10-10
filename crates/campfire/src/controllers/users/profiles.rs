@@ -18,7 +18,7 @@ pub async fn show(c: &mut Ctx) -> Result {
     let user = concerns::require_current_user(c)?.clone();
     let secrets = c.app().secrets.clone();
     let transfer_id = presenters::accounts::transfer_id(&secrets, user.id, c.now());
-    let (avatar_attached, (direct_memberships, shared_memberships), status) = {
+    let (avatar_attached, (direct_memberships, shared_memberships), status, paused_until) = {
         let user = user.clone();
         let now = crate::huddles::unix_now();
         c.app()
@@ -26,7 +26,8 @@ pub async fn show(c: &mut Ctx) -> Result {
             .read(move |conn| {
                 let attached = attachments::attached_blob(conn, "User", user.id, "avatar")?.is_some();
                 let status = campfire_db::UserStatus::for_user(conn, user.id, now)?.map(|status| (status.emoji, status.text));
-                Ok((attached, presenters::accounts::profile_memberships(conn, &user)?, status))
+                let paused_until = campfire_db::NotificationPause::until(conn, user.id, now)?;
+                Ok((attached, presenters::accounts::profile_memberships(conn, &user)?, status, paused_until))
             })
             .await
             .map_err(Error::internal)?
@@ -36,6 +37,7 @@ pub async fn show(c: &mut Ctx) -> Result {
         ctx,
         user: user.clone(),
         status: status.clone(),
+        paused_until,
         avatar_attached,
         transfer_id: transfer_id.clone(),
         shared_memberships: shared_memberships.clone(),

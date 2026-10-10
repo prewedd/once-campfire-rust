@@ -356,6 +356,7 @@ fn users_profiles_show() {
                 ctx,
                 user: user_summary(me),
                 status: (ua == "kevin").then(|| ("🌴".to_string(), "Vacationing".to_string())),
+                paused_until: (ua == "kevin").then_some(1_900_000_000),
                 avatar_attached: me["avatar_attached"].as_bool().unwrap(),
                 transfer_id: me["transfer_id"].as_str().unwrap().into(),
                 shared_memberships: profile_memberships(&data(name)["profile"]["shared"]),
@@ -371,6 +372,8 @@ fn users_profiles_show() {
         assert_eq!(html.contains("Remove photo"), ua == "with_avatar", "{name}");
         assert!(html.contains(r#"name="status[text]""#) && html.contains("Save status"), "{name}: the status form");
         assert_eq!(html.contains(r#"value="Vacationing""#) && html.contains("Clear status"), ua == "kevin", "{name}: the current status");
+        assert_eq!(html.contains("Resume notifications"), ua == "kevin", "{name}: paused notifications");
+        assert_eq!(html.contains(r#"name="minutes""#), ua != "kevin", "{name}: the pause form, when not paused");
     }
 }
 

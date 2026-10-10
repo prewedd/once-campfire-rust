@@ -82,6 +82,21 @@
 
 {% if !shared_memberships.is_empty() || !direct_memberships.is_empty() %}  <section class="ws-section">
     <h2 class="ws-section__title">Notifications</h2>
+    <div class="ws-pause">
+{% if let Some(until) = paused_until %}      <span class="ws-pause__state">🔕 Paused until <time data-local-epoch="{{ until }}"></time></span>
+      {% filter button_to(h::routes::notifications_pause(), h::attrs().method("delete").class("ws-btn")) %}Resume notifications{% endfilter %}
+{% else %}      <form class="button_to ws-inline" method="post" action="{{ h::routes::notifications_pause() }}"><input type="hidden" name="_method" value="put" />
+        <span class="ws-pause__state">Pause notifications</span>
+        <select name="minutes" class="ws-input ws-pause__for" aria-label="Pause notifications for">
+          <option value="30">For 30 minutes</option>
+          <option value="60">For 1 hour</option>
+          <option value="120">For 2 hours</option>
+          <option value="600" data-until="tomorrow">Until tomorrow</option>
+          <option value="1440" data-until="next-week">Until next week</option>
+        </select>
+        <button type="submit" class="ws-btn">Pause</button>
+      </form>
+{% endif %}    </div>
     <p class="ws-hint">What each conversation notifies you about.</p>
     <menu class="ws-rows">
       {% for membership in shared_memberships %}{% include "users/profiles/_membership.html" %}{% endfor %}

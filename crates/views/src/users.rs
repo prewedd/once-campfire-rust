@@ -121,6 +121,8 @@ pub struct ProfileShow<'a> {
     pub user: UserSummary,
     /// This app's own: your custom status, as (emoji, text).
     pub status: Option<(String, String)>,
+    /// This app's own: until when your notifications are paused (seconds since the epoch).
+    pub paused_until: Option<i64>,
     pub avatar_attached: bool,
     pub transfer_id: String,
     pub shared_memberships: Vec<ProfileMembership>,

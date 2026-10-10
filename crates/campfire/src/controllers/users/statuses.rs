@@ -48,6 +48,24 @@ pub async fn destroy(c: &mut Ctx) -> Result {
     back_to_profile(c)
 }
 
+/// `PUT /users/me/notifications_pause`: `minutes` (at most a week) of no pushes (plans/redesign.md).
+pub async fn pause(c: &mut Ctx) -> Result {
+    concerns::before_actions(c, Before::default()).await?;
+    let user_id = concerns::require_current_user(c)?.id;
+    let minutes = c.param_str("minutes").and_then(|value| value.trim().parse::<i64>().ok()).filter(|minutes| *minutes > 0).ok_or(Error::NotFound)?;
+    let until = now() + minutes.min(7 * 24 * 60) * 60;
+    c.app().db.write(move |tx| campfire_db::NotificationPause::pause(tx, user_id, until)).await.map_err(Error::internal)?;
+    back_to_profile(c)
+}
+
+/// `DELETE /users/me/notifications_pause`
+pub async fn resume(c: &mut Ctx) -> Result {
+    concerns::before_actions(c, Before::default()).await?;
+    let user_id = concerns::require_current_user(c)?.id;
+    c.app().db.write(move |tx| campfire_db::NotificationPause::resume(tx, user_id)).await.map_err(Error::internal)?;
+    back_to_profile(c)
+}
+
 fn back_to_profile(c: &mut Ctx) -> Result {
     let url = c.url_for(&campfire_routes::user_profile());
     c.redirect_to(&url)

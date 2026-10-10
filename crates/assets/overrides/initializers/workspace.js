@@ -17,7 +17,7 @@ import { closeModal } from "lib/workspace/modal"
 import { addTooltips } from "lib/workspace/involvement"
 import { enableReordering } from "lib/workspace/reorder"
 import { enhanceSidebar } from "lib/workspace/sidebar"
-import { showStatuses } from "lib/workspace/status"
+import { showLocalTimes, showStatuses } from "lib/workspace/status"
 import "lib/workspace/saved"
 import { showPins } from "lib/workspace/pins"
 import { showNewLine } from "lib/workspace/unread"
@@ -244,6 +244,7 @@ function refresh() {
     enableReordering()
     enhanceSidebar()
     showStatuses()
+    showLocalTimes()
     showPins()
     showNewLine()
     showHuddles()
@@ -256,7 +257,7 @@ function refresh() {
 // Only what can change pills or the sidebar: not every keystroke in an editor.
 function relevant(mutation) {
   const target = mutation.target.nodeType === Node.ELEMENT_NODE ? mutation.target : mutation.target.parentElement
-  return target && !target.closest(".lexxy-editor__content") && !!target.closest(".messages, #sidebar, #nav")
+  return target && !target.closest(".lexxy-editor__content") && !!target.closest(".messages, #sidebar, #nav, .ws-modal")
 }
 
 new MutationObserver(mutations => {

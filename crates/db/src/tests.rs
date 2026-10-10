@@ -7,6 +7,7 @@ mod first_run_test;
 mod fixtures_test;
 mod membership_test;
 mod message_test;
+mod notification_pause_test;
 mod pinned_message_test;
 mod push_test;
 mod room_test;

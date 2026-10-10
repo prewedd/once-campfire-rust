@@ -162,3 +162,8 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
   hidden. `e2e/tour/more.js` screenshots the less-visited screens.
 - **Editing a message**: labelled "Save changes" (blue) and "Cancel", with "Delete message" as a red link, in place of ✓, ✕ and a trash icon (CSS over the parity-pinned markup).
 - **Mentions** (`/mentions`, `controllers/mentions.rs`, `Message::mentioning`): "Mentions" under Threads in the sidebar lists the latest 50 messages that @mention you, newest first. Mentions are not indexed: the latest 500 bodies with a mention attachment in your rooms are checked.
+- **Pause notifications** (`notification_pauses`, a table of this app's own; `PUT`/`DELETE
+  /users/me/notifications_pause`): at the top of the profile's Notifications, for 30 minutes to
+  "Until next week" (9 am, your time); while paused the push job skips your devices
+  (`integrations/web_push.rs`), rooms still go unread. "Paused until …" in your clock, and Resume.
+  Also in the workspace menu.

@@ -65,6 +65,8 @@ pub const ADDITIONS: &[&str] = &[
     crate::models::saved_message::CREATE_TABLE,
     // Pinned messages (plans/redesign.md): a table of this app's own.
     crate::models::pinned_message::CREATE_TABLE,
+    // Paused notifications (plans/redesign.md): a table of this app's own.
+    crate::models::notification_pause::CREATE_TABLE,
     // A room's messages are paged by `created_at` (`last_page`, `page_before`, `page_after`), and
     // with only `index_messages_on_room_id` every room page sorted the room's whole history:
     // 60 ms at 236k messages, against 0.02 ms with this index.

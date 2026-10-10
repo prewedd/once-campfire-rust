@@ -3592,3 +3592,10 @@ details:has(> summary > img[src*="/globe-"]) { display: none; }
 .message__edit-close-btn { --btn-size: auto; inline-size: auto; aspect-ratio: auto; padding: 0 12px; block-size: 32px; border: 1px solid var(--ws-border-strong); border-radius: var(--ws-radius); font-size: 14px; font-weight: 600; }
 .message__edit-close-btn img { display: none; }
 .message__edit-close-btn::after { content: "Cancel"; }
+
+/* Paused notifications (users/profiles/show.html) */
+.ws-pause { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--ws-border); border-radius: var(--ws-radius); background: var(--ws-bg-subtle); }
+.ws-pause form { flex: 1; }
+.ws-pause__state { font-weight: 600; white-space: nowrap; }
+.ws-pause__for { flex: 0 1 180px; min-height: 34px; padding-block: 4px; }
+.ws-pause form .ws-pause__state { margin-inline-end: auto; }

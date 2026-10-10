@@ -106,3 +106,27 @@ document.addEventListener("submit", event => {
 // Changes arrive live; this catches statuses that clear themselves, and missed broadcasts.
 setInterval(() => { if (document.visibilityState === "visible") { fetchedAt = 0; showStatuses() } }, 5 * 60_000)
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { fetchedAt = 0; showStatuses() } })
+
+// Paused notifications (users/profiles/show.html): times in your own clock, and "Until tomorrow" /
+// "Until next week" meaning 9 in the morning, here.
+function minutesTo9(daysAhead) {
+  const now = new Date(), at = new Date(now)
+  at.setDate(at.getDate() + daysAhead)
+  at.setHours(9, 0, 0, 0)
+  return Math.max(1, Math.round((at - now) / 60_000))
+}
+
+export function showLocalTimes(root = document) {
+  root.querySelectorAll("time[data-local-epoch]:empty").forEach(time => {
+    const at = new Date(Number(time.dataset.localEpoch) * 1000)
+    const sameDay = at.toDateString() === new Date().toDateString()
+    time.textContent = at.toLocaleString([], sameDay ? { hour: "numeric", minute: "2-digit" } : { weekday: "short", hour: "numeric", minute: "2-digit" })
+  })
+}
+
+document.addEventListener("submit", event => {
+  if (!event.target.matches?.('form[action$="/notifications_pause"]')) return
+  const option = event.target.querySelector('select[name="minutes"]')?.selectedOptions[0]
+  if (!option?.dataset.until) return
+  option.value = option.dataset.until === "tomorrow" ? minutesTo9(1) : minutesTo9(((8 - new Date().getDay()) % 7) || 7)
+}, true)

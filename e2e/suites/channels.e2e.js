@@ -321,6 +321,21 @@ const openModal = (p, path) => p.evaluate(path => { const a = document.createEle
     check("Mentions lists messages that @mention you", true)
   })
 
+  await step("pause notifications", async () => {
+    await ana.goto(`${BASE}/rooms/1`); await ana.waitForLoadState("networkidle")
+    await openModal(ana, "/users/me/profile")
+    const modal = ana.locator("dialog.ws-modal[open]")
+    await modal.locator('select[name="minutes"]').selectOption({ label: "For 1 hour" })
+    await modal.getByRole("button", { name: "Pause", exact: true }).click()
+    const state = modal.locator(".ws-pause__state", { hasText: "Paused until" })
+    await state.waitFor({ timeout: 8000 })
+    check("notifications pause, saying until when", /\d/.test(await state.innerText()), await state.innerText())
+    await modal.getByRole("button", { name: "Resume notifications" }).click()
+    await modal.locator('select[name="minutes"]').waitFor({ timeout: 8000 })
+    check("…and resume", true)
+    await ana.keyboard.press("Escape")
+  })
+
   check("no page errors", errors.length === 0, errors.join(" | "))
   await b.close()
   console.log(`\n${results.filter(Boolean).length}/${results.length} checks passed`)

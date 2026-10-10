@@ -343,6 +343,20 @@ async fn pushes_messages_and_destroys_expired_subscriptions() {
     }
     assert!(destroyed.lock().unwrap().is_empty());
 
+    // Paused (this app's own, plans/redesign.md): nothing goes to their devices.
+    let users: Vec<i64> = ["david", "jason", "jz", "kevin"].iter().map(|label| TestDb::id(label)).collect();
+    let until = t.db.env().now().jiff().as_second() + 3600;
+    let pausing = users.clone();
+    t.db.write(move |tx| pausing.iter().try_for_each(|user| campfire_db::NotificationPause::pause(tx, *user, until))).await.unwrap();
+    let quiet = push_service(201, "Created").await;
+    let pool = Pool::new(quiet.net.clone(), vapid(), |_| -> Result<(), String> { Ok(()) });
+    let message = create(t.clone()).await;
+    let (queued_pool, now) = (pool.clone(), t.db.env().now());
+    t.db.read(move |conn| push_message(&queued_pool, conn, &campfire_db::BasicRichText, &message, now)).await.unwrap();
+    pool.shutdown().await;
+    assert!(quiet.server.received().is_empty(), "paused: nothing pushed");
+    t.db.write(move |tx| users.iter().try_for_each(|user| campfire_db::NotificationPause::resume(tx, *user))).await.unwrap();
+
     // Expired: both subscriptions are destroyed by the handler, in the pool's worker thread.
     let gone = push_service(410, "Gone").await;
     let db = t.clone();

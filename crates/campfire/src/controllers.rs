@@ -205,6 +205,8 @@ static ROUTES: LazyLock<Vec<Route>> = LazyLock::new(|| {
         get("/users/statuses(.:format)", "user_statuses#index", users::statuses::index),
         put("/users/:user_id/status(.:format)", "user_statuses#update", users::statuses::update).defaults(ME_DEFAULTS),
         delete("/users/:user_id/status(.:format)", "user_statuses#destroy", users::statuses::destroy).defaults(ME_DEFAULTS),
+        put("/users/:user_id/notifications_pause(.:format)", "user_statuses#pause", users::statuses::pause).defaults(ME_DEFAULTS),
+        delete("/users/:user_id/notifications_pause(.:format)", "user_statuses#resume", users::statuses::resume).defaults(ME_DEFAULTS),
         get("/users/:user_id/avatar(.:format)", "users/avatars#show", users::avatars::show),
         delete("/users/:user_id/avatar(.:format)", "users/avatars#destroy", users::avatars::destroy),
         delete("/users/:user_id/ban(.:format)", "users/bans#destroy", users::bans::destroy),

@@ -225,7 +225,11 @@ pub async fn deliver_test_notification(
 /// subscriptions of everyone involved in everything, then to mentioned users involved in
 /// mentions. Badges are counted here; delivery happens on the pool.
 pub fn push_message(pool: &Pool, conn: &Connection, rich_text: &dyn RichText, message: &Message, now: Timestamp) -> campfire_db::Result<PushPayload> {
-    let (payload, everything, mentions) = PushSubscription::pushes_for(conn, rich_text, message, now)?;
+    let (payload, mut everything, mut mentions) = PushSubscription::pushes_for(conn, rich_text, message, now)?;
+    // This app's own: nothing to the devices of people who paused notifications (plans/redesign.md).
+    let paused = campfire_db::NotificationPause::paused_user_ids(conn, now.jiff().as_second())?;
+    everything.retain(|subscription| !paused.contains(&subscription.user_id));
+    mentions.retain(|subscription| !paused.contains(&subscription.user_id));
     pool.queue(conn, &payload, everything)?;
     pool.queue(conn, &payload, mentions)?;
     Ok(payload)
