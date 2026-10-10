@@ -27,7 +27,8 @@ pub use content::Content;
 
 use content::{attachment_nodes, render_attachment_html};
 use dom::Dom;
-use ruby::{is_blank, strip};
+use ruby::is_blank;
+use ruby_compat::strip;
 use sanitizer::SafeList;
 
 /// Something Ruby would have raised while rendering. Callers mirror what the Rails code does with
@@ -57,7 +58,7 @@ pub fn message_presentation(body: &str, ctx: &RenderContext) -> Result<String, E
     let content = Content::load(body, ctx)?;
     let filtered = filters::apply(content, ctx)?;
     let rendered = filtered.to_rendered_html_with_layout(ctx)?;
-    autolink::auto_link(&rendered, &SafeList::auto_link()).map_err(Error::Parse)
+    autolink::auto_link(&rendered, SafeList::auto_link()).map_err(Error::Parse)
 }
 
 /// `message_presentation` with its rescue: an exception renders as an empty string, unless logging
@@ -108,7 +109,7 @@ pub fn editable_value(body: &str, ctx: &RenderContext) -> Result<Option<String>,
         if dom.attr(node, "url").is_none_or(is_blank) {
             let attachment = attachables::attachment_from_node(&dom, node, ctx)?;
             let content = render_attachment_html(&attachment, ctx)?;
-            dom.set_attr(node, "content", &ruby::to_json_string(&content));
+            dom.set_attr(node, "content", &rails_compat::json::encode(&content));
         }
     }
     Ok(Some(dom.to_html(root)))
@@ -120,9 +121,10 @@ pub fn mentioned_users(body: &str, ctx: &RenderContext) -> Result<Vec<MentionUse
     let mut users: Vec<MentionUser> = Vec::new();
     for node in attachment_nodes(&content.dom, content.root) {
         if let attachables::Attachable::User(user) = attachables::action_text_attachable_from_node(&content.dom, node, ctx)
-            && !users.iter().any(|u| u.id == user.id) {
-                users.push(user);
-            }
+            && !users.iter().any(|u| u.id == user.id)
+        {
+            users.push(user);
+        }
     }
     Ok(users)
 }

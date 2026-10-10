@@ -3,16 +3,17 @@
 //! Set `CAMPFIRE_STORAGE_VECTORS=/path/to/storage.json` to check against another run (e.g. one
 //! generated on a host whose libvips/ffmpeg match the local ones). Processed media is compared
 //! byte for byte only when the local libvips/ffmpeg versions match the ones that produced the
-//! vectors; otherwise the mismatch is reported and the byte checks are skipped.
+//! vectors; otherwise the mismatch is reported and the byte checks are skipped, unless
+//! `CAMPFIRE_REQUIRE_MEDIA_VECTORS` is set, as it is in the Dockerfile's toolchain stage that CI
+//! tests in: there a mismatch fails.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
+use campfire_storage::key::checksum_file;
 use campfire_storage::marshal::Value;
-use campfire_storage::{
-    AppMessageVerifier, Blob, DiskService, Filename, Json, Storage, Variation, Verifier, disk, disposition, marcel,
-    paths,
-};
+use campfire_storage::{Blob, DiskService, Filename, Json, Storage, Variation, disk, disposition, marcel, paths};
+use rails_compat::{MessageVerifier, Secrets};
 use rusqlite::Connection;
 use serde_json::Value as J;
 
@@ -33,14 +34,11 @@ fn fixture(name: &str) -> PathBuf {
     repo_root().join("reference/test/fixtures/files").join(name)
 }
 
-/// `Rails.application.key_generator.generate_key("ActiveStorage")`: PBKDF2-HMAC-SHA256, 1000
-/// iterations, 64 bytes.
-fn verifier() -> AppMessageVerifier {
+/// `ActiveStorage.verifier`, built as the app builds it (crates/campfire/src/app.rs).
+fn verifier() -> MessageVerifier {
     let env = std::fs::read_to_string(repo_root().join("parity/.env.reference")).unwrap();
     let secret_key_base = env.lines().find_map(|l| l.strip_prefix("SECRET_KEY_BASE=")).unwrap();
-    let mut key = vec![0u8; 64];
-    pbkdf2::pbkdf2_hmac::<sha2::Sha256>(secret_key_base.as_bytes(), b"ActiveStorage", 1000, &mut key);
-    AppMessageVerifier::new(key)
+    rails_compat::app_verifier(&Secrets::new(secret_key_base), "ActiveStorage")
 }
 
 fn typed(value: &J) -> Value {
@@ -51,9 +49,9 @@ fn typed(value: &J) -> Value {
         J::Array(items) => Value::Array(items.iter().map(typed).collect()),
         J::Object(o) if o.contains_key("sym") => Value::Symbol(o["sym"].as_str().unwrap().into()),
         J::Object(o) if o.contains_key("str") => Value::Str(o["str"].as_str().unwrap().into()),
-        J::Object(o) => Value::Hash(
-            o["hash"].as_array().unwrap().iter().map(|pair| (pair[0].as_str().unwrap().to_string(), typed(&pair[1]))).collect(),
-        ),
+        J::Object(o) => {
+            Value::Hash(o["hash"].as_array().unwrap().iter().map(|pair| (pair[0].as_str().unwrap().to_string(), typed(&pair[1]))).collect())
+        }
         J::String(_) => panic!("untyped string"),
     }
 }
@@ -98,10 +96,10 @@ fn verifier_messages_and_disk_urls() {
     let verifier = verifier();
     let v = &vectors()["verifier"];
     let expires_at: jiff::Timestamp = "2030-01-02T03:04:05.678Z".parse().unwrap();
-    assert_eq!(verifier.generate("\"x\"", "p", Some(expires_at)), v["expiring"]);
-    assert_eq!(verifier.verified(v["expiring"].as_str().unwrap(), "p", now()).as_deref(), Some("\"x\""));
-    assert_eq!(verifier.verified(v["expiring"].as_str().unwrap(), "p", expires_at), None);
-    assert_eq!(verifier.verified(v["expiring"].as_str().unwrap(), "q", now()), None);
+    assert_eq!(verifier.generate_raw("\"x\"", Some("p"), Some(expires_at)), v["expiring"]);
+    assert_eq!(verifier.verify_raw(v["expiring"].as_str().unwrap(), Some("p"), now()).ok().as_deref(), Some("\"x\""));
+    assert!(verifier.verify_raw(v["expiring"].as_str().unwrap(), Some("p"), expires_at).is_err());
+    assert!(verifier.verify_raw(v["expiring"].as_str().unwrap(), Some("q"), now()).is_err());
 
     let service = DiskService::new("/tmp/unused", "local");
     let weird = Filename::new("weird & <name> ünï.png");
@@ -138,6 +136,7 @@ fn marcel_identification() {
     }
 }
 
+/// `rails_compat::content_disposition` checks the `inline` and `attachment` headers for these names.
 #[test]
 fn filenames_and_dispositions() {
     for f in vectors()["filenames"].as_array().unwrap() {
@@ -149,8 +148,6 @@ fn filenames_and_dispositions() {
             assert_eq!(hex(filename.base().as_bytes()), f["base_hex"], "{sanitized}");
             assert_eq!(hex(filename.extension().as_bytes()), f["extension_hex"], "{sanitized}");
         }
-        assert_eq!(disposition::format("inline", &sanitized), f["inline"].as_str().unwrap());
-        assert_eq!(disposition::format("attachment", &sanitized), f["attachment"].as_str().unwrap());
         assert_eq!(disposition::escape_path(&sanitized), f["escaped_path"].as_str().unwrap());
     }
 }
@@ -178,7 +175,10 @@ fn route_paths() {
         assert_eq!(paths::blob_redirect_path(&verifier, &blob, None), m["rails_blob_path"]);
         assert_eq!(paths::blob_redirect_path(&verifier, &blob, Some("attachment")), m["rails_blob_download_path"]);
         assert_eq!(paths::blob_proxy_path(&verifier, &blob, None), m["rails_blob_proxy_path"]);
-        assert_eq!(paths::verify_signed_blob_id(&verifier, m["rails_blob_path"].as_str().unwrap().split('/').nth(5).unwrap(), now()), Some(blob.id));
+        assert_eq!(
+            paths::verify_signed_blob_id(&verifier, m["rails_blob_path"].as_str().unwrap().split('/').nth(5).unwrap(), now()),
+            Some(blob.id)
+        );
 
         // `blob.url` → the disk service URL, with the forced disposition for non-inline types.
         let content_type = blob.content_type();
@@ -187,7 +187,14 @@ fn route_paths() {
             let d = campfire_storage::content_types::forced_disposition(content_type).unwrap_or(disposition);
             format!(
                 "http://campfire.test{}",
-                service.url_path(&verifier, &blob.key, None, &blob.filename, Some(campfire_storage::content_types::for_serving(content_type)), d)
+                service.url_path(
+                    &verifier,
+                    &blob.key,
+                    None,
+                    &blob.filename,
+                    Some(campfire_storage::content_types::for_serving(content_type)),
+                    d
+                )
             )
         };
         assert_eq!(service_path(disposition), m["service_url"]);
@@ -229,15 +236,18 @@ struct Comparison {
 
 impl Comparison {
     fn new(versions: &J) -> Self {
-        let local_vips = campfire_storage::vips::version();
+        let local_vips = campfire_storage::vips::version().unwrap();
         let local_ffmpeg = ffmpeg_version();
         let compare_images = versions["libvips"] == local_vips.as_str();
         let compare_video = compare_images && versions["ffmpeg"] == local_ffmpeg.as_str();
         if !compare_images || !compare_video {
-            eprintln!(
-                "skipping byte comparisons that depend on versions: vectors have libvips {} / {}, local libvips {local_vips} / {local_ffmpeg}",
+            let versions = format!(
+                "vectors have libvips {} / {}, local libvips {local_vips} / {local_ffmpeg}",
                 versions["libvips"], versions["ffmpeg"]
             );
+            assert!(std::env::var_os("CAMPFIRE_REQUIRE_MEDIA_VECTORS").is_none(), "byte comparisons would be skipped: {versions}");
+            // Straight to stderr: libtest captures eprintln! from passing tests.
+            let _ = writeln!(std::io::stderr(), "note: skipping byte comparisons that depend on versions: {versions}");
         }
         Self { compare_images, compare_video, mismatches: vec![], identical: vec![] }
     }
@@ -273,7 +283,7 @@ fn pipeline_matches_the_reference() {
     let vectors = vectors();
     let files = vectors_path().parent().unwrap().join("storage");
     let root = tempfile::tempdir().unwrap();
-    let storage = Storage::new(DiskService::new(root.path(), "local"), Arc::new(verifier()));
+    let storage = Storage::new(DiskService::new(root.path(), "local"), verifier());
     let conn = Connection::open_in_memory().unwrap();
     conn.execute_batch(SCHEMA).unwrap();
     let mut comparison = Comparison::new(&vectors["versions"]);
@@ -322,12 +332,15 @@ fn pipeline_matches_the_reference() {
         }
     }
 
-    let named = [("avatars", Variation::resize_to_limit(512, 512, Some("webp"))), ("logos", Variation::resize_to_limit(512, 512, Some("png")))];
+    let named =
+        [("avatars", Variation::resize_to_limit(512, 512, Some("webp"))), ("logos", Variation::resize_to_limit(512, 512, Some("png")))];
     for (kind, first) in named {
         for entry in vectors[kind].as_array().unwrap() {
             let row = &entry["blob"];
             let data = std::fs::read(fixture(entry["fixture"].as_str().unwrap())).unwrap();
-            let mut blob = storage.create_and_upload(&conn, &data, Filename::new(row["filename"].as_str().unwrap()), row["content_type"].as_str(), now()).unwrap();
+            let mut blob = storage
+                .create_and_upload(&conn, &data, Filename::new(row["filename"].as_str().unwrap()), row["content_type"].as_str(), now())
+                .unwrap();
             storage.analyze(&conn, &mut blob).unwrap();
             comparison.blob(row["filename"].as_str().unwrap(), &blob, row, false, false);
             for (i, v) in entry["variants"].as_array().unwrap().iter().enumerate() {
@@ -347,7 +360,7 @@ fn pipeline_matches_the_reference() {
 #[test]
 fn staging_a_file_unfurls_it_as_its_bytes_would() {
     let root = tempfile::tempdir().unwrap();
-    let storage = Storage::new(DiskService::new(root.path(), "local"), Arc::new(verifier()));
+    let storage = Storage::new(DiskService::new(root.path(), "local"), verifier());
     for m in vectors()["messages"].as_array().unwrap() {
         let name = m["fixture"].as_str().unwrap();
         let declared = m["declared_type"].as_str();
@@ -356,13 +369,17 @@ fn staging_a_file_unfurls_it_as_its_bytes_would() {
         let (a, b) = (from_file.blob(), from_bytes.blob());
         assert_eq!((&a.content_type, &a.checksum, a.byte_size), (&b.content_type, &b.checksum, b.byte_size), "{name}");
         assert_eq!(std::fs::read(storage.service.path_for(&a.key)).unwrap(), std::fs::read(fixture(name)).unwrap(), "{name}");
+        // Staging doesn't read the copies back, so check here what `DiskService#upload` would.
+        for staged in [a, b] {
+            assert_eq!(checksum_file(&storage.service.path_for(&staged.key)).unwrap(), staged.checksum, "{name}");
+        }
     }
 }
 
 #[test]
 fn a_staged_file_is_deleted_unless_kept() {
     let root = tempfile::tempdir().unwrap();
-    let storage = Storage::new(DiskService::new(root.path(), "local"), Arc::new(verifier()));
+    let storage = Storage::new(DiskService::new(root.path(), "local"), verifier());
     let dropped = storage.stage_bytes(b"dropped", Filename::new("a.txt"), None).unwrap();
     let dropped_path = storage.service.path_for(&dropped.blob().key);
     assert!(dropped_path.exists());

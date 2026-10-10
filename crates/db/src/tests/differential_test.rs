@@ -33,10 +33,7 @@
 //! ```
 
 use super::*;
-use crate::{
-    Account, Boost, Membership, Message, NewMessage, NewUser, Room, RoomType, Search, Session,
-    User, UserChanges,
-};
+use crate::{Account, Boost, Membership, Message, NewMessage, NewUser, Room, RoomType, Search, Session, User, UserChanges};
 
 fn message(room: &str, creator: &str, body: &str, client_message_id: &str) -> NewMessage {
     NewMessage {
@@ -51,12 +48,7 @@ fn message(room: &str, creator: &str, body: &str, client_message_id: &str) -> Ne
 
 fn run_scenario(t: &TestDb) {
     // Each step is its own write, as each Rails call is its own transaction.
-    let m = t.write(|tx| {
-        Message::create(
-            tx,
-            message("designers", "david", "Hello <b>there</b>", "s1"),
-        )
-    });
+    let m = t.write(|tx| Message::create(tx, message("designers", "david", "Hello <b>there</b>", "s1")));
     let b = t.write(move |tx| Boost::create(tx, m.id, id("jason"), "hi"));
     t.write(move |tx| Boost::create(tx, m.id, id("kevin"), "yo").map(|_| ()));
     t.write(move |tx| b.destroy(tx));
@@ -78,39 +70,21 @@ fn run_scenario(t: &TestDb) {
         .map(|_| ())
     });
     t.write(|tx| Room::create(tx, RoomType::Open, Some("Open!"), id("david")).map(|_| ()));
-    t.write(|tx| {
-        Room::create_for(
-            tx,
-            RoomType::Closed,
-            Some("Hello!"),
-            id("david"),
-            &[id("kevin"), id("david")],
-        )
-        .map(|_| ())
-    });
+    t.write(|tx| Room::create_for(tx, RoomType::Closed, Some("Hello!"), id("david"), &[id("kevin"), id("david")]).map(|_| ()));
     t.write(|tx| Room::find(tx.conn(), id("watercooler"))?.update(tx, None, Some(RoomType::Open)));
     t.write(|tx| Room::find(tx.conn(), id("pets"))?.update(tx, Some(Some("Pets2")), None));
-    t.write(|tx| {
-        Membership::find(tx.conn(), id("jason_pets"))?
-            .update_involvement(tx, crate::Involvement::Invisible)
-    });
+    t.write(|tx| Membership::find(tx.conn(), id("jason_pets"))?.update_involvement(tx, crate::Involvement::Invisible));
     t.write(|tx| {
         let mut mm = Membership::find(tx.conn(), id("david_hq"))?;
         mm.connected(tx)?;
         mm.connected(tx)?;
         mm.disconnected(tx)
     });
-    t.write(|tx| {
-        Room::find_or_create_direct_for(tx, &[id("jz"), id("kevin")], id("david")).map(|_| ())
-    });
+    t.write(|tx| Room::find_or_create_direct_for(tx, &[id("jz"), id("kevin")], id("david")).map(|_| ()));
     t.write(|tx| Session::start(tx, id("kevin"), Some("x"), Some("8.8.8.8")).map(|_| ()));
     t.write(|tx| User::find(tx.conn(), id("kevin"))?.ban(tx));
     t.write(|tx| User::find(tx.conn(), id("kevin"))?.unban(tx));
-    t.write(|tx| {
-        User::find(tx.conn(), id("jz"))?
-            .remove_banned_content(tx)
-            .map(|_| ())
-    });
+    t.write(|tx| User::find(tx.conn(), id("jz"))?.remove_banned_content(tx).map(|_| ()));
     t.write(|tx| User::find(tx.conn(), id("jz"))?.deactivate(tx));
     for n in 0..12 {
         t.write(move |tx| Search::record(tx, id("david"), &format!("q{n}")).map(|_| ()));
@@ -118,38 +92,16 @@ fn run_scenario(t: &TestDb) {
     let bot = t.write(|tx| User::create_bot(tx, "Bot", Some("http://x")));
     t.write(move |tx| {
         let mut bot = bot;
-        bot.update_bot(
-            tx,
-            UserChanges {
-                name: Some("Bot2".into()),
-                ..Default::default()
-            },
-            Some("http://y"),
-        )
+        bot.update_bot(tx, UserChanges { name: Some("Bot2".into()), ..Default::default() }, Some("http://y"))
     });
-    t.write(|tx| {
-        Account::first(tx.conn())?.unwrap().update(
-            tx,
-            None,
-            None,
-            Some(&[("restrict_room_creation_to_administrators", "true")]),
-        )
-    });
+    t.write(|tx| Account::first(tx.conn())?.unwrap().update(tx, None, None, Some(&[("restrict_room_creation_to_administrators", "true")])));
     t.write(|tx| Message::create(tx, message("hq", "kevin", "Last one", "s3")).map(|_| ()));
 }
 
 /// Every row, with values that are random or clock-dependent reduced to their shape.
 fn normalized_dump(conn: &Connection, table: &str, order: &str) -> Vec<String> {
-    let columns = if table == "message_search_index" {
-        "rowid AS id, body"
-    } else {
-        "*"
-    };
-    let mut stmt = conn
-        .prepare(&format!(
-            "SELECT {columns} FROM \"{table}\" ORDER BY {order}"
-        ))
-        .unwrap();
+    let columns = if table == "message_search_index" { "rowid AS id, body" } else { "*" };
+    let mut stmt = conn.prepare(&format!("SELECT {columns} FROM \"{table}\" ORDER BY {order}")).unwrap();
     let names: Vec<String> = stmt.column_names().into_iter().map(String::from).collect();
     let mut rows = stmt.query([]).unwrap();
     let mut out = Vec::new();
@@ -164,34 +116,19 @@ fn normalized_dump(conn: &Connection, table: &str, order: &str) -> Vec<String> {
                 ("bot_token" | "token" | "join_code", rusqlite::types::Value::Text(s)) => {
                     format!("random:{}", s.len())
                 }
-                ("email_address", rusqlite::types::Value::Text(s))
-                    if s.contains("-deactivated-") =>
-                {
+                ("email_address", rusqlite::types::Value::Text(s)) if s.contains("-deactivated-") => {
                     let (local, rest) = s.split_once("-deactivated-").unwrap();
-                    format!(
-                        "{local}-deactivated-<uuid:{}>{}",
-                        rest.find('@').unwrap(),
-                        &rest[rest.find('@').unwrap()..]
-                    )
+                    format!("{local}-deactivated-<uuid:{}>{}", rest.find('@').unwrap(), &rest[rest.find('@').unwrap()..])
                 }
                 (n, rusqlite::types::Value::Text(s)) if n.ends_with("_at") => {
-                    format!(
-                        "time:{}",
-                        s.split_once('.').map(|(_, f)| f.len()).unwrap_or(0)
-                    )
+                    format!("time:{}", s.split_once('.').map(|(_, f)| f.len()).unwrap_or(0))
                 }
                 (_, v) => format!("{v:?}"),
             };
             fields.push((name.clone(), rendered));
         }
         fields.sort();
-        out.push(
-            fields
-                .into_iter()
-                .map(|(n, v)| format!("{n}={v}"))
-                .collect::<Vec<_>>()
-                .join(" "),
-        );
+        out.push(fields.into_iter().map(|(n, v)| format!("{n}={v}")).collect::<Vec<_>>().join(" "));
     }
     out
 }
@@ -225,9 +162,7 @@ fn scenario_matches_ruby() {
         if expected != actual {
             let only_ruby: Vec<_> = expected.iter().filter(|r| !actual.contains(r)).collect();
             let only_rust: Vec<_> = actual.iter().filter(|r| !expected.contains(r)).collect();
-            mismatches.push(format!(
-                "{table}:\n  ruby only: {only_ruby:#?}\n  rust only: {only_rust:#?}"
-            ));
+            mismatches.push(format!("{table}:\n  ruby only: {only_ruby:#?}\n  rust only: {only_rust:#?}"));
         }
     }
     assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));

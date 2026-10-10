@@ -53,29 +53,18 @@ impl LoadPath {
                 if file.file_name().unwrap().to_string_lossy().starts_with('.') {
                     continue;
                 }
-                let logical_path = file
-                    .strip_prefix(&path)
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned();
+                let logical_path = file.strip_prefix(&path).unwrap().to_string_lossy().into_owned();
                 if by_logical_path.contains_key(&logical_path) {
                     continue;
                 }
-                let content =
-                    fs::read(&file).unwrap_or_else(|e| panic!("reading {}: {e}", file.display()));
+                let content = fs::read(&file).unwrap_or_else(|e| panic!("reading {}: {e}", file.display()));
                 by_logical_path.insert(logical_path.clone(), assets.len());
-                assets.push(Asset {
-                    logical_path,
-                    source: file,
-                    content,
-                });
+                assets.push(Asset { logical_path, source: file, content });
             }
         }
 
         let quoted_url = |head: &str, excluded: &str| {
-            format!(
-                r#"{head}\({WS}*["']?(?!(?:{excluded}))([^"' \t\n\x0B\x0C\r?#)]+)([#?][^"')]+)?{WS}*["']?\)"#
-            )
+            format!(r#"{head}\({WS}*["']?(?!(?:{excluded}))([^"' \t\n\x0B\x0C\r?#)]+)([#?][^"')]+)?{WS}*["']?\)"#)
         };
 
         LoadPath {
@@ -84,21 +73,12 @@ impl LoadPath {
             version: version.to_string(),
             prefix: prefix.to_string(),
             // Propshaft::Compiler::CssAssetUrls::ASSET_URL_PATTERN
-            css_asset_urls: Regex::new(&quoted_url("url", r"\#|%23|data:|http:|https:|//"))
-                .unwrap(),
+            css_asset_urls: Regex::new(&quoted_url("url", r"\#|%23|data:|http:|https:|//")).unwrap(),
             // Propshaft::Compiler::JsAssetUrls::ASSET_URL_PATTERN
-            js_asset_urls: Regex::new(&quoted_url("RAILS_ASSET_URL", r"\#|%23|data|http|//"))
-                .unwrap(),
+            js_asset_urls: Regex::new(&quoted_url("RAILS_ASSET_URL", r"\#|%23|data|http|//")).unwrap(),
             // Propshaft::Compiler::SourceMappingUrls::SOURCE_MAPPING_PATTERN, with Ruby's \Z
-            source_mapping_urls: Regex::new(&format!(
-                r"(//|/\*)# sourceMappingURL=(.+\.map)({WS}*?\*/)?{WS}*?(?=\n?\z)"
-            ))
-            .unwrap(),
-            url_prefix_in_source_map: Regex::new(&format!(
-                r"(?m)^(.+/)?{}/",
-                fancy_regex::escape(prefix)
-            ))
-            .unwrap(),
+            source_mapping_urls: Regex::new(&format!(r"(//|/\*)# sourceMappingURL=(.+\.map)({WS}*?\*/)?{WS}*?(?=\n?\z)")).unwrap(),
+            url_prefix_in_source_map: Regex::new(&format!(r"(?m)^(.+/)?{}/", fancy_regex::escape(prefix))).unwrap(),
             already_digested: Regex::new(r"-([0-9a-zA-Z_-]{7,128})\.digested").unwrap(),
         }
     }
@@ -135,12 +115,7 @@ impl LoadPath {
             return logical_path.clone();
         }
         match digestable_extension_start(logical_path) {
-            Some(dot) => format!(
-                "{}-{}{}",
-                &logical_path[..dot],
-                self.digest(index),
-                &logical_path[dot..]
-            ),
+            Some(dot) => format!("{}-{}{}", &logical_path[..dot], self.digest(index), &logical_path[dot..]),
             None => logical_path.clone(),
         }
     }
@@ -203,19 +178,10 @@ impl LoadPath {
             let url = latin1_to_utf8(&captures[1]);
             let fingerprint = captures.get(2).map(|m| m.as_str()).unwrap_or("");
             let replacement = match self.find(&resolve_path(&directory, &url)) {
-                Some(found) => format!(
-                    "\"{}/{}{}\"",
-                    self.url_prefix(),
-                    self.digested_path(found),
-                    latin1_to_utf8(fingerprint)
-                ),
+                Some(found) => format!("\"{}/{}{}\"", self.url_prefix(), self.digested_path(found), latin1_to_utf8(fingerprint)),
                 None => format!("\"{url}\""),
             };
-            let replacement = if is_css {
-                format!("url({replacement})")
-            } else {
-                replacement
-            };
+            let replacement = if is_css { format!("url({replacement})") } else { replacement };
             utf8_to_latin1(&replacement)
         })
     }
@@ -230,16 +196,9 @@ impl LoadPath {
             let comment_start = &captures[1];
             let comment_end = captures.get(3).map(|m| m.as_str()).unwrap_or("");
             let url = latin1_to_utf8(&captures[2]);
-            let url = self
-                .url_prefix_in_source_map
-                .replace_all(&url, "")
-                .into_owned();
+            let url = self.url_prefix_in_source_map.replace_all(&url, "").into_owned();
             let directory = dirname(logical_path);
-            let resolved = if directory == "." {
-                url
-            } else {
-                plus(&directory, &url)
-            };
+            let resolved = if directory == "." { url } else { plus(&directory, &url) };
             match self.find(&resolved) {
                 Some(found) => format!(
                     "{comment_start}# sourceMappingURL={}/{}{comment_end}",
@@ -275,10 +234,7 @@ fn dedup(paths: &[PathBuf]) -> Vec<PathBuf> {
     let mut deduped: Vec<String> = Vec::new();
     for path in sorted {
         let path = path.to_string_lossy().into_owned();
-        if deduped
-            .last()
-            .is_none_or(|last| !path.starts_with(last.as_str()))
-        {
+        if deduped.last().is_none_or(|last| !path.starts_with(last.as_str())) {
             deduped.push(path);
         }
     }
@@ -312,13 +268,10 @@ fn all_files_from_tree(path: &Path, files: &mut Vec<PathBuf>) {
 /// The start of the extension that `sub(/\.(\w+(\.map)?)$/)` replaces in Asset#digested_path.
 fn digestable_extension_start(path: &str) -> Option<usize> {
     let is_word = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || c == '_');
-    path.char_indices()
-        .filter(|&(_, c)| c == '.')
-        .map(|(i, _)| i)
-        .find(|&dot| {
-            let rest = &path[dot + 1..];
-            is_word(rest) || rest.strip_suffix(".map").is_some_and(is_word)
-        })
+    path.char_indices().filter(|&(_, c)| c == '.').map(|(i, _)| i).find(|&dot| {
+        let rest = &path[dot + 1..];
+        is_word(rest) || rest.strip_suffix(".map").is_some_and(is_word)
+    })
 }
 
 /// Ruby's File.extname.
@@ -372,11 +325,7 @@ fn plus(left: &str, right: &str) -> String {
     }
     prefix.extend(kept);
     let joined: Vec<&str> = prefix.into_iter().chain(suffix).collect();
-    if joined.is_empty() {
-        ".".to_string()
-    } else {
-        joined.join("/")
-    }
+    if joined.is_empty() { ".".to_string() } else { joined.join("/") }
 }
 
 /// Pathname#cleanpath (non-conservative) for relative paths.
@@ -391,11 +340,7 @@ fn cleanpath(path: &str) -> String {
             other => out.push(other),
         }
     }
-    if out.is_empty() {
-        ".".to_string()
-    } else {
-        out.join("/")
-    }
+    if out.is_empty() { ".".to_string() } else { out.join("/") }
 }
 
 // Propshaft reads assets as ASCII-8BIT and matches bytes; decoding each byte to the char with the

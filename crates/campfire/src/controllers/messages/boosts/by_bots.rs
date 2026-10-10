@@ -4,13 +4,13 @@
 use campfire_db::{Message, Room};
 use campfire_kit::{Ctx, Error, Result, StatusCode, format, halt};
 use campfire_views::messages::json;
+use ruby_compat::integer_cast;
 
 use super::{broadcast_create, create_boost, destroy_boost, set_boost};
 use crate::app::AppCtx;
-use crate::concerns::{self, Before, before_actions, cast_integer, require_current_user};
+use crate::concerns::{self, Before, before_actions, require_current_user};
 use crate::controllers::messages::by_bots::{is_blank, raw_request_body};
 use crate::controllers::messages::present;
-use crate::controllers::presenters::page::db_error;
 
 fn before() -> Before {
     Before::default().allow_bot_access()
@@ -50,11 +50,10 @@ pub async fn destroy(c: &mut Ctx) -> Result {
 /// The room among `Current.user.rooms`, then its message; `head :not_found` without one.
 async fn set_message(c: &mut Ctx) -> Result<Message> {
     let user_id = require_current_user(c)?.id;
-    let room_id = c.param_str("room_id").and_then(cast_integer);
-    let message_id = c.param_str("message_id").and_then(cast_integer);
+    let room_id = c.param_str("room_id").and_then(integer_cast);
+    let message_id = c.param_str("message_id").and_then(integer_cast);
     let message = c
         .app()
-        .db
         .read(move |conn| {
             let Some(room) = room_id.map(|id| Room::find_for_user(conn, user_id, id)).transpose()?.flatten() else {
                 return Ok(None);
@@ -64,8 +63,7 @@ async fn set_message(c: &mut Ctx) -> Result<Message> {
                 None => Ok(None),
             }
         })
-        .await
-        .map_err(db_error)?;
+        .await?;
     match message {
         Some(message) => Ok(message),
         None => halt(concerns::head(StatusCode::NOT_FOUND)),

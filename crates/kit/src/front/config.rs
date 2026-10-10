@@ -64,7 +64,10 @@ impl FrontConfig {
         let int = |key: &str, default: i64| find(key).and_then(|v| v.parse::<i64>().ok()).unwrap_or(default);
         let port = |key: &str, default: u16| u16::try_from(int(key, default.into())).unwrap_or(default);
         let seconds = |key: &str, default: u64| {
-            find(key).and_then(|v| v.parse::<i64>().ok()).map(|s| Duration::from_secs(s.max(0) as u64)).unwrap_or(Duration::from_secs(default))
+            find(key)
+                .and_then(|v| v.parse::<i64>().ok())
+                .map(|s| Duration::from_secs(s.max(0) as u64))
+                .unwrap_or(Duration::from_secs(default))
         };
         let boolean = |key: &str, default: bool| find(key).and_then(|v| parse_bool(&v)).unwrap_or(default);
 

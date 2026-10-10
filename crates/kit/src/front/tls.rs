@@ -26,17 +26,22 @@ pub struct Tls {
 
 impl Tls {
     pub fn new(certs: Arc<CertManager>) -> Result<Self, Error> {
-        let server_config = |resolver: Arc<dyn ResolvesServerCert>, alpn: &[&[u8]]| -> Result<Arc<ServerConfig>, Error> {
+        let server_config = |resolver: Arc<dyn ResolvesServerCert>, alpn: &[&[u8]]| -> Result<ServerConfig, Error> {
             let mut config = ServerConfig::builder_with_provider(Arc::new(ring::default_provider()))
                 .with_safe_default_protocol_versions()?
                 .with_no_client_auth()
                 .with_cert_resolver(resolver);
             config.alpn_protocols = alpn.iter().map(|p| p.to_vec()).collect();
-            Ok(Arc::new(config))
+            Ok(config)
         };
+        let mut config = server_config(Arc::new(Loaded(certs.clone())), &[b"h2", b"http/1.1"])?;
+        // Session tickets, as Go's crypto/tls issues by default and Thruster left on, so returning
+        // clients resume beyond rustls's 256-entry session cache. The keys live in memory and
+        // rotate every 6 hours. (A challenge handshake ends there, so its config has none.)
+        config.ticketer = ring::Ticketer::new()?;
         Ok(Self {
-            config: server_config(Arc::new(Loaded(certs.clone())), &[b"h2", b"http/1.1"])?,
-            challenge_config: server_config(Arc::new(Challenges(certs.clone())), &[ACME_TLS_ALPN])?,
+            config: Arc::new(config),
+            challenge_config: Arc::new(server_config(Arc::new(Challenges(certs.clone())), &[ACME_TLS_ALPN])?),
             certs,
         })
     }
@@ -171,16 +176,83 @@ mod tests {
     use super::*;
     use crate::front::acme::AcmeOptions;
     use http_body_util::BodyExt;
+    use rustls::HandshakeKind;
+    use rustls::pki_types::{CertificateDer, ServerName};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
     fn certs() -> Arc<CertManager> {
+        certs_in(std::env::temp_dir().join("campfire-front-tls-test"))
+    }
+
+    fn certs_in(storage_path: std::path::PathBuf) -> Arc<CertManager> {
         CertManager::new(AcmeOptions {
             directory_url: "https://acme.invalid/directory".into(),
             external_account: None,
-            storage_path: std::env::temp_dir().join("campfire-front-tls-test"),
+            storage_path,
             domains: vec!["chat.example.com".into()],
             challenge_types: vec![],
             directory_root: None,
         })
+    }
+
+    #[tokio::test]
+    async fn returning_clients_resume_their_sessions_by_ticket() {
+        let storage = tempfile::tempdir().unwrap();
+        let key = rcgen::KeyPair::generate().unwrap();
+        let certificate = rcgen::CertificateParams::new(vec!["chat.example.com".to_string()]).unwrap().self_signed(&key).unwrap();
+        std::fs::write(storage.path().join("chat.example.com"), key.serialize_pem() + &certificate.pem()).unwrap();
+        let tls = Tls::new(certs_in(storage.path().to_path_buf())).unwrap();
+        assert!(!tls.challenge_config.ticketer.enabled());
+        let port = serve(tls).await;
+
+        let returning = client(certificate.der());
+        assert_eq!(handshake(port, &returning).await, HandshakeKind::Full);
+        // At two tickets a session, these push the first one out of rustls's 256-entry session
+        // cache, which is all a returning client could resume from without tickets.
+        for _ in 0..150 {
+            handshake(port, &client(certificate.der())).await;
+        }
+        assert_eq!(handshake(port, &returning).await, HandshakeKind::Resumed);
+    }
+
+    /// Serves TLS on a local port, closing each connection once its handshake is done.
+    async fn serve(tls: Tls) -> u16 {
+        let tls = Arc::new(tls);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let tls = tls.clone();
+                tokio::spawn(async move {
+                    if let Ok(Some((mut stream, _))) = tls.accept(stream).await {
+                        let _ = stream.shutdown().await;
+                    }
+                });
+            }
+        });
+        port
+    }
+
+    /// A client that trusts `certificate` and remembers its sessions.
+    fn client(certificate: &CertificateDer<'static>) -> Arc<rustls::ClientConfig> {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(certificate.clone()).unwrap();
+        let config = rustls::ClientConfig::builder_with_provider(Arc::new(ring::default_provider()))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        Arc::new(config)
+    }
+
+    async fn handshake(port: u16, config: &Arc<rustls::ClientConfig>) -> HandshakeKind {
+        let stream = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let name = ServerName::try_from("chat.example.com").unwrap();
+        let mut stream = tokio_rustls::TlsConnector::from(config.clone()).connect(name, stream).await.unwrap();
+        // Reading to the end takes in the tickets the server sends after the handshake.
+        stream.read_to_end(&mut Vec::new()).await.unwrap();
+        stream.get_ref().1.handshake_kind().unwrap()
     }
 
     async fn get(method: Method, uri: &str, host: &str) -> (StatusCode, axum::http::HeaderMap, String) {

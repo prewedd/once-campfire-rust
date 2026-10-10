@@ -19,9 +19,9 @@ pub mod marshal;
 pub mod paths;
 pub mod process;
 pub mod storage;
+#[rustfmt::skip]
 mod tables;
 pub mod variation;
-pub mod verifier;
 pub mod vips;
 
 pub use blob::{Blob, NewBlob};
@@ -30,7 +30,6 @@ pub use filename::Filename;
 pub use json::Json;
 pub use storage::{Staged, Storage};
 pub use variation::Variation;
-pub use verifier::{AppMessageVerifier, Verifier};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

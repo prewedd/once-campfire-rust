@@ -44,7 +44,8 @@ async fn unfurls_like_the_reference() {
     let spec: Value = serde_json::from_str(include_str!("../testdata/opengraph_cases.json")).unwrap();
     let expected: Value = serde_json::from_str(include_str!("../testdata/opengraph_expected.json")).unwrap();
     let server = FakeServer::start(spec["routes"].as_array().unwrap().iter().map(route).collect()).await;
-    let public: HashSet<std::net::IpAddr> = spec["public_ips"].as_array().unwrap().iter().map(|ip| ip.as_str().unwrap().parse().unwrap()).collect();
+    let public: HashSet<std::net::IpAddr> =
+        spec["public_ips"].as_array().unwrap().iter().map(|ip| ip.as_str().unwrap().parse().unwrap()).collect();
 
     let mut failures = Vec::new();
     for (case, expected) in spec["cases"].as_array().unwrap().iter().zip(expected.as_array().unwrap()) {
@@ -65,15 +66,31 @@ async fn unfurls_like_the_reference() {
         };
         let requests: Vec<Value> = server.received()[before..]
             .iter()
-            .map(|r| serde_json::json!([r.method, r.header("host"), r.target, r.header("accept"), r.header("accept-encoding"), r.header("user-agent")]))
+            .map(|r| {
+                serde_json::json!([
+                    r.method,
+                    r.header("host"),
+                    r.target,
+                    r.header("accept"),
+                    r.header("accept-encoding"),
+                    r.header("user-agent")
+                ])
+            })
             .collect();
         let actual = serde_json::json!({ "response": response, "lookups": resolver.lookups(), "requests": requests });
-        let wanted = serde_json::json!({ "response": expected["response"], "lookups": expected["lookups"], "requests": expected["requests"] });
+        let wanted =
+            serde_json::json!({ "response": expected["response"], "lookups": expected["lookups"], "requests": expected["requests"] });
         if actual != wanted {
             failures.push(format!("{name}:\n  expected {wanted}\n  actual   {actual}"));
         }
     }
-    assert!(failures.is_empty(), "{} of {} cases differ:\n{}", failures.len(), spec["cases"].as_array().unwrap().len(), failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "{} of {} cases differ:\n{}",
+        failures.len(),
+        spec["cases"].as_array().unwrap().len(),
+        failures.join("\n")
+    );
 }
 
 /// test/controllers/unfurl_links_controller_test.rb over plain HTTPS: the pinned address,
@@ -107,7 +124,8 @@ async fn unfurls_over_https() {
 /// www.example.com, at a fake public address that connects to `server`.
 fn network_to(server: std::net::SocketAddr) -> Network {
     let resolver = Arc::new(FakeResolver::new([("www.example.com", vec!["93.184.216.34"])]));
-    let dialer = Arc::new(MappingDialer { public: HashSet::from(["93.184.216.34".parse().unwrap()]), to: server, dialed: Mutex::new(Vec::new()) });
+    let dialer =
+        Arc::new(MappingDialer { public: HashSet::from(["93.184.216.34".parse().unwrap()]), to: server, dialed: Mutex::new(Vec::new()) });
     network(resolver, dialer)
 }
 
@@ -121,7 +139,10 @@ async fn stops_reading_a_gzip_bomb_at_the_limit() {
     encoder.write_all(page.as_bytes()).unwrap();
     let page = encoder.finish().unwrap();
     let gzipped = |path: &str, zeros: Vec<u8>| {
-        Route::new("GET", "*", path, 200).header("Content-Type", "text/html").header("Content-Encoding", "gzip").body([page.clone(), zeros].concat())
+        Route::new("GET", "*", path, 200)
+            .header("Content-Type", "text/html")
+            .header("Content-Encoding", "gzip")
+            .body([page.clone(), zeros].concat())
     };
     let server = FakeServer::start(vec![gzipped("/", gzip_bomb(1024)), gzipped("/small", gzip_bomb(2))]).await;
     let net = network_to(server.addr);

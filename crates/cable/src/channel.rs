@@ -1,12 +1,13 @@
 //! `ActionCable::Channel::Base`: one instance per subscription, driven by the connection.
 use std::sync::Arc;
 
+use futures_util::stream::{AbortHandle, AbortRegistration};
+use rails_compat::json;
 use serde::Serialize;
 use serde_json::{Map, Value};
-use futures_util::stream::{AbortHandle, AbortRegistration};
 
 use crate::pubsub::Subscriber;
-use crate::{json, naming, protocol, Server};
+use crate::{Server, naming, protocol};
 
 pub type Params = Map<String, Value>;
 
@@ -63,7 +64,8 @@ impl<U: Send + Sync + 'static> Channel<U> for EmptyChannel {}
 /// rejection and transmissions.
 pub struct Subscription<U: Send + Sync + 'static> {
     pub(crate) server: Server<U>,
-    pub(crate) class_name: String,
+    /// The registered class name, whatever spelling the client resolved it with.
+    pub(crate) class_name: Arc<str>,
     /// The raw identifier the client subscribed with; params are parsed from it when asked for
     /// (subscriptions live as long as their sockets, and are many).
     pub(crate) identifier: Arc<str>,

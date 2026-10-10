@@ -1,0 +1,5 @@
+# Formatting-only commits, for `git blame --ignore-revs-file .git-blame-ignore-revs`
+# (or `git config blame.ignoreRevsFile .git-blame-ignore-revs`; GitHub reads it by itself).
+
+# cargo fmt: reformat the workspace (rustfmt.toml)
+5284c8d7d2cceb4294dbdd94b8f6a4395f21a674

@@ -47,8 +47,8 @@ const LEVEL_H: u32 = 2;
 
 /// `QRMAXBITS[:h]`
 const MAX_BITS_H: [usize; 40] = [
-    72, 128, 208, 288, 368, 480, 528, 688, 800, 976, 1120, 1264, 1440, 1576, 1784, 2024, 2264, 2504, 2728, 3080, 3248,
-    3536, 3712, 4112, 4304, 4768, 5024, 5288, 5608, 5960, 6344, 6760, 7208, 7688, 7888, 8432, 8768, 9136, 9776, 10208,
+    72, 128, 208, 288, 368, 480, 528, 688, 800, 976, 1120, 1264, 1440, 1576, 1784, 2024, 2264, 2504, 2728, 3080, 3248, 3536, 3712, 4112,
+    4304, 4768, 5024, 5288, 5608, 5960, 6344, 6760, 7208, 7688, 7888, 8432, 8768, 9136, 9776, 10208,
 ];
 
 /// The H rows of `QRRSBlock::RS_BLOCK_TABLE`: (count, total, data) groups.
@@ -356,10 +356,8 @@ fn error_correct_polynomial(length: usize, gf: &Galois) -> Polynomial {
 
 /// `QRCode.create_data`: the data and error correction codewords, interleaved.
 fn create_data(version: usize, segment: &Segment) -> Vec<u8> {
-    let blocks: Vec<(usize, usize)> = RS_BLOCKS_H[version - 1]
-        .chunks(3)
-        .flat_map(|group| std::iter::repeat_n((group[1], group[2]), group[0]))
-        .collect();
+    let blocks: Vec<(usize, usize)> =
+        RS_BLOCKS_H[version - 1].chunks(3).flat_map(|group| std::iter::repeat_n((group[1], group[2]), group[0])).collect();
     let max_data_bits = blocks.iter().map(|(_, data)| data).sum::<usize>() * 8;
 
     let mut buffer = BitBuffer::new(version);
@@ -655,9 +653,7 @@ fn lost_points(modules: &[Vec<bool>]) -> f64 {
     }
 
     // 1:1:3:1:1 patterns, in rows then columns.
-    let finder = |cell: &dyn Fn(usize) -> bool| {
-        cell(0) && !cell(1) && cell(2) && cell(3) && cell(4) && !cell(5) && cell(6)
-    };
+    let finder = |cell: &dyn Fn(usize) -> bool| cell(0) && !cell(1) && cell(2) && cell(3) && cell(4) && !cell(5) && cell(6);
     for start in 0..count.saturating_sub(6) {
         for (line, row) in modules.iter().enumerate().take(count) {
             if finder(&|k| row[start + k]) {
@@ -688,36 +684,16 @@ mod tests {
         svg: Option<String>,
     }
 
-    fn decode_base64(input: &str) -> Vec<u8> {
-        const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        let mut out = Vec::new();
-        let (mut buffer, mut bits) = (0u32, 0);
-        for b in input.bytes().filter(|&b| b != b'=') {
-            buffer = (buffer << 6) | ALPHABET.iter().position(|&a| a == b).unwrap() as u32;
-            bits += 6;
-            if bits >= 8 {
-                bits -= 8;
-                out.push((buffer >> bits) as u8);
-                buffer &= (1 << bits) - 1;
-            }
-        }
-        out
-    }
-
     #[test]
     fn matches_rqrcode() {
         let vectors: Vec<Vector> = serde_json::from_str(include_str!("testdata/rqrcode.json")).unwrap();
         assert!(vectors.len() >= 30);
         for vector in vectors {
-            let input = decode_base64(&vector.input_base64);
+            let input = rails_compat::encoding::strict_decode(&vector.input_base64).unwrap();
             let segment = Segment::new(&input);
             assert_eq!(minimum_version(&segment), Some(vector.version), "version for {:?}", vector.input_base64);
-            let modules: Vec<String> = QrCode::new(&input)
-                .unwrap()
-                .modules
-                .iter()
-                .map(|row| row.iter().map(|&m| if m { '1' } else { '0' }).collect())
-                .collect();
+            let modules: Vec<String> =
+                QrCode::new(&input).unwrap().modules.iter().map(|row| row.iter().map(|&m| if m { '1' } else { '0' }).collect()).collect();
             assert_eq!(modules.join("\n"), vector.modules, "modules for {:?}", vector.input_base64);
             if let Some(svg) = vector.svg {
                 assert_eq!(svg_bytes(&input).as_deref(), Some(svg.as_str()), "svg for {:?}", vector.input_base64);

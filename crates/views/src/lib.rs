@@ -3,20 +3,22 @@
 //! database rows, so this crate doesn't depend on `campfire_db`. Rich text arrives pre-rendered
 //! as sanitized HTML. Every template renders with the per-request [`ViewContext`] below.
 
+pub mod accounts;
+pub mod autocompletable;
+pub mod first_runs;
 pub mod fragment_cache;
 pub mod helpers;
 pub mod layouts;
-pub mod sessions;
-pub mod first_runs;
-pub mod users;
-pub mod accounts;
-pub mod welcome;
-pub mod pwa;
-pub mod autocompletable;
-pub mod rooms;
-pub mod threads;
 pub mod messages;
+pub mod pwa;
+pub mod recorded;
+pub mod rooms;
 pub mod searches;
+pub mod sessions;
+pub mod sized;
+pub mod threads;
+pub mod users;
+pub mod welcome;
 
 /// Per-request state every page needs: what `ApplicationController`, the layout and the
 /// helpers read from `Current`, `request`, `flash` and the session.

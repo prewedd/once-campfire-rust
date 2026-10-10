@@ -409,6 +409,11 @@ where
         self.context_elem.borrow().is_some()
     }
 
+    /// How many elements are on the stack of open elements. (Not upstream: see Cargo.toml.)
+    pub fn open_elements_len(&self) -> usize {
+        self.open_elems.borrow().len()
+    }
+
     /// https://html.spec.whatwg.org/multipage/#appropriate-place-for-inserting-a-node
     fn appropriate_place_for_insertion(
         &self,

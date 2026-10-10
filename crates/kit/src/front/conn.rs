@@ -6,6 +6,11 @@
 //! - HTTP_WRITE_TIMEOUT bounds the rest of the exchange, from the request to the response's end;
 //! - HTTP_IDLE_TIMEOUT closes a keep-alive connection with no request in flight.
 //!
+//! Over HTTP/1, hyper's header timer (HTTP_READ_TIMEOUT) also runs while a keep-alive connection
+//! waits for its next request, from the end of the previous response, so an idle HTTP/1 connection
+//! closes after the shorter of the two. Go waited HTTP_IDLE_TIMEOUT for the next request's first
+//! bytes and only then started HTTP_READ_TIMEOUT.
+//!
 //! An upgraded connection (Action Cable's WebSocket) has none: Go clears the deadlines when
 //! `httputil.ReverseProxy` hijacks it.
 
@@ -167,7 +172,9 @@ where
             async move {
                 let response = service(request, info);
                 let response = match write_deadline {
-                    Some(deadline) => tokio::time::timeout_at(deadline, response).await.map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "write timeout"))?,
+                    Some(deadline) => tokio::time::timeout_at(deadline, response)
+                        .await
+                        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "write timeout"))?,
                     None => response.await,
                 };
                 let mut response = response;
@@ -206,6 +213,7 @@ where
         }};
     }
     let io = TokioIo::new(io);
+    // hyper's HTTP/1 header read timeout doubles as its idle timer (see the module doc).
     match protocol {
         Protocol::Http1 => {
             let mut builder = hyper::server::conn::http1::Builder::new();
@@ -240,6 +248,7 @@ fn http_date() -> HeaderValue {
 }
 
 #[cfg(target_os = "linux")]
+#[allow(unsafe_code, reason = "the raw clock_gettime system call, past libfaketime")]
 fn wall_clock() -> jiff::Timestamp {
     let mut now = libc::timespec { tv_sec: 0, tv_nsec: 0 };
     // SAFETY: clock_gettime(2) writes one `timespec` through a valid pointer.

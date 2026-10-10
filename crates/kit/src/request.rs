@@ -178,9 +178,7 @@ impl Request {
     pub fn port(&self) -> u16 {
         let raw = self.raw_host_with_port();
         match raw.rsplit_once(':') {
-            Some((_, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => {
-                port.parse().unwrap_or(self.standard_port())
-            }
+            Some((_, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => port.parse().unwrap_or(self.standard_port()),
             _ => self.standard_port(),
         }
     }
@@ -252,14 +250,16 @@ pub fn scheme_is_https(headers: &HeaderMap, uri: &Uri) -> bool {
     }
     if let Some(forwarded) = header("forwarded")
         && let Some(proto) = forwarded_values(forwarded, "proto").last()
-            && ["https", "http", "wss", "ws"].contains(&proto.as_str()) {
-                return proto == "https" || proto == "wss";
-            }
+        && ["https", "http", "wss", "ws"].contains(&proto.as_str())
+    {
+        return proto == "https" || proto == "wss";
+    }
     for name in ["x-forwarded-proto", "x-forwarded-scheme"] {
         if let Some(value) = header(name)
-            && let Some(scheme) = split_header(value).rev().find(|s| ["https", "http", "wss", "ws"].contains(s)) {
-                return scheme == "https" || scheme == "wss";
-            }
+            && let Some(scheme) = split_header(value).rev().find(|s| ["https", "http", "wss", "ws"].contains(s))
+        {
+            return scheme == "https" || scheme == "wss";
+        }
     }
     uri.scheme_str() == Some("https")
 }
@@ -273,9 +273,10 @@ fn forwarded_values(header: &str, param: &str) -> Vec<String> {
     let mut values = Vec::new();
     for element in header.split([',', ';']) {
         if let Some((name, value)) = element.split_once('=')
-            && name.trim().eq_ignore_ascii_case(param) {
-                values.push(value.trim().trim_matches('"').to_string());
-            }
+            && name.trim().eq_ignore_ascii_case(param)
+        {
+            values.push(value.trim().trim_matches('"').to_string());
+        }
     }
     values
 }
@@ -311,11 +312,7 @@ fn forwarded_for(headers: &HeaderMap) -> Option<Vec<String>> {
 }
 
 /// `ActionDispatch::RemoteIp::GetIp#calculate_ip`.
-fn calculate_remote_ip(
-    headers: &HeaderMap,
-    peer: Option<IpAddr>,
-    proxy: &ProxyConfig,
-) -> std::result::Result<String, ()> {
+fn calculate_remote_ip(headers: &HeaderMap, peer: Option<IpAddr>, proxy: &ProxyConfig) -> std::result::Result<String, ()> {
     let remote_addr = peer;
     let client_ip_header = headers.get("client-ip").and_then(|v| v.to_str().ok());
     let mut client_ips = sanitize_ips(client_ip_header.map(|h| h.trim().split([',', ' ', '\t'])).into_iter().flatten());
@@ -326,18 +323,14 @@ fn calculate_remote_ip(
 
     if proxy.ip_spoofing_check
         && let (Some(client), Some(_)) = (client_ips.last(), forwarded_ips.last())
-            && !forwarded_ips.contains(client) {
-                return Err(());
-            }
+        && !forwarded_ips.contains(client)
+    {
+        return Err(());
+    }
 
     let ips: Vec<IpAddr> = forwarded_ips.into_iter().chain(client_ips).collect();
     let trusted = |ip: &IpAddr| proxy.trusted_proxies.iter().any(|net| net.contains(ip));
-    let chosen = ips
-        .iter()
-        .chain(remote_addr.iter())
-        .find(|ip| !trusted(ip))
-        .or(ips.last())
-        .or(remote_addr.as_ref());
+    let chosen = ips.iter().chain(remote_addr.iter()).find(|ip| !trusted(ip)).or(ips.last()).or(remote_addr.as_ref());
     Ok(chosen.map(|ip| ip.to_string()).unwrap_or_default())
 }
 
@@ -350,15 +343,7 @@ mod tests {
         for (k, v) in headers {
             map.append(axum::http::HeaderName::from_bytes(k.as_bytes()).unwrap(), v.parse().unwrap());
         }
-        Request::new(
-            Method::GET,
-            Method::GET,
-            "/rooms/1?x=1".parse().unwrap(),
-            map,
-            Some(peer.parse().unwrap()),
-            Bytes::new(),
-            proxy,
-        )
+        Request::new(Method::GET, Method::GET, "/rooms/1?x=1".parse().unwrap(), map, Some(peer.parse().unwrap()), Bytes::new(), proxy)
     }
 
     #[test]

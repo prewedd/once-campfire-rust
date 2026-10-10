@@ -5,14 +5,14 @@
 use campfire_db::{Message, Room};
 use campfire_kit::{Ctx, Param, Response, Result, StatusCode, format, halt, permit_keys};
 use campfire_views::messages::json;
+use ruby_compat::integer_cast;
 
 use super::{
     MessageParams, attachment_assignment, broadcast_create, thread_parent_id_param, broadcast_replace, create_message, deliver_webhooks_to_bots, destroy_message,
     ensure_can_administer, find_paged_messages, present, set_message, update_message,
 };
 use crate::app::AppCtx;
-use crate::concerns::{self, Before, before_actions, cast_integer, require_current_user};
-use crate::controllers::presenters::page::db_error;
+use crate::concerns::{self, Before, before_actions, require_current_user};
 
 fn before() -> Before {
     Before::default().allow_bot_access()
@@ -77,8 +77,8 @@ pub async fn destroy(c: &mut Ctx) -> Result {
 /// `set_room`: `Current.user.rooms.find_by(id: params[:room_id])`, else `head :not_found`.
 async fn set_room(c: &mut Ctx) -> Result<Room> {
     let user_id = require_current_user(c)?.id;
-    let room = match c.param_str("room_id").and_then(cast_integer) {
-        Some(id) => c.app().db.read(move |conn| Room::find_for_user(conn, user_id, id)).await.map_err(db_error)?,
+    let room = match c.param_str("room_id").and_then(integer_cast) {
+        Some(id) => c.app().read(move |conn| Room::find_for_user(conn, user_id, id)).await?,
         None => None,
     };
     match room {
@@ -125,22 +125,19 @@ pub(crate) fn is_blank(value: &str) -> bool {
 async fn set_pagination_headers(c: &mut Ctx, room: &Room, messages: &[Message]) -> Result<()> {
     let after = c.params.get("after").is_some_and(Param::is_present);
     let (room_id, first, last) = (room.id, messages.first().cloned(), messages.last().cloned());
+    // Offloaded: the count reads every message in the room.
     let (count, next_page) = c
         .app()
-        .db
-        .read(move |conn| {
+        .read_offloaded(move |conn| {
             let count = Message::count_in_room(conn, room_id)?;
             let next_page = match (first, last) {
-                (Some(_), Some(last)) if after => {
-                    Message::exists_after(conn, room_id, &last)?.then_some(("after", last.id))
-                }
+                (Some(_), Some(last)) if after => Message::exists_after(conn, room_id, &last)?.then_some(("after", last.id)),
                 (Some(first), Some(_)) => Message::exists_before(conn, room_id, &first)?.then_some(("before", first.id)),
                 _ => None,
             };
             Ok((count, next_page))
         })
-        .await
-        .map_err(db_error)?;
+        .await?;
     c.set_header("x-total-count", &count.to_string());
     if let Some((key, id)) = next_page {
         let bot_key = c.param_str("bot_key").unwrap_or_default().to_string();

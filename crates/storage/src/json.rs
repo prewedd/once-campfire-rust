@@ -1,12 +1,15 @@
-//! Order-preserving JSON, encoded the way `ActiveSupport::JSON.encode` does.
+//! Order-preserving JSON, encoded by `rails_compat::json` as `ActiveSupport::JSON.encode` does.
 //!
 //! Blob metadata (`ActiveRecord::Coders::JSON`) and the Active Storage verifier payloads are
-//! Ruby hashes, so key order is part of the stored bytes and the signed messages. `serde_json`'s
-//! `Map` sorts keys, so this module keeps its own ordered value type.
+//! Ruby hashes, so key order is part of the stored bytes and the signed messages. This small
+//! owned value type keeps that order, and gives `Hash#[]=`/`Hash#merge` and an integer/float
+//! split that callers match on (a video's `1920.0` width renders differently from an image's
+//! `1920`). `serde_json::Value` with the workspace's `preserve_order` could hold the same data.
 
-use std::fmt::{self, Write};
+use std::fmt;
 
 use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
+use serde::{Serialize, Serializer};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Json {
@@ -70,41 +73,7 @@ impl Json {
 
     /// `ActiveSupport::JSON.encode`.
     pub fn encode(&self) -> String {
-        let mut out = String::new();
-        self.write(&mut out);
-        out
-    }
-
-    fn write(&self, out: &mut String) {
-        match self {
-            Json::Null => out.push_str("null"),
-            Json::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-            Json::Int(i) => write!(out, "{i}").unwrap(),
-            Json::Float(f) => out.push_str(&encode_float(*f)),
-            Json::String(s) => encode_string(s, out),
-            Json::Array(items) => {
-                out.push('[');
-                for (i, item) in items.iter().enumerate() {
-                    if i > 0 {
-                        out.push(',');
-                    }
-                    item.write(out);
-                }
-                out.push(']');
-            }
-            Json::Object(entries) => {
-                out.push('{');
-                for (i, (key, value)) in entries.iter().enumerate() {
-                    if i > 0 {
-                        out.push(',');
-                    }
-                    encode_string(key, out);
-                    out.push(':');
-                    value.write(out);
-                }
-                out.push('}');
-            }
-        }
+        rails_compat::json::encode(self)
     }
 }
 
@@ -132,60 +101,17 @@ impl From<bool> for Json {
     }
 }
 
-/// ActiveSupport escapes HTML-significant characters and the JS line separators on top of the
-/// JSON gem's escaping (`ActiveSupport::JSON::Encoding::ESCAPED_CHARS`).
-fn encode_string(s: &str, out: &mut String) {
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\u{8}' => out.push_str("\\b"),
-            '\u{c}' => out.push_str("\\f"),
-            '<' => out.push_str("\\u003c"),
-            '>' => out.push_str("\\u003e"),
-            '&' => out.push_str("\\u0026"),
-            '\u{2028}' => out.push_str("\\u2028"),
-            '\u{2029}' => out.push_str("\\u2029"),
-            c if (c as u32) < 0x20 => write!(out, "\\u{:04x}", c as u32).unwrap(),
-            c => out.push(c),
+impl Serialize for Json {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Json::Null => serializer.serialize_unit(),
+            Json::Bool(b) => serializer.serialize_bool(*b),
+            Json::Int(i) => serializer.serialize_i64(*i),
+            Json::Float(f) => serializer.serialize_f64(*f),
+            Json::String(s) => serializer.serialize_str(s),
+            Json::Array(items) => serializer.collect_seq(items),
+            Json::Object(entries) => serializer.collect_map(entries.iter().map(|(key, value)| (key, value))),
         }
-    }
-    out.push('"');
-}
-
-/// Ruby's `Float#to_s`, which ActiveSupport uses for finite floats: the shortest round-trip
-/// digits, always with a fractional part, switching to `e` notation outside 1e-4...1e16.
-pub fn encode_float(f: f64) -> String {
-    if !f.is_finite() {
-        return "null".to_string();
-    }
-    if f == 0.0 {
-        return if f.is_sign_negative() { "-0.0" } else { "0.0" }.to_string();
-    }
-    // `{:e}` yields the shortest round-trip digits as `d.ddde<exp>`.
-    let sci = format!("{:e}", f.abs());
-    let (mantissa, exponent) = sci.split_once('e').unwrap();
-    let exponent: i32 = exponent.parse().unwrap();
-    let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
-    let sign = if f < 0.0 { "-" } else { "" };
-
-    if (-4..16).contains(&exponent) {
-        let point = exponent + 1;
-        let body = if point <= 0 {
-            format!("0.{}{}", "0".repeat((-point) as usize), digits)
-        } else if point as usize >= digits.len() {
-            format!("{}{}.0", digits, "0".repeat(point as usize - digits.len()))
-        } else {
-            format!("{}.{}", &digits[..point as usize], &digits[point as usize..])
-        };
-        format!("{sign}{body}")
-    } else {
-        let fraction = if digits.len() > 1 { &digits[1..] } else { "0" };
-        format!("{sign}{}.{}e{}{:02}", &digits[..1], fraction, if exponent < 0 { '-' } else { '+' }, exponent.abs())
     }
 }
 
@@ -258,20 +184,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn floats_match_ruby() {
-        assert_eq!(encode_float(320.0), "320.0");
-        assert_eq!(encode_float(65.84), "65.84");
-        assert_eq!(encode_float(0.0001), "0.0001");
-        assert_eq!(encode_float(0.00001), "1.0e-05");
-        assert_eq!(encode_float(1e16), "1.0e+16");
-        assert_eq!(encode_float(1234567890123456.0), "1234567890123456.0");
-        assert_eq!(encode_float(-2.5), "-2.5");
-        assert_eq!(encode_float(1.5e-7), "1.5e-07");
+    fn leaves_js_line_separators_raw() {
+        // ActiveSupport::JSON.encode and ActiveRecord::Coders::JSON in the reference.
+        assert_eq!(Json::from("a\u{2028}b\u{2029}c<>&").encode(), "\"a\u{2028}b\u{2029}c\\u003c\\u003e\\u0026\"");
     }
 
     #[test]
     fn preserves_order_and_escapes_like_active_support() {
-        let json = Json::parse(r#"{"z":1,"a":[true,null,2.0],"s":"<a & b>"}"#).unwrap();
-        assert_eq!(json.encode(), r#"{"z":1,"a":[true,null,2.0],"s":"\u003ca \u0026 b\u003e"}"#);
+        let json = Json::parse(r#"{"z":1,"a":[true,null,2.0,1e16,1e-5],"s":"<a & b>"}"#).unwrap();
+        assert_eq!(json.encode(), r#"{"z":1,"a":[true,null,2.0,1e+16,0.00001],"s":"\u003ca \u0026 b\u003e"}"#);
     }
 }

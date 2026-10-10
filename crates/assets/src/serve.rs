@@ -2,8 +2,10 @@
 //! serving the embedded reference/public plus the precompiled public/assets, with the headers
 //! from reference/config/environments/production.rb (`public_file_server.headers`).
 
-use crate::embedded;
+use ruby_compat::rack::byte_ranges;
 use std::borrow::Cow;
+
+use crate::embedded;
 
 /// The last `config.public_file_server.headers` assignment in production.rb wins.
 const CACHE_CONTROL: &str = "public, max-age=2592000";
@@ -36,10 +38,7 @@ pub struct StaticResponse {
 
 impl StaticResponse {
     pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case(name))
-            .map(|(_, v)| v.as_str())
+        self.headers.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
     }
 }
 
@@ -70,16 +69,10 @@ fn find_file(path_info: &str, accept_encoding: &str) -> Option<(&'static [u8], C
         candidates.push(([path.as_slice(), b"/index.html"].concat(), "text/html"));
     }
 
-    candidates
-        .into_iter()
-        .find_map(|(path, content_type)| try_files(&path, content_type, accept_encoding))
+    candidates.into_iter().find_map(|(path, content_type)| try_files(&path, content_type, accept_encoding))
 }
 
-fn try_files(
-    path: &[u8],
-    content_type: &'static str,
-    accept_encoding: &str,
-) -> Option<(&'static [u8], ContentHeaders)> {
+fn try_files(path: &[u8], content_type: &'static str, accept_encoding: &str) -> Option<(&'static [u8], ContentHeaders)> {
     let mut headers: ContentHeaders = vec![("content-type", content_type.to_string())];
 
     if !compressible(content_type) {
@@ -99,18 +92,10 @@ fn try_files(
 }
 
 /// Rack::Files#serving, then FileHandler#serve's `headers.update(content_headers)`.
-fn serve_file(
-    request: &StaticRequest,
-    file: &'static [u8],
-    content_headers: ContentHeaders,
-) -> StaticResponse {
+fn serve_file(request: &StaticRequest, file: &'static [u8], content_headers: ContentHeaders) -> StaticResponse {
     let last_modified = embedded::BUILT_AT;
     if request.if_modified_since == Some(last_modified) {
-        return StaticResponse {
-            status: 304,
-            headers: Vec::new(),
-            body: Body::Borrowed(b""),
-        };
+        return StaticResponse { status: 304, headers: Vec::new(), body: Body::Borrowed(b"") };
     }
 
     let size = file.len();
@@ -122,7 +107,10 @@ fn serve_file(
     let mut status = 200;
     let mut body: Body = Body::Borrowed(file);
 
-    match byte_ranges(request.range, size) {
+    // Within the file, so each end fits a usize.
+    let ranges: Option<Vec<(usize, usize)>> = byte_ranges(request.range, size as u64)
+        .map(|ranges| ranges.into_iter().map(|(start, end)| (start as usize, end as usize)).collect());
+    match ranges {
         None => {}
         Some(ranges) if ranges.is_empty() => {
             let message = "Byte range unsatisfiable\n";
@@ -146,8 +134,10 @@ fn serve_file(
             let mut multipart = Vec::new();
             for &(start, end) in &ranges {
                 multipart.extend_from_slice(
-                    format!("\r\n--{MULTIPART_BOUNDARY}\r\ncontent-type: {content_type}\r\ncontent-range: bytes {start}-{end}/{size}\r\n\r\n")
-                        .as_bytes(),
+                    format!(
+                        "\r\n--{MULTIPART_BOUNDARY}\r\ncontent-type: {content_type}\r\ncontent-range: bytes {start}-{end}/{size}\r\n\r\n"
+                    )
+                    .as_bytes(),
                 );
                 multipart.extend_from_slice(&file[start..=end]);
             }
@@ -174,69 +164,7 @@ fn serve_file(
         body = Body::Borrowed(b"");
     }
 
-    StaticResponse {
-        status,
-        headers,
-        body,
-    }
-}
-
-/// Rack::Utils.get_byte_ranges: None to serve the whole file, Some(empty) when unsatisfiable.
-fn byte_ranges(header: Option<&str>, size: usize) -> Option<Vec<(usize, usize)>> {
-    if size == 0 {
-        return None;
-    }
-    let header = header?;
-    // http_range =~ /bytes=([^;]+)/
-    let spec = &header[header.find("bytes=")? + 6..];
-    let spec = spec.split(';').next().filter(|s| !s.is_empty())?;
-    if spec.matches(',').count() >= 100 {
-        return None;
-    }
-
-    let mut ranges = Vec::new();
-    for range_spec in spec.split(',').map(|s| s.trim_start_matches([' ', '\t'])) {
-        if !range_spec.contains('-') {
-            return None;
-        }
-        let mut parts = range_spec.split('-');
-        let r0 = parts.next().unwrap_or("");
-        let r1 = parts.next().filter(|s| !s.is_empty());
-        let (start, end) = if r0.is_empty() {
-            let suffix = to_i(r1?);
-            ((size as i64 - suffix).max(0), size as i64 - 1)
-        } else {
-            let start = to_i(r0);
-            match r1 {
-                None => (start, size as i64 - 1),
-                Some(r1) => {
-                    let end = to_i(r1);
-                    if end < start {
-                        return None;
-                    }
-                    (start, end.min(size as i64 - 1))
-                }
-            }
-        };
-        if start <= end {
-            ranges.push((start as usize, end as usize));
-        }
-    }
-
-    if ranges.iter().map(|(s, e)| e - s + 1).sum::<usize>() > size {
-        return Some(Vec::new());
-    }
-    Some(ranges)
-}
-
-/// String#to_i: leading digits, 0 if none.
-fn to_i(s: &str) -> i64 {
-    let digits: String = s
-        .trim_start()
-        .chars()
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
-    digits.parse().unwrap_or(0)
+    StaticResponse { status, headers, body }
 }
 
 /// FileHandler#clean_path: chomp("/"), percent-decode, reject NUL, then
@@ -290,38 +218,22 @@ fn hex_value(b: u8) -> Option<u8> {
 
 fn file(path: &[u8]) -> Option<&'static [u8]> {
     let path = std::str::from_utf8(path).ok()?;
-    embedded::FILES
-        .binary_search_by(|(url, _)| (*url).cmp(path))
-        .ok()
-        .map(|index| embedded::FILES[index].1)
+    embedded::FILES.binary_search_by(|(url, _)| (*url).cmp(path)).ok().map(|index| embedded::FILES[index].1)
 }
 
 /// FileHandler's compressible_content_types: /\A(?:text\/|application\/javascript|image\/svg\+xml)/
 fn compressible(content_type: &str) -> bool {
-    content_type.starts_with("text/")
-        || content_type.starts_with("application/javascript")
-        || content_type.starts_with("image/svg+xml")
+    content_type.starts_with("text/") || content_type.starts_with("application/javascript") || content_type.starts_with("image/svg+xml")
 }
 
 /// `accept_encoding.any? { |enc, _| /\b#{encoding}\b/i.match?(enc) }` over Rack's parsed header.
 fn accepts(accept_encoding: &str, encoding: &str) -> bool {
-    accept_encoding
-        .split(',')
-        .map(|part| {
-            part.split(';')
-                .next()
-                .unwrap_or("")
-                .trim()
-                .to_ascii_lowercase()
+    accept_encoding.split(',').map(|part| part.split(';').next().unwrap_or("").trim().to_ascii_lowercase()).any(|value| {
+        value.match_indices(encoding).any(|(i, _)| {
+            let word = |b: Option<&u8>| b.is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_');
+            !word(i.checked_sub(1).and_then(|j| value.as_bytes().get(j))) && !word(value.as_bytes().get(i + encoding.len()))
         })
-        .any(|value| {
-            value.match_indices(encoding).any(|(i, _)| {
-                let word =
-                    |b: Option<&u8>| b.is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_');
-                !word(i.checked_sub(1).and_then(|j| value.as_bytes().get(j)))
-                    && !word(value.as_bytes().get(i + encoding.len()))
-            })
-        })
+    })
 }
 
 /// File.extname on bytes.

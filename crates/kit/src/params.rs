@@ -145,9 +145,7 @@ impl Param {
             Value::Bool(b) => Param::Bool(b),
             Value::Number(n) => Param::Number(n),
             Value::String(s) => Param::Str(s),
-            Value::Array(items) => {
-                Param::Array(items.into_iter().filter(|v| !v.is_null()).map(Param::from_json).collect())
-            }
+            Value::Array(items) => Param::Array(items.into_iter().filter(|v| !v.is_null()).map(Param::from_json).collect()),
             Value::Object(map) => {
                 let mut params = ParamMap::new();
                 for (k, v) in map {
@@ -277,9 +275,10 @@ impl ParamMap {
                 }
                 Permit::ScalarArray(key) => {
                     if let Some(Param::Array(items)) = self.get(key)
-                        && items.iter().all(Param::is_permitted_scalar) {
-                            permitted.insert(key.clone(), Param::Array(items.clone()));
-                        }
+                        && items.iter().all(Param::is_permitted_scalar)
+                    {
+                        permitted.insert(key.clone(), Param::Array(items.clone()));
+                    }
                 }
                 Permit::AnyHash(key) => {
                     if let Some(Param::Hash(map)) = self.get(key) {
@@ -300,8 +299,7 @@ impl ParamMap {
                         permitted.insert(key.clone(), Param::Hash(map.permit(nested)));
                     }
                     Some(Param::Array(items)) => {
-                        let hashes =
-                            items.iter().filter_map(Param::as_hash).map(|m| Param::Hash(m.permit(nested))).collect();
+                        let hashes = items.iter().filter_map(Param::as_hash).map(|m| Param::Hash(m.permit(nested))).collect();
                         permitted.insert(key.clone(), Param::Array(hashes));
                     }
                     _ => {}
@@ -328,8 +326,7 @@ impl FromIterator<(String, Param)> for ParamMap {
 
 fn is_multi_parameter_key(candidate: &str, key: &str) -> bool {
     // /\A#{key}\(\d+[if]?\)\z/
-    let Some(rest) = candidate.strip_prefix(key).and_then(|r| r.strip_prefix('(')).and_then(|r| r.strip_suffix(')'))
-    else {
+    let Some(rest) = candidate.strip_prefix(key).and_then(|r| r.strip_prefix('(')).and_then(|r| r.strip_suffix(')')) else {
         return false;
     };
     let digits = rest.strip_suffix(['i', 'f']).unwrap_or(rest);
@@ -404,13 +401,7 @@ pub struct UploadedFile {
 }
 
 impl UploadedFile {
-    pub fn new(
-        original_filename: String,
-        content_type: Option<String>,
-        headers: String,
-        size: u64,
-        path: tempfile::TempPath,
-    ) -> Self {
+    pub fn new(original_filename: String, content_type: Option<String>, headers: String, size: u64, path: tempfile::TempPath) -> Self {
         Self { original_filename, content_type, headers, size, path }
     }
 
@@ -469,9 +460,7 @@ pub fn form_pairs(body: &[u8]) -> Result<Vec<RawPair>, ParamError> {
     let parts: Vec<&str> = split_pairs(&text).collect();
     let total = text.split('&').count();
     if total > FORM_PARAMS_LIMIT {
-        return Err(ParamError::Limit(format!(
-            "total number of query parameters ({total}) exceeds limit ({FORM_PARAMS_LIMIT})"
-        )));
+        return Err(ParamError::Limit(format!("total number of query parameters ({total}) exceeds limit ({FORM_PARAMS_LIMIT})")));
     }
     if matches!(text, std::borrow::Cow::Owned(_)) {
         // Raw non-UTF-8 bytes in a form body can't decode to valid UTF-8 params either.
@@ -513,10 +502,7 @@ fn decode_pair(part: &str) -> Result<RawPair, ParamError> {
         Some((k, v)) => (k, Some(v)),
         None => (part, None),
     };
-    Ok(RawPair {
-        key: decode_www_form_component(k)?,
-        value: v.map(decode_www_form_component).transpose()?.map(PairValue::Bytes),
-    })
+    Ok(RawPair { key: decode_www_form_component(k)?, value: v.map(decode_www_form_component).transpose()?.map(PairValue::Bytes) })
 }
 
 /// Ruby's `URI.decode_www_form_component`: `+` is a space, `%XX` is a byte, and a `%` not
@@ -815,10 +801,7 @@ mod tests {
 
     #[test]
     fn hashes_inside_arrays() {
-        assert_eq!(
-            parse("a[][b]=1&a[][c]=2&a[][b]=3"),
-            json!({"a": [{"b": "1", "c": "2"}, {"b": "3"}]})
-        );
+        assert_eq!(parse("a[][b]=1&a[][c]=2&a[][b]=3"), json!({"a": [{"b": "1", "c": "2"}, {"b": "3"}]}));
         assert_eq!(parse("a[][b][c]=1&a[][b][d]=2"), json!({"a": [{"b": {"c": "1", "d": "2"}}]}));
         assert_eq!(parse("a[][b][c]=1&a[][b][c]=2"), json!({"a": [{"b": {"c": "1"}}, {"b": {"c": "2"}}]}));
         assert_eq!(parse("a[][b][]=1&a[][b][]=2"), json!({"a": [{"b": ["1", "2"]}]}));
@@ -882,10 +865,7 @@ mod tests {
             Permit::AnyHash("settings".into()),
             "bad".into(),
         ]);
-        assert_eq!(
-            permitted.to_json(),
-            json!({"name": "Jo", "date(1i)": "2024", "tags": ["a"], "settings": {"x": {"y": "1"}}})
-        );
+        assert_eq!(permitted.to_json(), json!({"name": "Jo", "date(1i)": "2024", "tags": ["a"], "settings": {"x": {"y": "1"}}}));
     }
 
     #[test]
@@ -897,10 +877,7 @@ mod tests {
             Permit::Nested("list".into(), nested.clone()),
             Permit::Nested("ff".into(), nested),
         ]);
-        assert_eq!(
-            permitted.to_json(),
-            json!({"a": {"b": {"c": "1"}}, "list": [{"c": "1"}], "ff": {"0": {"c": "1"}, "1": {"c": "2"}}})
-        );
+        assert_eq!(permitted.to_json(), json!({"a": {"b": {"c": "1"}}, "list": [{"c": "1"}], "ff": {"0": {"c": "1"}, "1": {"c": "2"}}}));
     }
 
     #[test]

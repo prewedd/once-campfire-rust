@@ -6,3 +6,8 @@ target/
 /.claude/*
 !/.claude/skills/
 /.cargo-home
+
+/tmp/
+/bench/loadgen/verified-loadgen
+
+/bench/.work/

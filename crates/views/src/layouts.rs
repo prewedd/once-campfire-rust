@@ -7,6 +7,7 @@
 use askama::Template;
 
 use crate::helpers as h;
+use crate::recorded::{self, RecordedPage};
 
 /// The instance variables a page template hands to the application layout.
 pub trait Page {
@@ -75,11 +76,13 @@ pub struct FrameLayout<'a> {
     /// The page's `:head` content.
     pub head: h::Html,
     /// The page itself.
-    pub content: h::Html,
+    pub content: h::Safe<RecordedPage>,
 }
 
-/// Renders a page's `head` and `content` blocks in the Turbo-Frame layout:
-/// `frame(ctx, page.as_head(), page.as_content())`.
-pub fn frame(ctx: &crate::ViewContext, head: impl Template, content: impl Template) -> askama::Result<String> {
-    FrameLayout { ctx, head: h::raw(head.render()?), content: h::raw(content.render()?) }.render()
+/// Renders a page's `head` and `content` blocks in the Turbo-Frame layout, recorded (the content's
+/// cached fragments too): `frame(ctx, page.as_head(), page.as_content())`.
+pub fn frame<C: Template>(ctx: &crate::ViewContext, head: impl Template, content: C) -> askama::Result<RecordedPage> {
+    let content = recorded::render(&content, C::SIZE_HINT)?;
+    let layout = FrameLayout { ctx, head: h::raw(head.render()?), content: h::raw(content) };
+    recorded::render(&layout, FrameLayout::SIZE_HINT + layout.content.0.text().len())
 }

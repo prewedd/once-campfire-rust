@@ -1,32 +1,6 @@
-//! Ruby and Active Support string behaviors the pipeline depends on.
+//! Ruby and Active Support string behaviors the pipeline depends on, beyond `ruby_compat`'s.
 
 use serde_json::Value;
-
-/// `ERB::Util.html_escape` (and `h`): escapes `& < > " '`.
-pub fn html_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#39;"),
-            _ => out.push(c),
-        }
-    }
-    out
-}
-
-/// Ruby's whitespace for `String#strip`: NUL, `\t`, `\n`, `\v`, `\f`, `\r` and space.
-fn is_strip_whitespace(c: char) -> bool {
-    matches!(c, '\0' | '\t' | '\n' | '\u{0b}' | '\u{0c}' | '\r' | ' ')
-}
-
-/// `String#strip`.
-pub fn strip(s: &str) -> &str {
-    s.trim_matches(is_strip_whitespace)
-}
 
 /// Active Support's `String#blank?`: empty or only Unicode whitespace (`/\A[[:space:]]*\z/`).
 pub fn is_blank(s: &str) -> bool {
@@ -67,43 +41,6 @@ pub fn truncate(text: &str, length: usize, omission: &str) -> String {
     let keep = length.saturating_sub(omission.chars().count());
     let mut out: String = text.chars().take(keep).collect();
     out.push_str(omission);
-    out
-}
-
-/// `ERB::Util.url_encode`: percent-encodes everything but unreserved characters.
-pub fn url_encode(s: &str) -> String {
-    let mut out = String::new();
-    for b in s.bytes() {
-        if b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b'~') {
-            out.push(b as char);
-        } else {
-            out.push_str(&format!("%{:02X}", b));
-        }
-    }
-    out
-}
-
-/// Active Support's `String#to_json` with `escape_html_entities_in_json` on.
-pub fn to_json_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\u{08}' => out.push_str("\\b"),
-            '\u{0c}' => out.push_str("\\f"),
-            '<' => out.push_str("\\u003c"),
-            '>' => out.push_str("\\u003e"),
-            '&' => out.push_str("\\u0026"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
     out
 }
 
@@ -180,7 +117,7 @@ pub fn json_value_inspect(v: &Value) -> String {
             } else if let Some(u) = n.as_u64() {
                 u.to_string()
             } else {
-                ruby_float_to_s(n.as_f64().unwrap_or(0.0))
+                ruby_compat::float_to_s(n.as_f64().unwrap_or(0.0))
             }
         }
         Value::String(s) => string_inspect(s),
@@ -223,58 +160,15 @@ fn string_inspect(s: &str) -> String {
     out
 }
 
-/// `Float#to_s`.
-pub fn ruby_float_to_s(f: f64) -> String {
-    if f.is_nan() {
-        return "NaN".into();
-    }
-    if f.is_infinite() {
-        return if f > 0.0 { "Infinity".into() } else { "-Infinity".into() };
-    }
-    if f == 0.0 {
-        return if f.is_sign_negative() { "-0.0".into() } else { "0.0".into() };
-    }
-    let sci = format!("{:e}", f.abs());
-    let (mantissa, exp) = sci.split_once('e').unwrap();
-    let exp: i32 = exp.parse().unwrap();
-    let digits: String = mantissa.chars().filter(|c| c.is_ascii_digit()).collect();
-    let decpt = exp + 1;
-    let sign = if f < 0.0 { "-" } else { "" };
-    if !(-3..=16).contains(&decpt) {
-        let (first, rest) = digits.split_at(1);
-        let rest = if rest.is_empty() { "0" } else { rest };
-        let e = decpt - 1;
-        format!("{sign}{first}.{rest}e{}{:02}", if e < 0 { '-' } else { '+' }, e.abs())
-    } else if decpt <= 0 {
-        format!("{sign}0.{}{}", "0".repeat((-decpt) as usize), digits)
-    } else if decpt as usize >= digits.len() {
-        format!("{sign}{}{}.0", digits, "0".repeat(decpt as usize - digits.len()))
-    } else {
-        let (int, frac) = digits.split_at(decpt as usize);
-        format!("{sign}{int}.{frac}")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn matches_ruby() {
-        assert_eq!(strip("\0 \t x \0\n"), "x");
-        assert_eq!(strip(" \u{a0}x\u{a0} "), "\u{a0}x\u{a0}");
         assert_eq!(chomp_newlines("a\r\n\r\n"), "a");
         assert_eq!(chomp_newlines("a\n\r"), "a\n\r");
-        assert_eq!(ruby_float_to_s(1e20), "1.0e+20");
-        assert_eq!(ruby_float_to_s(1.0e-5), "1.0e-05");
-        assert_eq!(ruby_float_to_s(100.0), "100.0");
-        assert_eq!(ruby_float_to_s(1.5e16), "1.5e+16");
-        assert_eq!(ruby_float_to_s(0.1), "0.1");
-        assert_eq!(ruby_float_to_s(0.0001), "0.0001");
-        assert_eq!(
-            to_json_string("<a href=\"x\">&'\u{2028}é\n\t\u{1}\u{7f}/</a>"),
-            "\"\\u003ca href=\\\"x\\\"\\u003e\\u0026'\u{2028}é\\n\\t\\u0001\u{7f}/\\u003c/a\\u003e\""
-        );
+        assert_eq!(json_value_inspect(&serde_json::json!({"a": [1.5e16, 0.1]})), r#"{"a" => [1.5e+16, 0.1]}"#);
         assert_eq!(string_inspect("#{a} #$b #@c # #"), r##""\#{a} \#$b \#@c # #""##);
         assert_eq!(json_parse("{\"a\":1/*c*/}").unwrap()["a"], 1);
         assert!(json_parse("{\"a\":1,}").is_none());

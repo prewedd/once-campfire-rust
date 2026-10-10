@@ -53,8 +53,12 @@ impl PinnedMessage {
     pub fn messages(conn: &Connection, room_id: i64) -> Result<Vec<Message>> {
         query_all(
             conn,
-            r#"SELECT "messages".* FROM "pinned_messages" INNER JOIN "messages" ON "messages"."id" = "pinned_messages"."message_id"
-               WHERE "pinned_messages"."room_id" = ? ORDER BY "pinned_messages"."created_at" DESC, "pinned_messages"."message_id" DESC LIMIT ?"#,
+            concat!(
+                "SELECT ",
+                crate::models::message::message_columns!(),
+                r#" FROM "pinned_messages" INNER JOIN "messages" ON "messages"."id" = "pinned_messages"."message_id"
+               WHERE "pinned_messages"."room_id" = ? ORDER BY "pinned_messages"."created_at" DESC, "pinned_messages"."message_id" DESC LIMIT ?"#
+            ),
             params![room_id, Self::LIMIT],
             Message::from_row,
         )

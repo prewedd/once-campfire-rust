@@ -1,0 +1,8 @@
+# The workspace's wide style. The vendored html5ever has its own rustfmt.toml, which turns
+# formatting off for upstream's code.
+edition = "2024"
+max_width = 140
+use_small_heuristics = "Max"
+# Lists of short words, like the Rails constants the sanitizer and the tag helper mirror, stay
+# packed several to a line rather than one word per line.
+short_array_element_width_threshold = 25

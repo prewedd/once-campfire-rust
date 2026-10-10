@@ -1,5 +1,5 @@
-//! Small Ruby/Rails behaviors the message and room views depend on: time formats and
-//! `Float#to_s`.
+//! Small Ruby/Rails behaviors the message and room views depend on: time formats and numbers as
+//! Ruby prints them.
 
 use jiff::Timestamp;
 
@@ -33,8 +33,8 @@ pub fn json_time(time: Timestamp) -> String {
     format!("{}.{millis:03}Z", time.strftime("%Y-%m-%dT%H:%M:%S"))
 }
 
-/// A number as Ruby prints it: integers bare, floats always with a fractional part
-/// (`600.0`) and in exponent form outside `1e-4..1e16` (`1.0e+16`).
+/// A number as Ruby prints it: integers bare, floats as `Float#to_s` writes them, always with a
+/// fractional part (`600.0`) and in exponent form outside `1e-4..1e15` (`1.0e+15`).
 #[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(untagged)]
 pub enum RubyNumber {
@@ -63,31 +63,9 @@ impl std::fmt::Display for RubyNumber {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RubyNumber::Int(value) => write!(f, "{value}"),
-            RubyNumber::Float(value) => f.write_str(&ruby_float(*value)),
+            RubyNumber::Float(value) => f.write_str(&ruby_compat::float_to_s(*value)),
         }
     }
-}
-
-/// `Float#to_s`.
-pub fn ruby_float(value: f64) -> String {
-    if value.is_nan() {
-        return "NaN".into();
-    }
-    if value.is_infinite() {
-        return if value > 0.0 { "Infinity".into() } else { "-Infinity".into() };
-    }
-    let magnitude = value.abs();
-    if magnitude != 0.0 && !(1e-4..1e16).contains(&magnitude) {
-        // Rust: "1.5e16", Ruby: "1.5e+16"; Rust: "1e16", Ruby: "1.0e+16".
-        let formatted = format!("{value:e}");
-        let (mantissa, exponent) = formatted.split_once('e').unwrap();
-        let mantissa = if mantissa.contains('.') { mantissa.to_string() } else { format!("{mantissa}.0") };
-        let exponent: i32 = exponent.parse().unwrap();
-        let sign = if exponent < 0 { '-' } else { '+' };
-        return format!("{mantissa}e{sign}{:02}", exponent.abs());
-    }
-    let formatted = format!("{value}");
-    if formatted.contains('.') { formatted } else { format!("{formatted}.0") }
 }
 
 #[cfg(test)]
@@ -103,12 +81,11 @@ mod tests {
     }
 
     #[test]
-    fn formats_floats_like_ruby() {
-        assert_eq!(ruby_float(600.0), "600.0");
-        assert_eq!(ruby_float(1.0), "1.0");
-        assert_eq!(ruby_float(16.0 / 9.0), "1.7777777777777777");
-        assert_eq!(ruby_float(1e16), "1.0e+16");
-        assert_eq!(ruby_float(0.00001), "1.0e-05");
+    fn formats_numbers_like_ruby() {
+        assert_eq!(RubyNumber::Float(600.0).to_string(), "600.0");
+        assert_eq!(RubyNumber::Float(16.0 / 9.0).to_string(), "1.7777777777777777");
+        assert_eq!(RubyNumber::Float(1e15).to_string(), "1.0e+15");
+        assert_eq!(RubyNumber::Float(0.00001).to_string(), "1.0e-05");
         assert_eq!(RubyNumber::Int(641).half().to_string(), "320");
     }
 

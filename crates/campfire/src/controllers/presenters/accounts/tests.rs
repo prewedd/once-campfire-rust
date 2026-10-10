@@ -13,11 +13,13 @@ use tower::ServiceExt;
 
 use crate::app::{Booted, boot};
 use crate::config::Config;
+use crate::test_support::seed_dir;
 
 const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 const HOST: &str = "campfire.test";
 const PASSWORD: &str = "secret123456";
-const CHROME: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
+const CHROME: &str =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
 
 struct Test {
     booted: Booted,
@@ -26,11 +28,7 @@ struct Test {
 }
 
 async fn boot_seed(name: &str) -> Option<Test> {
-    let seed = Path::new(ROOT).join("parity/.seed").join(name);
-    if !seed.join("db/production.sqlite3").exists() {
-        eprintln!("skipping: parity/.seed/{name} isn't built (parity/bin/seed build {name})");
-        return None;
-    }
+    let seed = seed_dir(name)?;
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("db")).unwrap();
     std::fs::copy(seed.join("db/production.sqlite3"), dir.path().join("db/production.sqlite3")).unwrap();
@@ -194,7 +192,7 @@ impl Browser<'_> {
 }
 
 fn encode(value: &str) -> String {
-    campfire_views::helpers::url::cgi_escape(value)
+    ruby_compat::cgi_escape(value)
 }
 
 fn assert_redirect(reply: &Reply, location: &str) {
@@ -219,7 +217,10 @@ async fn signs_in_with_a_password_and_out_again() {
     let signed_in = browser.form("post", "/session", &[("email_address", &test.label("emails.david")), ("password", PASSWORD)]).await;
     assert_redirect(&signed_in, "http://campfire.test/account/edit");
     let session_cookie = signed_in.set_cookies().into_iter().find(|c| c.starts_with("session_token=")).expect("session cookie");
-    assert!(session_cookie.contains("httponly") && session_cookie.contains("samesite=lax") && session_cookie.contains("expires="), "{session_cookie}");
+    assert!(
+        session_cookie.contains("httponly") && session_cookie.contains("samesite=lax") && session_cookie.contains("expires="),
+        "{session_cookie}"
+    );
 
     // Signed in: sign-in and join pages send you home.
     assert_redirect(&browser.get(&format!("/join/{}", test.label("join_codes.signal"))).await, "http://campfire.test/");
@@ -260,7 +261,8 @@ async fn rejects_bad_passwords_and_rate_limits_sign_ins() {
 #[tokio::test]
 async fn a_rails_issued_session_cookie_continues_on_rust() {
     let Some(test) = boot_seed("default").await else { return };
-    let vectors: serde_json::Value = serde_json::from_str(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../vectors/campfire_sessions.json"))).unwrap();
+    let vectors: serde_json::Value =
+        serde_json::from_str(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../vectors/campfire_sessions.json"))).unwrap();
     let cookie = vectors["sessions"][0]["cookie_header"].as_str().unwrap();
     let mut browser = test.browser("198.51.100.4");
     for pair in cookie.split("; ") {
@@ -278,19 +280,29 @@ async fn direct_uploads_are_refused_past_the_body_limit() {
     let mut browser = test.browser("198.51.100.10");
     browser.sign_in("david@37signals.com").await;
     let create = |byte_size: usize| {
-        format!(r#"{{"blob":{{"filename":"a.bin","byte_size":{byte_size},"checksum":"1B2M2Y8AsgTpgAmY7PhCfg==","content_type":"application/octet-stream"}}}}"#)
+        format!(
+            r#"{{"blob":{{"filename":"a.bin","byte_size":{byte_size},"checksum":"1B2M2Y8AsgTpgAmY7PhCfg==","content_type":"application/octet-stream"}}}}"#
+        )
     };
     let small = browser.request(Method::POST, "/rails/active_storage/direct_uploads", &[], Some(("application/json", create(5)))).await;
     assert_eq!(small.status, StatusCode::OK, "{}", small.text());
     assert!(small.text().contains("/rails/active_storage/disk/"), "{}", small.text());
-    let large = browser.request(Method::POST, "/rails/active_storage/direct_uploads", &[], Some(("application/json", create(campfire_kit::body::MAX_BUFFERED_BODY + 1)))).await;
+    let large = browser
+        .request(
+            Method::POST,
+            "/rails/active_storage/direct_uploads",
+            &[],
+            Some(("application/json", create(campfire_kit::body::MAX_BUFFERED_BODY + 1))),
+        )
+        .await;
     assert_eq!(large.status, StatusCode::PAYLOAD_TOO_LARGE);
 }
 
 #[tokio::test]
 async fn edge_gets_its_install_instructions() {
     // EdgeHTML's token: the useragent gem reports Chromium Edge (`Edg/`) as Chrome.
-    const EDGE: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edge/124.0.0.0";
+    const EDGE: &str =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edge/124.0.0.0";
     let Some(test) = boot_seed("default").await else { return };
     let mut browser = test.browser("198.51.100.9");
     browser.sign_in("david@37signals.com").await;
@@ -316,6 +328,12 @@ async fn transfers_sign_in_on_another_device() {
     let show = phone.get(&path).await;
     assert_eq!(show.status, StatusCode::OK);
     show.assert_form(&path);
+    assert_eq!(show.text().matches("<form ").count(), show.text().matches("</form>").count());
+    assert_eq!(show.text().matches("data-controller=\"auto-submit\"").count(), 1);
+    let start = show.text().find("data-controller=\"auto-submit\"").unwrap();
+    let form = &show.text()[start..show.text()[start..].find("</form>").unwrap() + start];
+    assert!(!form.contains("<footer"));
+    assert!(!form.contains("<form "));
     assert_redirect(&phone.form("put", &path, &[]).await, "http://campfire.test/");
     assert_eq!(phone.get("/users/me/profile").await.status, StatusCode::OK);
 
@@ -497,9 +515,7 @@ async fn profile_sidebar_and_user_pages() {
     let subscriptions = browser.get("/users/me/push_subscriptions").await;
     assert_eq!(subscriptions.status, StatusCode::OK);
     let body = r#"{"push_subscription":{"endpoint":"http://example.com/push","p256dh_key":"a","auth_key":"b"}}"#;
-    let reply = browser
-        .request(Method::POST, "/users/me/push_subscriptions", &[], Some(("application/json", body.into())))
-        .await;
+    let reply = browser.request(Method::POST, "/users/me/push_subscriptions", &[], Some(("application/json", body.into()))).await;
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY, "an http endpoint fails validation");
 }
 
@@ -516,6 +532,28 @@ async fn bans_and_unbans() {
     let page = admin.get(&format!("/users/{jz}")).await;
     page.assert_button(&action, "delete");
     assert_redirect(&admin.form("delete", &action, &[]).await, &format!("http://campfire.test/users/{jz}"));
+}
+
+/// `bans.create!` refuses a private address, which Rails answers with a 422 (`RecordInvalid`), and
+/// nothing of the ban is kept.
+#[tokio::test]
+async fn a_ban_from_a_private_address_is_unprocessable() {
+    let Some(test) = boot_seed("default").await else { return };
+    let jz: i64 = test.label("users.jz").parse().unwrap();
+    let db = &test.booted.app.db;
+    db.write(move |tx| campfire_db::Session::start(tx, jz, None, Some("192.168.1.20")).map(|_| ())).await.unwrap();
+
+    let mut admin = test.browser("198.51.100.18");
+    admin.sign_in(&test.label("emails.david")).await;
+    let reply = admin.form("post", &format!("/users/{jz}/ban"), &[]).await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // This app's own 422 page (crates/assets/public/422.html, README "Known differences").
+    assert!(reply.text().contains("That didn't go through (422)"), "{}", reply.text());
+
+    let user = db.read(move |conn| campfire_db::User::find(conn, jz)).await.unwrap();
+    assert_eq!(user.status, campfire_db::Status::Active);
+    let bans = db.read(move |conn| Ok(conn.query_row("SELECT COUNT(*) FROM bans WHERE user_id = ?", [jz], |row| row.get::<_, i64>(0))?));
+    assert_eq!(bans.await.unwrap(), 0);
 }
 
 #[tokio::test]

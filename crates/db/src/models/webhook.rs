@@ -34,12 +34,7 @@ impl Webhook {
     }
 
     pub fn find_by_user(conn: &Connection, user_id: i64) -> Result<Option<Self>> {
-        query_one(
-            conn,
-            r#"SELECT "webhooks".* FROM "webhooks" WHERE "webhooks"."user_id" = ? LIMIT 1"#,
-            [user_id],
-            Self::from_row,
-        )
+        query_one(conn, r#"SELECT "webhooks".* FROM "webhooks" WHERE "webhooks"."user_id" = ? LIMIT 1"#, [user_id], Self::from_row)
     }
 
     /// `create_webhook!(url:)`
@@ -50,13 +45,7 @@ impl Webhook {
             params![now, now, url, user_id],
             |r| r.get(0),
         )?;
-        Ok(Self {
-            id,
-            user_id,
-            url: url.map(Into::into),
-            created_at: now,
-            updated_at: now,
-        })
+        Ok(Self { id, user_id, url: url.map(Into::into), created_at: now, updated_at: now })
     }
 
     /// `webhook.update!(url:)`
@@ -65,20 +54,15 @@ impl Webhook {
             return Ok(());
         }
         let now = tx.now();
-        tx.conn().execute_cached(
-            r#"UPDATE "webhooks" SET "updated_at" = ?, "url" = ? WHERE "webhooks"."id" = ?"#,
-            params![now, url, self.id],
-        )?;
+        tx.conn()
+            .execute_cached(r#"UPDATE "webhooks" SET "updated_at" = ?, "url" = ? WHERE "webhooks"."id" = ?"#, params![now, url, self.id])?;
         self.url = Some(url.into());
         self.updated_at = now;
         Ok(())
     }
 
     pub fn destroy(&self, tx: &Tx<'_>) -> Result<()> {
-        tx.conn().execute_cached(
-            r#"DELETE FROM "webhooks" WHERE "webhooks"."id" = ?"#,
-            [self.id],
-        )?;
+        tx.conn().execute_cached(r#"DELETE FROM "webhooks" WHERE "webhooks"."id" = ?"#, [self.id])?;
         Ok(())
     }
 
@@ -96,60 +80,24 @@ impl Webhook {
         let room = Room::find(conn, message.room_id)?;
         let recipient = User::find(conn, self.user_id)?;
         let html = message.body_html(conn)?;
-        let plain =
-            without_recipient_mentions(&message.plain_text_body(conn, rich_text)?, &recipient);
+        let plain = without_recipient_mentions(&message.plain_text_body(conn, rich_text)?, &recipient);
 
+        // Hash order as written in `Webhook#payload`.
+        let mut body = serde_json::json!({
+            "user": { "id": creator.id, "name": creator.name },
+            "room": { "id": room.id, "name": room.name, "path": room_bot_messages_path },
+            "message": { "id": message.id, "body": { "html": html, "plain": plain }, "path": message_path },
+        });
         // A reply also names its thread (plans/threads.md), so a bot can post into it; other
         // messages are as before.
-        let thread = message
-            .thread_parent_id
-            .map(|id| format!(r#","thread_parent_id":{id}"#))
-            .unwrap_or_default();
-
-        // Hash order as written in `Webhook#payload`, encoded like `ActiveSupport::JSON`.
-        let body = format!(
-            r#"{{"user":{{"id":{},"name":{}}},"room":{{"id":{},"name":{},"path":{}}},"message":{{"id":{},"body":{{"html":{},"plain":{}}},"path":{}{thread}}}}}"#,
-            creator.id,
-            json_string(&creator.name),
-            room.id,
-            room.name
-                .as_deref()
-                .map(json_string)
-                .unwrap_or_else(|| "null".into()),
-            json_string(room_bot_messages_path),
-            message.id,
-            html.as_deref()
-                .map(json_string)
-                .unwrap_or_else(|| "null".into()),
-            json_string(&plain),
-            json_string(message_path),
-        );
-        Ok(body)
+        if let Some(id) = message.thread_parent_id {
+            body["message"]["thread_parent_id"] = id.into();
+        }
+        Ok(rails_compat::json::encode(&body))
     }
 }
 
 /// Removes `@Recipient` mentions and leading/trailing (Unicode) whitespace.
 fn without_recipient_mentions(body: &str, recipient: &User) -> String {
-    body.replace(&recipient.attachable_plain_text_representation(), "")
-        .trim_matches(char::is_whitespace)
-        .to_string()
-}
-
-/// `ActiveSupport::JSON.encode` of a string: JSON with `<`, `>` and `&` escaped as `\uXXXX`.
-/// U+2028 and U+2029 stay raw (`load_defaults 8.2` turns `escape_js_separators_in_json` off;
-/// probed in the reference image).
-pub fn json_string(s: &str) -> String {
-    let encoded = serde_json::to_string(s).expect("strings encode");
-    encoded.replace('<', "\\u003c").replace('>', "\\u003e").replace('&', "\\u0026")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::json_string;
-
-    /// `{ a: "\u2028<>&" }.to_json` in the reference image.
-    #[test]
-    fn json_strings_escape_html_but_not_line_separators() {
-        assert_eq!(json_string("\u{2028}<>&\u{2029}"), "\"\u{2028}\\u003c\\u003e\\u0026\u{2029}\"");
-    }
+    body.replace(&recipient.attachable_plain_text_representation(), "").trim_matches(char::is_whitespace).to_string()
 }

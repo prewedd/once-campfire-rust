@@ -74,6 +74,18 @@ fn cookie_escaping() {
 }
 
 #[test]
+fn cookie_escaping_is_rack_escape() {
+    // `Rack::Utils.escape` of every character to U+00FF and ruby_compat's edge cases, from
+    // `reference-tools/ruby_core.rb`.
+    let path = workspace_root().join("vectors/ruby_core.json");
+    let ruby_core: Value = serde_json::from_str(&std::fs::read_to_string(&path).expect("vectors/ruby_core.json")).expect("valid JSON");
+    for case in ruby_core["strings"].as_array().unwrap() {
+        let raw = str(&case["input"]);
+        assert_eq!(cookies::escape(raw), str(&case["rack_escape"]), "escape {raw:?}");
+    }
+}
+
+#[test]
 fn signed_cookies_are_generated_byte_for_byte() {
     for case in cases("signed_cookies.generate") {
         let raw = cookies::sign(&SECRETS, str(&case["name"]), str(&case["value"]), opt_time(&case["expires_at"]));
@@ -147,7 +159,8 @@ fn rails_session_and_its_forms_are_accepted() {
 fn signed_ids() {
     for case in cases("signed_ids.generate") {
         let model = str(&case["model"]);
-        let generated = signed_id::generate(&SECRETS, model, case["id"].as_i64().unwrap(), opt_str(&case["purpose"]), opt_time(&case["expires_at"]));
+        let generated =
+            signed_id::generate(&SECRETS, model, case["id"].as_i64().unwrap(), opt_str(&case["purpose"]), opt_time(&case["expires_at"]));
         assert_eq!(generated, str(&case["signed_id"]), "{model} {} {}", case["id"], case["purpose"]);
     }
     for case in cases("signed_ids.verify") {
@@ -191,31 +204,10 @@ fn sgids() {
 }
 
 #[test]
-fn unverified_sgids_only_yield_users() {
-    let existing_user_ids = ["1", "2"];
-    for case in cases("unverified_sgids") {
-        let result = global_id::unverified_attachable_user(opt_str(&case["sgid"]));
-        // Rails also looks the user up; a missing one is nil.
-        let found = result.clone().map(|gid| gid.filter(|gid| existing_user_ids.contains(&gid.id.as_str())));
-        match &case["expected"] {
-            Value::Null => assert_eq!(found, Ok(None), "{}", label(case)),
-            Value::String(gid) => {
-                let expected = GlobalId::parse(gid).unwrap();
-                let found = found.unwrap().unwrap_or_else(|| panic!("{} found nothing", label(case)));
-                assert_eq!((found.model_name, found.id), (expected.model_name, expected.id), "{}", label(case));
-            }
-            raises => assert!(result.is_err(), "{} should fail like Rails ({raises})", label(case)),
-        }
-    }
-}
-
-#[test]
-fn tampered_sgids_for_other_models_are_rejected() {
-    // Independent of the oracle: the signature-ignoring fallback must never yield a non-User.
-    for model in ["Rooms::Open", "Account", "Message", "Rooms::Direct", "Session"] {
+fn forged_sgids_are_rejected() {
+    for model in ["User", "Rooms::Open", "Account", "Message", "Rooms::Direct", "Session"] {
         let gid = GlobalId::new(model, 1);
         let forged = global_id::verifier(&Secrets::new("attacker")).generate(&Value::String(gid.to_string()), Some("attachable"), None);
-        assert_eq!(global_id::unverified_attachable_user(Some(&forged)), Ok(None));
         assert_eq!(global_id::locate_signed(&SECRETS, &forged, "attachable", now()), None);
     }
 }
@@ -268,8 +260,9 @@ fn passwords() {
         }
     });
     assert!(password::verify("secret123456", str(v("passwords.seeded_user_digest"))));
-    let ours = password::digest_with_cost("pässwörd ☃", password::MIN_COST);
+    let ours = password::digest_with_cost("pässwörd ☃", password::MIN_COST).unwrap();
     assert!(ours.starts_with("$2a$04$") && password::verify("pässwörd ☃", &ours));
+    assert!(password::digest_with_cost("secret", password::MIN_COST - 1).is_err());
     assert!(!password::verify("anything", "not a digest"));
 }
 
@@ -319,13 +312,18 @@ fn write_rust_output_for_rails_to_verify() {
         .map(|parts| json!({ "signed": turbo::signed_stream_name(secrets, parts), "expected": parts.join(":") }))
         .collect();
 
-    let passwords: Vec<Value> = [("secret123456", password::COST), ("pässwörd ☃", password::MIN_COST), (&"a".repeat(80), password::MIN_COST)]
-        .iter()
-        .map(|(pw, cost)| json!({ "password": pw, "digest": password::digest_with_cost(pw, *cost) }))
-        .collect();
+    let passwords: Vec<Value> =
+        [("secret123456", password::COST), ("pässwörd ☃", password::MIN_COST), (&"a".repeat(80), password::MIN_COST)]
+            .iter()
+            .map(|(pw, cost)| json!({ "password": pw, "digest": password::digest_with_cost(pw, *cost).unwrap() }))
+            .collect();
 
     let app_verifiers: Vec<Value> = [
-        (r#"{"key":"k1","disposition":"inline; filename=\"a\u0026b.png\"","content_type":"image/png","service_name":"local"}"#, Some("blob_key"), Some(four_hours)),
+        (
+            r#"{"key":"k1","disposition":"inline; filename=\"a\u0026b.png\"","content_type":"image/png","service_name":"local"}"#,
+            Some("blob_key"),
+            Some(four_hours),
+        ),
         ("42", Some("blob_id"), None),
         (r#"{"z":1,"a":2}"#, Some("x"), None),
     ]

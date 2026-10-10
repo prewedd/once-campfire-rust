@@ -146,8 +146,12 @@ impl Compression {
                 // Go's server gives a response a length when the handler returns with all of it
                 // still in its 2 KB chunking buffer, and sends anything longer chunked.
                 Ok(compressed) if compressed.len() <= GO_CHUNKING_BUFFER => Response::from_parts(parts, Body::from(compressed)),
-                Ok(compressed) => Response::from_parts(parts, Body::from_stream(stream::once(async move { Ok::<_, axum::Error>(compressed) }))),
-                Err(error) => Response::from_parts(parts, Body::from_stream(stream::once(async move { Err::<Bytes, _>(axum::Error::new(error)) }))),
+                Ok(compressed) => {
+                    Response::from_parts(parts, Body::from_stream(stream::once(async move { Ok::<_, axum::Error>(compressed) })))
+                }
+                Err(error) => {
+                    Response::from_parts(parts, Body::from_stream(stream::once(async move { Err::<Bytes, _>(axum::Error::new(error)) })))
+                }
             };
         }
         Response::from_parts(parts, Body::from_stream(compress_stream(encoder, buffered, rest)))
@@ -235,8 +239,10 @@ pub fn content_type_filter(content_type: &str) -> bool {
     }
     const EXCLUDE_CONTAINS: [&str; 8] = ["compress", "zip", "snappy", "lzma", "xz", "zstd", "brotli", "stuffit"];
     const EXCLUDE_PREFIX: [&str; 3] = ["video/", "audio/", "image/jp"];
-    const COMPRESSED_IMAGES: [&str; 10] =
-        ["image/jpeg", "image/jpg", "image/png", "image/apng", "image/webp", "image/gif", "image/avif", "image/heic", "image/heif", "image/jxl"];
+    const COMPRESSED_IMAGES: [&str; 10] = [
+        "image/jpeg", "image/jpg", "image/png", "image/apng", "image/webp", "image/gif", "image/avif", "image/heic", "image/heif",
+        "image/jxl",
+    ];
     !(EXCLUDE_CONTAINS.iter().any(|s| content_type.contains(s))
         || EXCLUDE_PREFIX.iter().chain(COMPRESSED_IMAGES.iter()).any(|p| content_type.starts_with(p)))
 }
@@ -523,7 +529,8 @@ mod tests {
     async fn guard_vetoes_user_specific_responses() {
         let compression = Compression::new(32, true);
         let request = Request::get("/").header("accept-encoding", "gzip").header("cookie", "a=b").body(()).unwrap();
-        let response = compression.apply(compression.negotiate(&request), response("text/html", "x".repeat(2000)), HeaderMerge::Append).await;
+        let response =
+            compression.apply(compression.negotiate(&request), response("text/html", "x".repeat(2000)), HeaderMerge::Append).await;
         assert!(!response.headers().contains_key(header::CONTENT_ENCODING));
         let request = Request::get("/").header("accept-encoding", "gzip").body(()).unwrap();
         let mut private = response_with_cc("private");

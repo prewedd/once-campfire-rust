@@ -59,10 +59,11 @@ impl Uri {
                 s.push_str(host);
             }
             if let Some(port) = self.port
-                && Some(port) != self.default_port() {
-                    s.push(':');
-                    s.push_str(&port.to_string());
-                }
+                && Some(port) != self.default_port()
+            {
+                s.push(':');
+                s.push_str(&port.to_string());
+            }
             s.push_str(self.path.as_deref().unwrap_or(""));
             if let Some(query) = &self.query {
                 s.push('?');
@@ -102,10 +103,18 @@ fn check_scheme_class(uri: &Uri) -> Result<(), UriError> {
             if mailto_to_valid(to) { Ok(()) } else { Err(UriError::InvalidComponent) }
         }
         Some("LDAP") | Some("LDAPS") => {
-            if uri.fragment.is_some() || uri.path.is_none() { Err(UriError::InvalidUri) } else { Ok(()) }
+            if uri.fragment.is_some() || uri.path.is_none() {
+                Err(UriError::InvalidUri)
+            } else {
+                Ok(())
+            }
         }
         Some("FTP") => {
-            if uri.path.is_none() { Err(UriError::InvalidUri) } else { Ok(()) }
+            if uri.path.is_none() {
+                Err(UriError::InvalidUri)
+            } else {
+                Ok(())
+            }
         }
         _ => Ok(()),
     }
@@ -237,7 +246,8 @@ fn split_absolute(value: &str) -> Option<Uri> {
     if s.get(i) != Some(&b':') {
         return None;
     }
-    let scheme = value[..i].to_string();
+    // `URI::Generic#set_scheme` downcases it.
+    let scheme = value[..i].to_ascii_lowercase();
     let rest_start = i + 1;
     let tail = parse_query_fragment_positions(s, rest_start)?;
     let hier = &s[rest_start..tail.hier_end];
@@ -390,5 +400,14 @@ mod tests {
         assert_eq!(parse("mailto:foo"), Err(UriError::InvalidComponent));
         assert!(parse("mailto:a@b.com").is_ok());
         assert_eq!(parse("https://x.com:443/a").unwrap().to_s(), "https://x.com/a");
+    }
+
+    #[test]
+    fn downcases_the_scheme_like_ruby() {
+        // `URI.parse(s)` in the reference: `scheme=` downcases.
+        assert_eq!(parse("HTTPS://x.com/a").unwrap().scheme.as_deref(), Some("https"));
+        assert_eq!(parse("HTTP://X.com:80/a").unwrap().to_s(), "http://X.com/a");
+        assert_eq!(parse("FILE:///etc").unwrap().to_s(), "file:///etc");
+        assert_eq!(parse("MailTo:a@b.com").unwrap().to_s(), "mailto:a@b.com");
     }
 }

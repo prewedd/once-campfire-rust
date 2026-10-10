@@ -1,5 +1,5 @@
 //! Ports of reference/test/channels/**, plus the channels the reference doesn't test directly.
-use campfire_db::Clock as _;
+use campfire_db::Session;
 use serde_json::json;
 
 use super::support::*;
@@ -23,6 +23,22 @@ async fn rejects_a_connection_without_or_with_a_bad_session_cookie() {
         let mut client = app.connect_with_cookie(cookie.as_deref()).await;
         assert_eq!(client.until_closed().await, vec![unauthorized.to_string()]);
     }
+}
+
+#[tokio::test]
+async fn rejects_a_session_cookie_once_it_expires() {
+    let app = start().await;
+    let user_id = id("david");
+    let session = app.db.write(move |tx| Session::start(tx, user_id, Some("test"), Some("8.8.8.8"))).await.unwrap();
+    let expires_at = app.now().jiff() + jiff::SignedDuration::from_secs(60);
+    let cookie = app.cookie_with_token_expiring(&session.token, Some(expires_at));
+
+    let mut client = app.connect_with_cookie(Some(&cookie)).await;
+    assert_eq!(client.next_text().await, r#"{"type":"welcome"}"#);
+
+    app.clock.travel(jiff::SignedDuration::from_secs(61));
+    let mut client = app.connect_with_cookie(Some(&cookie)).await;
+    assert_eq!(client.until_closed().await, vec![r#"{"type":"disconnect","reason":"unauthorized","reconnect":false}"#.to_string()]);
 }
 
 // HeartbeatChannel and ApplicationCable::Channel
@@ -74,21 +90,26 @@ async fn presence_subscribes_and_marks_the_membership_connected() {
     client.confirm(&reads).await;
 
     let membership = app.membership("designers", "david").await.unwrap();
-    assert!(!membership.is_connected(app.clock.now()));
+    assert!(!membership.is_connected(app.now()));
     // A member's unread room gets cleared by `present`.
-    app.db.write(move |tx| tx.conn().execute("UPDATE memberships SET unread_at = '2024-01-01 00:00:00' WHERE id = ?", [membership.id]).map_err(Into::into)).await.unwrap();
+    app.db
+        .write(move |tx| {
+            tx.conn().execute("UPDATE memberships SET unread_at = '2024-01-01 00:00:00' WHERE id = ?", [membership.id]).map_err(Into::into)
+        })
+        .await
+        .unwrap();
 
     let presence = room_identifier("PresenceChannel", id("designers"));
     client.confirm(&presence).await;
     assert_eq!(client.next_text().await, delivery(&reads, &format!(r#"{{"room_id":{}}}"#, id("designers"))));
 
     let membership = app.membership("designers", "david").await.unwrap();
-    assert!(membership.is_connected(app.clock.now()));
+    assert!(membership.is_connected(app.now()));
     assert_eq!(membership.connections, 1);
     assert_eq!(membership.unread_at, None);
 
     client.unsubscribe(&presence).await;
-    eventually(|| async { !app.membership("designers", "david").await.unwrap().is_connected(app.clock.now()) }).await;
+    eventually(|| async { !app.membership("designers", "david").await.unwrap().is_connected(app.now()) }).await;
     let membership = app.membership("designers", "david").await.unwrap();
     assert_eq!((membership.connections, membership.connected_at), (0, None));
 }
@@ -105,9 +126,9 @@ async fn presence_counts_connections_and_refreshes() {
 
     // `refresh` reconnects a membership that timed out.
     app.clock.travel(jiff::SignedDuration::from_secs(61));
-    assert!(!app.membership("designers", "david").await.unwrap().is_connected(app.clock.now()));
+    assert!(!app.membership("designers", "david").await.unwrap().is_connected(app.now()));
     first.perform(&presence, json!({ "action": "refresh" })).await;
-    eventually(|| async { app.membership("designers", "david").await.unwrap().is_connected(app.clock.now()) }).await;
+    eventually(|| async { app.membership("designers", "david").await.unwrap().is_connected(app.now()) }).await;
     assert_eq!(app.membership("designers", "david").await.unwrap().connections, 1);
 
     second.unsubscribe(&presence).await;
@@ -249,6 +270,29 @@ fn typing_stream_name(room: &campfire_db::Room) -> String {
     campfire_cable::naming::broadcasting_for("TypingNotificationsChannel", &[&room_gid(room).to_param()])
 }
 
+/// `safe_constantize` resolves "::TypingNotificationsChannel" to the class, whose broadcastings
+/// are named after the class alone, so both spellings share the room's typing stream.
+#[tokio::test]
+async fn typing_notifications_reach_the_room_however_the_channel_is_spelled() {
+    let app = start().await;
+    let prefixed = room_identifier("::TypingNotificationsChannel", id("designers"));
+    let plain = room_identifier("TypingNotificationsChannel", id("designers"));
+    let mut typist = app.connect("jz").await;
+    let mut reader = app.connect("kevin").await;
+    typist.confirm(&prefixed).await;
+    reader.confirm(&plain).await;
+
+    typist.perform(&prefixed, json!({ "action": "start" })).await;
+    let start = format!(r#"{{"action":"start","user":{{"id":{},"name":"JZ"}}}}"#, id("jz"));
+    assert_eq!(reader.next_text().await, delivery(&plain, &start));
+    assert_eq!(typist.next_text().await, delivery(&prefixed, &start));
+
+    reader.perform(&plain, json!({ "action": "stop" })).await;
+    let stop = format!(r#"{{"action":"stop","user":{{"id":{},"name":"Kevin"}}}}"#, id("kevin"));
+    assert_eq!(typist.next_text().await, delivery(&prefixed, &stop));
+    assert_eq!(reader.next_text().await, delivery(&plain, &stop));
+}
+
 /// A subscription whose `subscribed` failed has no room: typing there is an error, not a panic
 /// that takes the whole connection down.
 #[tokio::test]
@@ -358,7 +402,10 @@ async fn the_stock_turbo_channel_refuses_room_message_streams_but_serves_the_roo
     app.broadcasts.room_remove(&designers);
     assert_eq!(
         kevin.next_text().await,
-        delivery(&rooms, &html_json(&format!(r#"<turbo-stream action="remove" target="list_rooms_closed_{}"></turbo-stream>"#, designers.id)))
+        delivery(
+            &rooms,
+            &html_json(&format!(r#"<turbo-stream action="remove" target="list_rooms_closed_{}"></turbo-stream>"#, designers.id))
+        )
     );
 }
 

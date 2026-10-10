@@ -15,6 +15,7 @@ pub mod links;
 pub mod rooms;
 pub mod tag;
 pub mod translations;
+#[rustfmt::skip]
 mod translations_table;
 pub mod turbo;
 pub mod url;

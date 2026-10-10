@@ -12,7 +12,7 @@ use super::{
 };
 use crate::app::AppCtx;
 use crate::concerns::{self, Before, before_actions, require_current_user};
-use crate::controllers::presenters::page::{self, db_error};
+use crate::controllers::presenters::page;
 use crate::controllers::presenters::user_view;
 
 /// `DEFAULT_ROOM_NAME`
@@ -50,15 +50,13 @@ pub async fn create(c: &mut Ctx) -> Result {
     // Rooms::Closed.create_for(room_params, users: grantees)
     let room = c
         .app()
-        .db
         .write(move |tx| {
             let grantees = existing_user_ids(tx.conn(), &grantee_ids)?;
             let mut room = Room::create_for(tx, RoomType::Closed, name.as_deref(), user_id, &grantees)?;
             room.set_topic(tx, topic.as_deref())?;
             Ok(room)
         })
-        .await
-        .map_err(db_error)?;
+        .await?;
     broadcast_to_members(c, &room, false).await?;
     redirect_to_room(c, room.id)
 }
@@ -72,16 +70,14 @@ pub async fn edit(c: &mut Ctx) -> Result {
     let room_id = room.id;
     let (selected_users, unselected_users) = c
         .app()
-        .db
-        .read(move |conn| {
+        .read_offloaded(move |conn| {
             let selected_ids = Room::find(conn, room_id)?.user_ids(conn)?;
             let (selected, unselected): (Vec<User>, Vec<User>) =
                 User::active_ordered(conn)?.into_iter().partition(|user| selected_ids.contains(&user.id));
             let views = |users: Vec<User>| users.iter().map(|user| user_view(&secrets, user)).collect::<Vec<_>>();
             Ok((views(selected), views(unselected)))
         })
-        .await
-        .map_err(db_error)?;
+        .await?;
     let form = ClosedFormView {
         room: FormRoom { id: Some(room.id), name: room.name.clone(), topic: room.topic.clone() },
         can_administer: current_user.can_administer(Some(room.creator_id), false),
@@ -102,7 +98,6 @@ pub async fn update(c: &mut Ctx) -> Result {
     // force_room_type, then `@room.update! room_params`
     let room = c
         .app()
-        .db
         .write(move |tx| {
             let mut room = room;
             room.update(tx, name.as_ref().map(|name| name.as_deref()), Some(RoomType::Closed))?;
@@ -111,20 +106,16 @@ pub async fn update(c: &mut Ctx) -> Result {
             }
             Ok(room)
         })
-        .await
-        .map_err(db_error)?;
+        .await?;
     // `@room.memberships.revise(granted: grantees, revoked: revokees)`
     let revised = room.clone();
     c.app()
-        .db
         .write(move |tx| {
             let granted = existing_user_ids(tx.conn(), &grantee_ids)?;
-            let revoked: Vec<i64> =
-                revised.user_ids(tx.conn())?.into_iter().filter(|id| !grantee_ids.contains(id)).collect();
+            let revoked: Vec<i64> = revised.user_ids(tx.conn())?.into_iter().filter(|id| !grantee_ids.contains(id)).collect();
             revised.revise(tx, &granted, &revoked)
         })
-        .await
-        .map_err(db_error)?;
+        .await?;
     broadcast_to_members(c, &room, true).await?;
     redirect_to_room(c, room.id)
 }
@@ -135,7 +126,6 @@ async fn broadcast_to_members(c: &Ctx, room: &Room, update: bool) -> Result<()> 
     let partials = render_shared_room(c, room).await?;
     let (broadcasts, room) = (c.app().broadcasts.clone(), room.clone());
     c.app()
-        .db
         .read(move |conn| {
             if update {
                 broadcasts.closed_room_update(conn, &room, &partials)
@@ -144,5 +134,4 @@ async fn broadcast_to_members(c: &Ctx, room: &Room, update: bool) -> Result<()> 
             }
         })
         .await
-        .map_err(db_error)
 }

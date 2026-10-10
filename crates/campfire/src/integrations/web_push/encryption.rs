@@ -62,8 +62,8 @@ pub fn encrypt_with(
 
     // OpenSSL::BN.new(bytes, 2) drops leading zero bytes before the point is decoded
     let client_public_bytes = strip_leading_zeros(decode64(p256dh.unwrap())?);
-    let client_public = PublicKey::from_sec1_bytes(&client_public_bytes)
-        .map_err(|_| EncryptionError::InvalidKey("invalid encoding".into()))?;
+    let client_public =
+        PublicKey::from_sec1_bytes(&client_public_bytes).map_err(|_| EncryptionError::InvalidKey("invalid encoding".into()))?;
     let auth = decode64(auth.unwrap())?;
 
     let server_public = server_key.public_key().to_encoded_point(false);

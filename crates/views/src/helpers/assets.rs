@@ -9,9 +9,9 @@ pub fn asset_path(ctx: &ViewContext, source: &str) -> String {
     let is_url = source.starts_with('/')
         || source.starts_with("data:")
         || source.starts_with("cid:")
-        || source.split_once("://").is_some_and(|(scheme, _)| {
-            !scheme.is_empty() && scheme.chars().all(|c| c.is_ascii_alphabetic() || c == '-')
-        });
+        || source
+            .split_once("://")
+            .is_some_and(|(scheme, _)| !scheme.is_empty() && scheme.chars().all(|c| c.is_ascii_alphabetic() || c == '-'));
     if is_url { source.to_string() } else { ctx.asset(source) }
 }
 

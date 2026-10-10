@@ -3,6 +3,7 @@
 //! (alphabetic, marks, decimal digits, connector punctuation, join controls) for the FTS5
 //! `MATCH`.
 
+#[rustfmt::skip]
 mod word_ranges;
 
 use word_ranges::WORD_RANGES;

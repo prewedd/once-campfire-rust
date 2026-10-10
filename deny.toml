@@ -1,0 +1,15 @@
+# cargo-deny: `.github/workflows/advisories.yml` runs `cargo deny check advisories` every week.
+
+[graph]
+# The platforms the image is built for, which leaves out Windows- and UEFI-only crates.
+targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+all-features = true
+
+[advisories]
+# An advisory that doesn't apply goes here with its reason: { id = "RUSTSEC-…", reason = "…" }.
+ignore = []
+
+[bans]
+# The duplicate versions all come from dependencies (base64, getrandom, rand, rand_core, syn,
+# synstructure), so `cargo deny check bans` reports them rather than failing.
+multiple-versions = "warn"

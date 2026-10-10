@@ -8,11 +8,7 @@ use crate::ViewContext;
 
 /// `translations_for(key)`.
 pub fn translations_for(key: &str) -> Html {
-    let entries = TRANSLATIONS
-        .iter()
-        .find(|(name, _)| *name == key)
-        .unwrap_or_else(|| panic!("unknown translation key {key}"))
-        .1;
+    let entries = TRANSLATIONS.iter().find(|(name, _)| *name == key).unwrap_or_else(|| panic!("unknown translation key {key}")).1;
     let items: String = entries
         .iter()
         .map(|(language, translation)| {
@@ -37,11 +33,7 @@ pub fn translation_button(ctx: &ViewContext, key: &str) -> Html {
             content_tag_text("span", attrs().class("for-screen-reader"), "Translate").0
         ),
     );
-    let menu = content_tag(
-        "div",
-        attrs().class("language-list-menu shadow").data("popup_target", "menu"),
-        &translations_for(key).0,
-    );
+    let menu = content_tag("div", attrs().class("language-list-menu shadow").data("popup_target", "menu"), &translations_for(key).0);
     let details = attrs()
         .class("position-relative")
         .data("controller", "popup")

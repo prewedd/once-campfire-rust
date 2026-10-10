@@ -415,6 +415,8 @@ cases:
     body: 'ATTRS_401'
   - name: malformed html document
     body: '<!DOCTYPE html><html><head><title>t</title></head><body><p>b</p></body></html>'
+  - name: malformed html tags in the body
+    body: '<p>a</p><html lang="en" dir="rtl"><p>b</p><html lang="fr" title="t" dir="ltr">c<body class="x">d'
   - name: malformed nested formatting
     body: '<b><b><b><b><b>deep</b></b></b></b></b><i><i>x'
   - name: malformed div in span
@@ -423,6 +425,28 @@ cases:
     body: '<figure><figcaption>cap</figcaption><img src="https://example.com/x.png"></figure>'
   - name: malformed attachment children
     body: '<action-text-attachment sgid="{{sgid:david}}"><script>x</script><p>kept?</p></action-text-attachment>'
+
+  # --- Gumbo's limits: 400 open elements, 400 attributes a tag (generate.rb's LONG_BODIES) -----
+  - name: limits void element at the depth limit
+    body: 'DEEP_400_VOID'
+  - name: limits too deep then closed
+    body: 'DEEP_401_CLOSED'
+  - name: limits deep blocks cut by the adoption agency
+    body: 'DEEP_CUTS'
+  - name: limits too deep before the adoption agency cuts
+    body: 'DEEP_BEFORE_CUT'
+  - name: limits formatting reopened at the depth limit
+    body: 'DEEP_REOPENED'
+  - name: limits formatting reopened in table text
+    body: 'DEEP_IN_TABLE_TEXT'
+  - name: limits attributes at the limit
+    body: 'ATTRS_400'
+  - name: limits attributes at the limit and a duplicate
+    body: 'ATTRS_400_DUPLICATE'
+  - name: limits attributes on an end tag
+    body: 'ATTRS_401_END_TAG'
+  - name: limits attributes on an unfinished tag
+    body: 'ATTRS_401_UNFINISHED'
 
   # --- Unicode edge cases --------------------------------------------------------------------
   - name: unicode rtl

@@ -1,11 +1,12 @@
 //! Pinned messages (plans/redesign.md), this app's own: pin from a message's "⋯" menu
 //! (lib/workspace/pins.js); a channel's pins open from the "📌" in its header.
 use campfire_db::PinnedMessage;
+use ruby_compat::integer_cast;
 use campfire_kit::{Ctx, Error, Result, StatusCode, format};
 use campfire_views::searches::Pinned;
 
 use crate::app::AppCtx;
-use crate::concerns::{self, Before, before_actions, cast_integer, require_current_user};
+use crate::concerns::{self, Before, before_actions, require_current_user};
 use crate::controllers::messages::present;
 use crate::controllers::presenters::page::{self, db_error};
 
@@ -17,8 +18,7 @@ pub async fn index(c: &mut Ctx) -> Result {
     let messages = c.app().db.read(move |conn| PinnedMessage::messages(conn, room_id)).await.map_err(db_error)?;
     let messages = present(c, move |presenter| presenter.messages(&messages)).await?;
     let response = page::framed_page!(c, StatusCode::OK, |ctx| Pinned { ctx, messages: &messages }).await?;
-    let fragments = campfire_views::messages::MessageItem::cached_fragments(&c.app().fragment_cache, &messages);
-    Ok(response.with_cached_fragments(fragments))
+    Ok(response)
 }
 
 /// `GET /rooms/:room_id/pins/ids`
@@ -62,7 +62,7 @@ async fn broadcast(c: &Ctx, room_id: i64) -> Result<()> {
 }
 
 fn message_id(c: &Ctx) -> Result<i64> {
-    c.param_str("message_id").and_then(cast_integer).ok_or(Error::NotFound)
+    c.param_str("message_id").and_then(integer_cast).ok_or(Error::NotFound)
 }
 
 #[cfg(test)]

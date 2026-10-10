@@ -2,13 +2,13 @@
 //! and Transferable are signed ids, which live in `rails_compat`).
 
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
-use rusqlite::{Connection, Row, params};
+use rusqlite::{Connection, params};
 
 use crate::database::Tx;
 use crate::error::{OptionalExt, Result};
 use crate::events::Event;
 use crate::models::{Ban, Membership, Message, Session, Webhook};
-use crate::sql::{self, CachedStatements, placeholders, query_all, query_one};
+use crate::sql::{self, CachedStatements, columns, placeholders, query_all, query_one};
 use crate::time::{SQLITE_NOW, Timestamp};
 
 /// `enum :role, %i[ member administrator bot ]`
@@ -86,18 +86,8 @@ macro_rules! integer_enum_sql {
     };
 }
 
-integer_enum_sql!(
-    Role,
-    Role::Member = 0,
-    Role::Administrator = 1,
-    Role::Bot = 2
-);
-integer_enum_sql!(
-    Status,
-    Status::Active = 0,
-    Status::Deactivated = 1,
-    Status::Banned = 2
-);
+integer_enum_sql!(Role, Role::Member = 0, Role::Administrator = 1, Role::Bot = 2);
+integer_enum_sql!(Status, Status::Active = 0, Status::Deactivated = 1, Status::Banned = 2);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct User {
@@ -139,43 +129,46 @@ pub struct UserChanges {
 
 const INSERT: &str = r#"INSERT INTO "users" ("bio", "bot_token", "created_at", "email_address", "name", "password_digest", "role", "status", "updated_at") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING "id""#;
 
-impl User {
-    /// A `SELECT "users".*` row.
-    pub fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
-        Ok(Self {
-            id: row.get("id")?,
-            name: row.get("name")?,
-            email_address: row.get("email_address")?,
-            password_digest: row.get("password_digest")?,
-            role: row.get("role")?,
-            status: row.get("status")?,
-            bio: row.get("bio")?,
-            bot_token: row.get("bot_token")?,
-            created_at: row.get("created_at")?,
-            updated_at: row.get("updated_at")?,
-        })
+columns! {
+    User, "users", user_columns {
+        id: "id",
+        name: "name",
+        email_address: "email_address",
+        password_digest: "password_digest",
+        role: "role",
+        status: "status",
+        bio: "bio",
+        bot_token: "bot_token",
+        created_at: "created_at",
+        updated_at: "updated_at",
     }
+}
+
+impl User {
+    /// `SELECT` and the columns [`User::find_by_sql`] reads, `FROM "users"`: queries built outside
+    /// this crate start with it, since users are read by position (see `sql::columns!`).
+    pub const SELECT: &str = concat!("SELECT ", user_columns!(), r#" FROM "users""#);
 
     // Finders and scopes
+
+    /// `User.find_by_sql`: the users a query starting with [`User::SELECT`] returns.
+    pub fn find_by_sql(conn: &Connection, sql: &str, params: impl rusqlite::Params) -> Result<Vec<Self>> {
+        query_all(conn, sql, params, Self::from_row)
+    }
 
     pub fn find(conn: &Connection, id: i64) -> Result<Self> {
         Self::find_by_id(conn, id)?.or_not_found("User")
     }
 
     pub fn find_by_id(conn: &Connection, id: i64) -> Result<Option<Self>> {
-        query_one(
-            conn,
-            r#"SELECT * FROM "users" WHERE "users"."id" = ? LIMIT 1"#,
-            [id],
-            Self::from_row,
-        )
+        query_one(conn, concat!("SELECT ", user_columns!(), r#" FROM "users" WHERE "users"."id" = ? LIMIT 1"#), [id], Self::from_row)
     }
 
     /// `User.active.find(id)`
     pub fn find_active(conn: &Connection, id: i64) -> Result<Self> {
         query_one(
             conn,
-            r#"SELECT * FROM "users" WHERE "users"."status" = 0 AND "users"."id" = ? LIMIT 1"#,
+            concat!("SELECT ", user_columns!(), r#" FROM "users" WHERE "users"."status" = 0 AND "users"."id" = ? LIMIT 1"#),
             [id],
             Self::from_row,
         )?
@@ -185,14 +178,14 @@ impl User {
     pub fn find_by_email_address(conn: &Connection, email_address: &str) -> Result<Option<Self>> {
         query_one(
             conn,
-            r#"SELECT * FROM "users" WHERE "users"."email_address" = ? LIMIT 1"#,
+            concat!("SELECT ", user_columns!(), r#" FROM "users" WHERE "users"."email_address" = ? LIMIT 1"#),
             [email_address],
             Self::from_row,
         )
     }
 
     pub fn all(conn: &Connection) -> Result<Vec<Self>> {
-        query_all(conn, r#"SELECT * FROM "users""#, [], Self::from_row)
+        query_all(conn, Self::SELECT, [], Self::from_row)
     }
 
     pub fn count(conn: &Connection) -> Result<i64> {
@@ -201,10 +194,7 @@ impl User {
 
     /// `User.where(id: ids)`
     pub fn where_ids(conn: &Connection, ids: &[i64]) -> Result<Vec<Self>> {
-        let sql = format!(
-            r#"SELECT * FROM "users" WHERE "users"."id" IN ({})"#,
-            placeholders(ids.len())
-        );
+        let sql = format!(r#"{} WHERE "users"."id" IN ({})"#, Self::SELECT, placeholders(ids.len()));
         query_all(conn, &sql, rusqlite::params_from_iter(ids), Self::from_row)
     }
 
@@ -212,7 +202,7 @@ impl User {
     pub fn active_ordered(conn: &Connection) -> Result<Vec<Self>> {
         query_all(
             conn,
-            r#"SELECT * FROM "users" WHERE "users"."status" = 0 ORDER BY LOWER(name)"#,
+            concat!("SELECT ", user_columns!(), r#" FROM "users" WHERE "users"."status" = 0 ORDER BY LOWER(name)"#),
             [],
             Self::from_row,
         )
@@ -220,19 +210,14 @@ impl User {
 
     /// `User.active`
     pub fn active(conn: &Connection) -> Result<Vec<Self>> {
-        query_all(
-            conn,
-            r#"SELECT * FROM "users" WHERE "users"."status" = 0"#,
-            [],
-            Self::from_row,
-        )
+        query_all(conn, concat!("SELECT ", user_columns!(), r#" FROM "users" WHERE "users"."status" = 0"#), [], Self::from_row)
     }
 
     /// `User.active.filtered_by(query).ordered`
     pub fn active_filtered_by_ordered(conn: &Connection, query: &str) -> Result<Vec<Self>> {
         query_all(
             conn,
-            r#"SELECT * FROM "users" WHERE "users"."status" = 0 AND (name like ?) ORDER BY LOWER(name)"#,
+            concat!("SELECT ", user_columns!(), r#" FROM "users" WHERE "users"."status" = 0 AND (name like ?) ORDER BY LOWER(name)"#),
             [format!("%{query}%")],
             Self::from_row,
         )
@@ -242,7 +227,7 @@ impl User {
     pub fn active_ordered_without_bots(conn: &Connection) -> Result<Vec<Self>> {
         query_all(
             conn,
-            r#"SELECT * FROM "users" WHERE "users"."status" = 0 AND "users"."role" != 2 ORDER BY LOWER(name)"#,
+            concat!("SELECT ", user_columns!(), r#" FROM "users" WHERE "users"."status" = 0 AND "users"."role" != 2 ORDER BY LOWER(name)"#),
             [],
             Self::from_row,
         )
@@ -252,7 +237,7 @@ impl User {
     pub fn active_bots_ordered(conn: &Connection) -> Result<Vec<Self>> {
         query_all(
             conn,
-            r#"SELECT * FROM "users" WHERE "users"."status" = 0 AND "users"."role" = 2 ORDER BY LOWER(name)"#,
+            concat!("SELECT ", user_columns!(), r#" FROM "users" WHERE "users"."status" = 0 AND "users"."role" = 2 ORDER BY LOWER(name)"#),
             [],
             Self::from_row,
         )
@@ -260,15 +245,24 @@ impl User {
 
     /// `User.active_bots.find(id)`
     pub fn find_active_bot(conn: &Connection, id: i64) -> Result<Self> {
-        query_one(conn, r#"SELECT * FROM "users" WHERE "users"."status" = 0 AND "users"."role" = 2 AND "users"."id" = ? LIMIT 1"#, [id], Self::from_row)?
-            .or_not_found("User")
+        query_one(
+            conn,
+            concat!(
+                "SELECT ",
+                user_columns!(),
+                r#" FROM "users" WHERE "users"."status" = 0 AND "users"."role" = 2 AND "users"."id" = ? LIMIT 1"#
+            ),
+            [id],
+            Self::from_row,
+        )?
+        .or_not_found("User")
     }
 
     /// `User.active.find_by(email_address:)`: the lookup half of `authenticate_by`.
     pub fn find_active_by_email_address(conn: &Connection, email_address: &str) -> Result<Option<Self>> {
         query_one(
             conn,
-            r#"SELECT * FROM "users" WHERE "users"."status" = 0 AND "users"."email_address" = ? LIMIT 1"#,
+            concat!("SELECT ", user_columns!(), r#" FROM "users" WHERE "users"."status" = 0 AND "users"."email_address" = ? LIMIT 1"#),
             [email_address],
             Self::from_row,
         )
@@ -286,7 +280,7 @@ impl User {
             Some(user) => user.authenticate(password).then_some(user),
             None => {
                 // authenticate_by hashes anyway so a missing account takes as long as a wrong password.
-                let _ = bcrypt::verify(password, DUMMY_DIGEST);
+                rails_compat::password::verify(password, DUMMY_DIGEST);
                 None
             }
         }
@@ -301,7 +295,11 @@ impl User {
         };
         query_one(
             conn,
-            r#"SELECT * FROM "users" WHERE "users"."status" = 0 AND "users"."role" = 2 AND "users"."id" = ? AND "users"."bot_token" = ? LIMIT 1"#,
+            concat!(
+                "SELECT ",
+                user_columns!(),
+                r#" FROM "users" WHERE "users"."status" = 0 AND "users"."role" = 2 AND "users"."id" = ? AND "users"."bot_token" = ? LIMIT 1"#
+            ),
             params![id, token],
             Self::from_row,
         )
@@ -336,12 +334,7 @@ impl User {
     pub fn create_bot(tx: &mut Tx<'_>, name: &str, webhook_url: Option<&str>) -> Result<Self> {
         let user = Self::create(
             tx,
-            NewUser {
-                name: name.to_string(),
-                bot_token: Some(generate_bot_token()),
-                role: Role::Bot,
-                ..Default::default()
-            },
+            NewUser { name: name.to_string(), bot_token: Some(generate_bot_token()), role: Role::Bot, ..Default::default() },
         )?;
         if let Some(url) = webhook_url {
             Webhook::create(tx, user.id, Some(url))?;
@@ -390,10 +383,7 @@ impl User {
         self.updated_at = now;
         sets.push(("updated_at", Box::new(now)));
         let assignments: Vec<String> = sets.iter().map(|(c, _)| format!(r#""{c}" = ?"#)).collect();
-        let sql = format!(
-            r#"UPDATE "users" SET {} WHERE "users"."id" = ?"#,
-            assignments.join(", ")
-        );
+        let sql = format!(r#"UPDATE "users" SET {} WHERE "users"."id" = ?"#, assignments.join(", "));
         let mut values: Vec<&dyn rusqlite::ToSql> = sets.iter().map(|(_, v)| v.as_ref()).collect();
         values.push(&self.id);
         tx.conn().execute_cached(&sql, values.as_slice())?;
@@ -401,12 +391,7 @@ impl User {
     }
 
     /// `update_bot!`: the webhook first, then the user, in one transaction.
-    pub fn update_bot(
-        &mut self,
-        tx: &mut Tx<'_>,
-        changes: UserChanges,
-        webhook_url: Option<&str>,
-    ) -> Result<()> {
+    pub fn update_bot(&mut self, tx: &mut Tx<'_>, changes: UserChanges, webhook_url: Option<&str>) -> Result<()> {
         let webhook = Webhook::find_by_user(tx.conn(), self.id)?;
         match (webhook_url.filter(|u| !u.trim().is_empty()), webhook) {
             (Some(url), Some(mut webhook)) => webhook.update_url(tx, url)?,
@@ -420,13 +405,7 @@ impl User {
     }
 
     pub fn reset_bot_key(&mut self, tx: &mut Tx<'_>) -> Result<()> {
-        self.update(
-            tx,
-            UserChanges {
-                bot_token: Some(Some(generate_bot_token())),
-                ..Default::default()
-            },
-        )
+        self.update(tx, UserChanges { bot_token: Some(Some(generate_bot_token())), ..Default::default() })
     }
 
     /// `deactivate`: disconnects sockets first (mid-transaction, as Rails does), then removes
@@ -439,45 +418,25 @@ impl User {
             r#"DELETE FROM "memberships" WHERE ("memberships"."id") IN (SELECT "memberships"."id" FROM "memberships" INNER JOIN "rooms" AS "room" ON "room"."id" = "memberships"."room_id" WHERE "memberships"."user_id" = ? AND "room"."type" != ?)"#,
             params![self.id, "Rooms::Direct"],
         )?;
-        conn.execute_cached(
-            r#"DELETE FROM "push_subscriptions" WHERE "push_subscriptions"."user_id" = ?"#,
-            [self.id],
-        )?;
-        conn.execute_cached(
-            r#"DELETE FROM "searches" WHERE "searches"."user_id" = ?"#,
-            [self.id],
-        )?;
-        conn.execute_cached(
-            r#"DELETE FROM "sessions" WHERE "sessions"."user_id" = ?"#,
-            [self.id],
-        )?;
+        conn.execute_cached(r#"DELETE FROM "push_subscriptions" WHERE "push_subscriptions"."user_id" = ?"#, [self.id])?;
+        conn.execute_cached(r#"DELETE FROM "searches" WHERE "searches"."user_id" = ?"#, [self.id])?;
+        conn.execute_cached(r#"DELETE FROM "sessions" WHERE "sessions"."user_id" = ?"#, [self.id])?;
         let email = self.deactivated_email_address();
-        self.update(
-            tx,
-            UserChanges {
-                status: Some(Status::Deactivated),
-                email_address: Some(email),
-                ..Default::default()
-            },
-        )
+        self.update(tx, UserChanges { status: Some(Status::Deactivated), email_address: Some(email), ..Default::default() })
     }
 
     fn deactivated_email_address(&self) -> Option<String> {
         let uuid = sql::uuid();
-        self.email_address
-            .as_ref()
-            .map(|e| e.replace('@', &format!("-deactivated-{uuid}@")))
+        self.email_address.as_ref().map(|e| e.replace('@', &format!("-deactivated-{uuid}@")))
     }
 
     /// `User::Bannable#ban`
     pub fn ban(&mut self, tx: &mut Tx<'_>) -> Result<()> {
         // create_bans_from_sessions: `sessions.pluck(:ip_address).compact_blank.uniq`
-        let ips: Vec<Option<String>> = query_all(
-            tx.conn(),
-            r#"SELECT "sessions"."ip_address" FROM "sessions" WHERE "sessions"."user_id" = ?"#,
-            [self.id],
-            |r| r.get(0),
-        )?;
+        let ips: Vec<Option<String>> =
+            query_all(tx.conn(), r#"SELECT "sessions"."ip_address" FROM "sessions" WHERE "sessions"."user_id" = ?"#, [self.id], |r| {
+                r.get(0)
+            })?;
         let mut seen = Vec::new();
         for ip in ips.into_iter().flatten().filter(|ip| !ip.trim().is_empty()) {
             if !seen.contains(&ip) {
@@ -487,32 +446,14 @@ impl User {
         }
         // apply_ban
         self.close_remote_connections(tx, false);
-        tx.conn().execute_cached(
-            r#"DELETE FROM "sessions" WHERE "sessions"."user_id" = ?"#,
-            [self.id],
-        )?;
+        tx.conn().execute_cached(r#"DELETE FROM "sessions" WHERE "sessions"."user_id" = ?"#, [self.id])?;
         tx.emit_after_commit(Event::RemoveBannedContent { user_id: self.id });
-        self.update(
-            tx,
-            UserChanges {
-                status: Some(Status::Banned),
-                ..Default::default()
-            },
-        )
+        self.update(tx, UserChanges { status: Some(Status::Banned), ..Default::default() })
     }
 
     pub fn unban(&mut self, tx: &mut Tx<'_>) -> Result<()> {
-        tx.conn().execute_cached(
-            r#"DELETE FROM "bans" WHERE "bans"."user_id" = ?"#,
-            [self.id],
-        )?;
-        self.update(
-            tx,
-            UserChanges {
-                status: Some(Status::Active),
-                ..Default::default()
-            },
-        )
+        tx.conn().execute_cached(r#"DELETE FROM "bans" WHERE "bans"."user_id" = ?"#, [self.id])?;
+        self.update(tx, UserChanges { status: Some(Status::Active), ..Default::default() })
     }
 
     /// `remove_banned_content`: destroys every message the user wrote. Returns them so the
@@ -533,19 +474,13 @@ impl User {
     /// After commit: a connection authenticating meanwhile then either finds the sessions gone or
     /// is already listening for this (see `campfire_cable`'s connection setup).
     fn close_remote_connections(&self, tx: &mut Tx<'_>, reconnect: bool) {
-        tx.emit_after_commit(Event::DisconnectUser {
-            user_id: self.id,
-            reconnect,
-        });
+        tx.emit_after_commit(Event::DisconnectUser { user_id: self.id, reconnect });
     }
 
     /// `deliver_webhook_later(message)`: only bots with a webhook.
     pub fn deliver_webhook_later(&self, tx: &mut Tx<'_>, message_id: i64) -> Result<()> {
         if Webhook::find_by_user(tx.conn(), self.id)?.is_some() {
-            tx.emit_after_commit(Event::DeliverWebhook {
-                bot_id: self.id,
-                message_id,
-            });
+            tx.emit_after_commit(Event::DeliverWebhook { bot_id: self.id, message_id });
         }
         Ok(())
     }
@@ -608,7 +543,7 @@ impl User {
     /// `has_secure_password`'s `authenticate`.
     pub fn authenticate(&self, password: &str) -> bool {
         match self.password_digest.as_deref() {
-            Some(digest) if !digest.is_empty() => bcrypt::verify(password, digest).unwrap_or(false),
+            Some(digest) if !digest.is_empty() => rails_compat::password::verify(password, digest),
             _ => false,
         }
     }
@@ -669,9 +604,7 @@ impl PasswordDigest {
 
     /// [`PasswordDigest::create`] on the blocking pool.
     pub async fn hash(password: String, cost: u32) -> Result<Self> {
-        tokio::task::spawn_blocking(move || Self::create(&password, cost))
-            .await
-            .map_err(|e| crate::Error::Other(e.to_string()))?
+        tokio::task::spawn_blocking(move || Self::create(&password, cost)).await.map_err(crate::Error::other)?
     }
 
     pub fn into_string(self) -> String {
@@ -681,26 +614,17 @@ impl PasswordDigest {
 
 /// `BCrypt::Password.create(password, cost:)`, in the `$2a$` format bcrypt-ruby writes.
 pub fn password_digest(password: &str, cost: u32) -> Result<String> {
-    bcrypt::hash_with_result(password, cost)
-        .map(|parts| parts.format_for_version(bcrypt::Version::TwoA))
-        .map_err(|e| crate::Error::Other(e.to_string()))
+    rails_compat::password::digest_with_cost(password, cost).map_err(crate::Error::other)
 }
 
 const DUMMY_DIGEST: &str = "$2a$12$FiKmSp4UhLvSB4Sd/ZUjQunyKP6.NjDRHdr5LnKUVk.BUn4Mq12WS";
 
 /// `after_create_commit :grant_membership_to_open_rooms`
 fn grant_membership_to_open_rooms(tx: &mut Tx<'_>, user_id: i64) -> Result<()> {
-    let room_ids: Vec<i64> = query_all(
-        tx.conn(),
-        r#"SELECT "rooms"."id" FROM "rooms" WHERE "rooms"."type" = ?"#,
-        ["Rooms::Open"],
-        |r| r.get(0),
-    )?;
+    let room_ids: Vec<i64> =
+        query_all(tx.conn(), r#"SELECT "rooms"."id" FROM "rooms" WHERE "rooms"."type" = ?"#, ["Rooms::Open"], |r| r.get(0))?;
     for room_ids in room_ids.chunks(crate::models::room::MEMBERSHIP_INSERT_BATCH) {
-        let rows: Vec<String> = room_ids
-            .iter()
-            .map(|_| format!("({SQLITE_NOW}, ?, {SQLITE_NOW}, ?)"))
-            .collect();
+        let rows: Vec<String> = room_ids.iter().map(|_| format!("({SQLITE_NOW}, ?, {SQLITE_NOW}, ?)")).collect();
         let sql = format!(
             r#"INSERT INTO "memberships" ("created_at","room_id","updated_at","user_id") VALUES {} ON CONFLICT  DO NOTHING RETURNING "id""#,
             rows.join(", ")

@@ -1,11 +1,11 @@
 //! `reference/app/models/boost.rb`
 
-use rusqlite::{Connection, Row, params};
+use rusqlite::{Connection, params};
 
 use crate::database::Tx;
 use crate::error::{OptionalExt, Result};
 use crate::models::Message;
-use crate::sql::{CachedStatements, query_all, query_one};
+use crate::sql::{CachedStatements, columns, query_all, query_one};
 use crate::time::Timestamp;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -18,32 +18,27 @@ pub struct Boost {
     pub updated_at: Timestamp,
 }
 
-impl Boost {
-    fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
-        Ok(Self {
-            id: row.get("id")?,
-            message_id: row.get("message_id")?,
-            booster_id: row.get("booster_id")?,
-            content: row.get("content")?,
-            created_at: row.get("created_at")?,
-            updated_at: row.get("updated_at")?,
-        })
+columns! {
+    Boost, "boosts", boost_columns {
+        id: "id",
+        message_id: "message_id",
+        booster_id: "booster_id",
+        content: "content",
+        created_at: "created_at",
+        updated_at: "updated_at",
     }
+}
 
+impl Boost {
     pub fn find(conn: &Connection, id: i64) -> Result<Self> {
-        query_one(
-            conn,
-            r#"SELECT * FROM "boosts" WHERE "boosts"."id" = ? LIMIT 1"#,
-            [id],
-            Self::from_row,
-        )?
-        .or_not_found("Boost")
+        query_one(conn, concat!("SELECT ", boost_columns!(), r#" FROM "boosts" WHERE "boosts"."id" = ? LIMIT 1"#), [id], Self::from_row)?
+            .or_not_found("Boost")
     }
 
     pub fn for_message(conn: &Connection, message_id: i64) -> Result<Vec<Self>> {
         query_all(
             conn,
-            r#"SELECT "boosts".* FROM "boosts" WHERE "boosts"."message_id" = ?"#,
+            concat!("SELECT ", boost_columns!(), r#" FROM "boosts" WHERE "boosts"."message_id" = ?"#),
             [message_id],
             Self::from_row,
         )
@@ -53,22 +48,21 @@ impl Boost {
     pub fn for_message_ordered(conn: &Connection, message_id: i64) -> Result<Vec<Self>> {
         query_all(
             conn,
-            r#"SELECT "boosts".* FROM "boosts" WHERE "boosts"."message_id" = ? ORDER BY "boosts"."created_at" ASC"#,
+            concat!("SELECT ", boost_columns!(), r#" FROM "boosts" WHERE "boosts"."message_id" = ? ORDER BY "boosts"."created_at" ASC"#),
             [message_id],
             Self::from_row,
         )
     }
 
     /// `message.boosts.find_by!(id:, booster:)`
-    pub fn find_by_message_and_booster(
-        conn: &Connection,
-        message_id: i64,
-        id: i64,
-        booster_id: i64,
-    ) -> Result<Self> {
+    pub fn find_by_message_and_booster(conn: &Connection, message_id: i64, id: i64, booster_id: i64) -> Result<Self> {
         query_one(
             conn,
-            r#"SELECT "boosts".* FROM "boosts" WHERE "boosts"."message_id" = ? AND "boosts"."id" = ? AND "boosts"."booster_id" = ? LIMIT 1"#,
+            concat!(
+                "SELECT ",
+                boost_columns!(),
+                r#" FROM "boosts" WHERE "boosts"."message_id" = ? AND "boosts"."id" = ? AND "boosts"."booster_id" = ? LIMIT 1"#
+            ),
             [message_id, id, booster_id],
             Self::from_row,
         )?
@@ -76,12 +70,7 @@ impl Boost {
     }
 
     /// `message.boosts.create!(content:, booster:)`: touches the message (and so the room).
-    pub fn create(
-        tx: &mut Tx<'_>,
-        message_id: i64,
-        booster_id: i64,
-        content: &str,
-    ) -> Result<Self> {
+    pub fn create(tx: &mut Tx<'_>, message_id: i64, booster_id: i64, content: &str) -> Result<Self> {
         let now = tx.now();
         let id: i64 = tx.conn().query_row_cached(
             r#"INSERT INTO "boosts" ("booster_id", "content", "created_at", "message_id", "updated_at") VALUES (?, ?, ?, ?, ?) RETURNING "id""#,
@@ -89,14 +78,7 @@ impl Boost {
             |r| r.get(0),
         )?;
         Message::find(tx.conn(), message_id)?.touch(tx)?;
-        Ok(Self {
-            id,
-            message_id,
-            booster_id,
-            content: content.into(),
-            created_at: now,
-            updated_at: now,
-        })
+        Ok(Self { id, message_id, booster_id, content: content.into(), created_at: now, updated_at: now })
     }
 
     /// `destroy!`: touches the message (and so the room).
@@ -107,8 +89,7 @@ impl Boost {
 
     /// The delete alone, for a message being destroyed (its touch is moot).
     pub(crate) fn delete_row(&self, tx: &Tx<'_>) -> Result<()> {
-        tx.conn()
-            .execute_cached(r#"DELETE FROM "boosts" WHERE "boosts"."id" = ?"#, [self.id])?;
+        tx.conn().execute_cached(r#"DELETE FROM "boosts" WHERE "boosts"."id" = ?"#, [self.id])?;
         Ok(())
     }
 }

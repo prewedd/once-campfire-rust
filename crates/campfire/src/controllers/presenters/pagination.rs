@@ -3,8 +3,6 @@
 
 use campfire_kit::Ctx;
 
-use crate::concerns::ruby_to_i;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Page {
     /// `page.number`
@@ -82,7 +80,7 @@ impl Page {
 /// `param.to_i > 0 ? param.to_i : 1`
 fn page_number_from(param: Option<&str>) -> i64 {
     // Capped, so the page arithmetic can't overflow on a huge `?page=`.
-    param.map(ruby_to_i).unwrap_or(0).clamp(1, 1_000_000_000)
+    param.map(ruby_compat::to_i).unwrap_or(0).clamp(1, 1_000_000_000)
 }
 
 /// Addressable's `uri.query_values = (uri.query_values || {}).merge("page" => page)`: the query
@@ -100,7 +98,7 @@ fn with_page(url: &str, page: &str) -> String {
     let mut values: Vec<(String, Option<String>)> = Vec::new();
     for pair in query.unwrap_or("").split('&').filter(|pair| !pair.is_empty()) {
         let (key, value) = match pair.split_once('=') {
-            Some((key, value)) => (unencode(key), Some(unencode(value).replace('+', " "))),
+            Some((key, value)) => (unencode(key), Some(unencode(&value.replace('+', " ")))),
             None => (unencode(pair), None),
         };
         match values.iter_mut().find(|(existing, _)| *existing == key) {
@@ -128,23 +126,16 @@ fn with_page(url: &str, page: &str) -> String {
     result
 }
 
-/// `Addressable::URI.unencode_component` (`query_values` then turns "+" in values into spaces,
-/// after unencoding).
+/// `Addressable::URI.unencode_component`. `query_values` turns "+" in values (not keys) into
+/// spaces first, so an encoded `%2B` stays a "+".
 fn unencode(value: &str) -> String {
     percent_encoding::percent_decode_str(value).decode_utf8_lossy().into_owned()
 }
 
-/// `Addressable::URI.encode_component(value, CharacterClasses::UNRESERVED)`.
+/// `Addressable::URI.encode_component(value, CharacterClassesRegexps::UNRESERVED)`, which keeps
+/// the same characters as `ERB::Util.url_encode` (ruby_compat checks both against the reference).
 fn encode_component(value: &str) -> String {
-    let mut encoded = String::new();
-    for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
-            encoded.push(byte as char);
-        } else {
-            encoded.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    encoded
+    ruby_compat::url_encode(value)
 }
 
 #[cfg(test)]
@@ -183,7 +174,7 @@ mod tests {
         assert_eq!(Page::new(Some("abc"), 10, &[5]).number, 1);
         assert_eq!(Page::new(Some("-2"), 10, &[5]).number, 1);
         assert_eq!(Page::new(Some(" 2x"), 10, &[5]).number, 2);
-        assert_eq!(ruby_to_i("1_0"), 10);
+        assert_eq!(Page::new(Some("1_0"), 100, &[5]).number, 10);
     }
 
     #[test]
@@ -193,5 +184,19 @@ mod tests {
             with_page("http://x.test/autocompletable/users.json?query=a+b&page=1&room_id=3", "2"),
             "http://x.test/autocompletable/users.json?page=2&query=a%20b&room_id=3"
         );
+    }
+
+    #[test]
+    fn plus_is_a_space_only_before_unencoding() {
+        // Addressable's `query_values=` after `query_values` in the reference.
+        for (query, next) in [
+            ("query=a%2Bb", "page=2&query=a%2Bb"),
+            ("q=a%2B+b&page=1", "page=2&q=a%2B%20b"),
+            ("a+b=c+d", "a%2Bb=c%20d&page=2"),
+            ("k=%20+", "k=%20%20&page=2"),
+            ("k", "k&page=2"),
+        ] {
+            assert_eq!(with_page(&format!("http://x.test/p?{query}"), "2"), format!("http://x.test/p?{next}"), "{query}");
+        }
     }
 }

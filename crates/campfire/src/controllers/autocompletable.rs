@@ -6,13 +6,14 @@ pub mod users {
     use campfire_db::{Connection, Room, User};
     use campfire_kit::{Ctx, Error, Result, StatusCode, format};
     use campfire_views::autocompletable;
+    use ruby_compat::integer_cast;
     use rusqlite::types::Value;
 
     use crate::app::AppCtx;
-    use crate::concerns::{self, Before, cast_integer};
+    use crate::concerns::{self, Before};
+    use crate::controllers::presenters;
     use crate::controllers::presenters::pagination::Page;
     use crate::controllers::presenters::view_context::Layout;
-    use crate::controllers::presenters;
 
     /// `set_page_and_extract_portion_from find_autocompletable_users.with_attached_avatar.ordered, per_page: 20`
     pub async fn index(c: &mut Ctx) -> Result {
@@ -22,8 +23,8 @@ pub mod users {
         // `params[:room_id].present? ? Current.user.rooms.find(params[:room_id]).users : User.all`
         let room_id = match c.params.get("room_id").filter(|param| param.is_present()) {
             Some(param) => {
-                let id = param.as_str().and_then(cast_integer).ok_or(Error::NotFound)?;
-                let room = c.app().db.read(move |conn| Room::find_for_user(conn, user_id, id)).await.map_err(Error::internal)?;
+                let id = param.as_str().and_then(integer_cast).ok_or(Error::NotFound)?;
+                let room = c.app().read(move |conn| Room::find_for_user(conn, user_id, id)).await?;
                 Some(room.ok_or(Error::NotFound)?.id)
             }
             None => None,
@@ -35,7 +36,7 @@ pub mod users {
             .find(|param| param.is_present())
             .and_then(|param| param.to_s());
 
-        let users = c.app().db.read(move |conn| autocompletable_users(conn, room_id, query.as_deref())).await.map_err(Error::internal)?;
+        let users = c.app().read_offloaded(move |conn| autocompletable_users(conn, room_id, query.as_deref())).await?;
         let page = Page::new(c.param_str("page"), users.len() as i64, &[20]);
         let secrets = c.app().secrets.clone();
         let users: Vec<_> = page.records(&users).iter().map(|user| presenters::accounts::mention_user(&secrets, user)).collect();
@@ -55,7 +56,7 @@ pub mod users {
 
     /// `users_scope.active[.filtered_by(query)].ordered`
     fn autocompletable_users(conn: &Connection, room_id: Option<i64>, query: Option<&str>) -> campfire_db::Result<Vec<User>> {
-        let mut sql = String::from(r#"SELECT "users".* FROM "users""#);
+        let mut sql = String::from(User::SELECT);
         let mut values = Vec::new();
         if let Some(room_id) = room_id {
             sql.push_str(r#" INNER JOIN "memberships" ON "users"."id" = "memberships"."user_id" WHERE "memberships"."room_id" = ? AND"#);
@@ -69,6 +70,6 @@ pub mod users {
             values.push(Value::Text(format!("%{query}%")));
         }
         sql.push_str(" ORDER BY LOWER(name)");
-        presenters::accounts::query_users(conn, &sql, rusqlite::params_from_iter(values))
+        User::find_by_sql(conn, &sql, rusqlite::params_from_iter(values))
     }
 }

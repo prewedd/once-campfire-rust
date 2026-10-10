@@ -2,8 +2,8 @@
 
 use super::*;
 use crate::{
-    Ban, Membership, Message, NewUser, PasswordDigest, PushSubscription, Role, Room, RoomType, Search, Session,
-    Status, User, UserChanges, Webhook,
+    Ban, Membership, Message, NewUser, PasswordDigest, PushSubscription, Role, Room, RoomType, Search, Session, Status, User, UserChanges,
+    Webhook,
 };
 
 fn user(t: &TestDb, label: &str) -> User {
@@ -32,10 +32,7 @@ fn user_does_not_prevent_very_long_passwords() {
     t.write(move |tx| {
         david.update(
             tx,
-            UserChanges {
-                password_digest: Some(PasswordDigest::create(&"secret".repeat(50), 4).unwrap()),
-                ..Default::default()
-            },
+            UserChanges { password_digest: Some(PasswordDigest::create(&"secret".repeat(50), 4).unwrap()), ..Default::default() },
         )
     });
     assert!(user(&t, "david").authenticate(&"secret".repeat(50)));
@@ -49,11 +46,7 @@ fn creating_users_grants_membership_to_the_open_rooms() {
     let user = create_new_user(&t);
     assert_eq!(t.read(Membership::count), before + open_rooms);
     // grant_membership_to_open_rooms leaves involvement to the column default.
-    assert!(
-        t.read(|c| user.memberships(c))
-            .iter()
-            .all(|m| m.involved_in(crate::Involvement::Mentions))
-    );
+    assert!(t.read(|c| user.memberships(c)).iter().all(|m| m.involved_in(crate::Involvement::Mentions)));
 }
 
 #[test]
@@ -62,17 +55,11 @@ fn creating_subsequent_users_makes_them_members() {
     let user = create_new_user(&t);
     assert!(user.is_member());
     assert!(user.is_active());
-    assert!(
-        user.password_digest
-            .as_deref()
-            .unwrap()
-            .starts_with("$2a$04$")
-    );
+    assert!(user.password_digest.as_deref().unwrap().starts_with("$2a$04$"));
 }
 
 #[test]
-fn deactivating_a_user_deletes_push_subscriptions_searches_memberships_for_non_direct_rooms_and_changes_their_email_address()
- {
+fn deactivating_a_user_deletes_push_subscriptions_searches_memberships_for_non_direct_rooms_and_changes_their_email_address() {
     let t = TestDb::new();
     let david = id("david");
     let memberships = t.read(Membership::count);
@@ -86,30 +73,15 @@ fn deactivating_a_user_deletes_push_subscriptions_searches_memberships_for_non_d
     t.write(move |tx| user.deactivate(tx));
 
     assert_eq!(t.read(Membership::count), memberships - without_directs);
-    assert_eq!(
-        t.read(PushSubscription::count),
-        subscriptions - davids_subscriptions
-    );
+    assert_eq!(t.read(PushSubscription::count), subscriptions - davids_subscriptions);
     assert_eq!(t.read(Search::count), searches - davids_searches);
 
     let reloaded = t.read(|c| User::find(c, david));
     let email = reloaded.email_address.unwrap();
-    assert!(
-        email.starts_with("david-deactivated-") && email.ends_with("@37signals.com"),
-        "{email}"
-    );
-    assert_eq!(
-        email.len(),
-        "david-deactivated-2e7de450-cf04-4fa8-9b02-ff5ab2d733e7@37signals.com".len()
-    );
+    assert!(email.starts_with("david-deactivated-") && email.ends_with("@37signals.com"), "{email}");
+    assert_eq!(email.len(), "david-deactivated-2e7de450-cf04-4fa8-9b02-ff5ab2d733e7@37signals.com".len());
     assert_eq!(reloaded.status, Status::Deactivated);
-    assert_eq!(
-        t.events(),
-        vec![Event::DisconnectUser {
-            user_id: david,
-            reconnect: false
-        }]
-    );
+    assert_eq!(t.events(), vec![Event::DisconnectUser { user_id: david, reconnect: false }]);
 }
 
 #[test]
@@ -129,11 +101,7 @@ fn initials_and_title() {
     assert_eq!(jz.title(), "JZ – Designer");
     assert_eq!(user(&t, "bender").initials(), "BB");
     jz.name = "Émile Zola".into();
-    assert_eq!(
-        jz.initials(),
-        "Z",
-        "Ruby's \\b sees É as a word character, \\w doesn't"
-    );
+    assert_eq!(jz.initials(), "Z", "Ruby's \\b sees É as a word character, \\w doesn't");
     jz.bio = Some("  ".into());
     assert_eq!(jz.title(), "Émile Zola");
 }
@@ -158,16 +126,7 @@ fn create_bot_with_webhook() {
     assert_eq!(t.read(|c| bot.webhook_url(c)).as_deref(), Some("http://x"));
 
     let mut b = bot.clone();
-    t.write(move |tx| {
-        b.update_bot(
-            tx,
-            UserChanges {
-                name: Some("Bot2".into()),
-                ..Default::default()
-            },
-            Some(""),
-        )
-    });
+    t.write(move |tx| b.update_bot(tx, UserChanges { name: Some("Bot2".into()), ..Default::default() }, Some("")));
     assert!(t.read(|c| Webhook::find_by_user(c, bot.id)).is_none());
     assert_eq!(t.read(|c| User::find(c, bot.id)).name, "Bot2");
 }
@@ -191,17 +150,9 @@ fn reset_bot_key() {
 fn authenticate_bot() {
     let t = TestDb::new();
     let bot = t.write(|tx| User::create_bot(tx, "Bender", None));
-    assert_eq!(
-        t.read(|c| User::authenticate_bot(c, &bot.bot_key()))
-            .unwrap()
-            .id,
-        bot.id
-    );
+    assert_eq!(t.read(|c| User::authenticate_bot(c, &bot.bot_key())).unwrap().id, bot.id);
     assert!(t.read(|c| User::authenticate_bot(c, "nonsense")).is_none());
-    assert!(
-        t.read(|c| User::authenticate_bot(c, &format!("{}-", bot.id)))
-            .is_none()
-    );
+    assert!(t.read(|c| User::authenticate_bot(c, &format!("{}-", bot.id))).is_none());
 }
 
 #[test]
@@ -209,13 +160,7 @@ fn deliver_message_by_webhook() {
     let t = TestDb::new();
     let bender = user(&t, "bender");
     t.write(move |tx| bender.deliver_webhook_later(tx, id("first")));
-    assert_eq!(
-        t.events(),
-        vec![Event::DeliverWebhook {
-            bot_id: id("bender"),
-            message_id: id("first")
-        }]
-    );
+    assert_eq!(t.events(), vec![Event::DeliverWebhook { bot_id: id("bender"), message_id: id("first") }]);
 
     // No webhook, no job.
     let jz = user(&t, "jz");
@@ -228,29 +173,40 @@ fn webhook_payload() {
     let t = TestDb::new();
     let message = t.read(|c| Message::find(c, id("first")));
     let webhook = t.read(|c| Ok(Webhook::find_by_user(c, id("bender"))?.unwrap()));
-    let payload = t.read(|c| {
-        webhook.payload(
-            c,
-            &BasicRichText,
-            &message,
-            "/rooms/1/bot/key/messages",
-            "/rooms/1/@2",
+    let payload = t.read(|c| webhook.payload(c, &BasicRichText, &message, "/rooms/1/bot/key/messages", "/rooms/1/@2"));
+    let (jason, designers) = (id("jason"), id("designers"));
+    assert_eq!(
+        payload,
+        format!(
+            r#"{{"user":{{"id":{jason},"name":"Jason"}},"room":{{"id":{designers},"name":"Designers","path":"/rooms/1/bot/key/messages"}},"message":{{"id":{},"body":{{"html":"First post!","plain":"First post!"}},"path":"/rooms/1/@2"}}}}"#,
+            message.id
         )
+    );
+}
+
+/// `ActiveSupport::JSON` escapes `<`, `>` and `&`, and an unnamed room's name is `null`.
+#[test]
+fn webhook_payload_escapes_html_entities() {
+    let t = TestDb::new();
+    let (first, designers) = (id("first"), id("designers"));
+    t.write(move |tx| {
+        tx.conn().execute("UPDATE rooms SET name = NULL WHERE id = ?", [designers])?;
+        tx.conn().execute(
+            "UPDATE action_text_rich_texts SET body = '<p>Tom & Jerry</p>' WHERE record_type = 'Message' AND record_id = ?",
+            [first],
+        )?;
+        Ok(())
     });
-    let json: serde_json::Value = serde_json::from_str(&payload).unwrap();
+    let message = t.read(|c| Message::find(c, first));
+    let webhook = t.read(|c| Ok(Webhook::find_by_user(c, id("bender"))?.unwrap()));
+    let payload = t.read(|c| webhook.payload(c, &BasicRichText, &message, "/rooms/1/bot/key/messages", "/rooms/1/@2"));
     assert_eq!(
-        json["user"],
-        serde_json::json!({ "id": id("jason"), "name": "Jason" })
+        payload,
+        format!(
+            r#"{{"user":{{"id":{},"name":"Jason"}},"room":{{"id":{designers},"name":null,"path":"/rooms/1/bot/key/messages"}},"message":{{"id":{first},"body":{{"html":"\u003cp\u003eTom \u0026 Jerry\u003c/p\u003e","plain":"Tom \u0026 Jerry"}},"path":"/rooms/1/@2"}}}}"#,
+            id("jason")
+        )
     );
-    assert_eq!(
-        json["room"],
-        serde_json::json!({ "id": id("designers"), "name": "Designers", "path": "/rooms/1/bot/key/messages" })
-    );
-    assert_eq!(
-        json["message"]["body"],
-        serde_json::json!({ "html": "First post!", "plain": "First post!" })
-    );
-    assert!(payload.starts_with(r#"{"user":{"id":"#));
 }
 
 // User::Role
@@ -287,26 +243,11 @@ fn ban_creates_bans_from_session_ips_and_removes_sessions() {
     let mut user = user(&t, "kevin");
     t.write(move |tx| user.ban(tx));
 
-    assert_eq!(
-        t.read(|c| Ban::for_user(c, kevin))
-            .iter()
-            .map(|b| b.ip_address.clone())
-            .collect::<Vec<_>>(),
-        ["8.8.8.8"]
-    );
+    assert_eq!(t.read(|c| Ban::for_user(c, kevin)).iter().map(|b| b.ip_address.clone()).collect::<Vec<_>>(), ["8.8.8.8"]);
     assert!(t.read(|c| Ban::banned(c, "8.8.8.8")));
     assert_eq!(t.read(|c| Session::count_for_user(c, kevin)), 0);
     assert_eq!(t.read(|c| User::find(c, kevin)).status, Status::Banned);
-    assert_eq!(
-        t.events(),
-        vec![
-            Event::DisconnectUser {
-                user_id: kevin,
-                reconnect: false
-            },
-            Event::RemoveBannedContent { user_id: kevin }
-        ]
-    );
+    assert_eq!(t.events(), vec![Event::DisconnectUser { user_id: kevin, reconnect: false }, Event::RemoveBannedContent { user_id: kevin }]);
 
     let mut user = t.read(|c| User::find(c, kevin));
     t.write(move |tx| user.unban(tx));
@@ -321,11 +262,7 @@ fn ban_rejects_private_session_ips() {
     t.write(move |tx| Session::start(tx, kevin, None, Some("192.168.1.1")).map(|_| ()));
     let mut user = user(&t, "kevin");
     assert!(t.try_write(move |tx| user.ban(tx)).is_err());
-    assert_eq!(
-        t.read(|c| User::find(c, kevin)).status,
-        Status::Active,
-        "rolled back"
-    );
+    assert_eq!(t.read(|c| User::find(c, kevin)).status, Status::Active, "rolled back");
 }
 
 #[test]

@@ -12,6 +12,42 @@ fn show(name: &str) {
     g.assert_dom(&g.render(|ctx| rooms::Show { ctx, show: &show }.render().unwrap()));
 }
 
+/// A room page as it's served, recorded, is what a plain render gives, and each of its messages is
+/// a fragment the kit gets as it is: rendered into the fragment cache first, then read from it.
+#[test]
+fn show_recorded_keeps_every_message_as_a_fragment() {
+    use campfire_views::fragment_cache::{self, FragmentCache};
+    use campfire_views::layouts;
+
+    let g = golden("rooms_show_member");
+    let show: ShowView = g.input();
+    assert!(!show.messages.is_empty());
+    let cache = FragmentCache::new(fragment_cache::DEFAULT_MAX_BYTES);
+    for round in ["cold", "warm"] {
+        g.render(|ctx| {
+            fragment_cache::with(&cache, || {
+                let page = || rooms::Show { ctx, show: &show };
+                let recorded = campfire_views::render_sized!(page()).unwrap();
+                let plain = page().render().unwrap();
+                assert_eq!(recorded.to_string(), plain, "{round}");
+                assert_eq!(recorded.fragments().len(), show.messages.len(), "{round}");
+
+                let framed = layouts::frame(ctx, page().as_head(), page().as_content()).unwrap();
+                let plain_frame = layouts::FrameLayout {
+                    ctx,
+                    head: askama::filters::Safe(page().as_head().render().unwrap()),
+                    content: askama::filters::Safe(page().as_content().render().unwrap().into()),
+                }
+                .render()
+                .unwrap();
+                assert_eq!(framed.to_string(), plain_frame, "{round}");
+                assert_eq!(framed.fragments().len(), show.messages.len(), "{round}");
+                plain
+            })
+        });
+    }
+}
+
 #[test]
 fn show_closed_room() {
     show("rooms_show_closed");

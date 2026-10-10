@@ -5,22 +5,18 @@
 //! `vectors/campfire_sessions.json` holds session cookies *issued by Rails* for the seed's
 //! sessions (`reference-tools/campfire/session_cookies.rb`).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
-use campfire_kit::{Ctx, Kit, KitConfig, RailsCrypto, Result};
+use campfire_kit::{Ctx, Kit, KitConfig, Result};
 use tower::ServiceExt;
 
 use super::*;
 use crate::concerns::{Before, before_actions, current_user};
+use crate::test_support::seed_dir;
 
 const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
-
-fn seed_dir() -> Option<PathBuf> {
-    let dir = Path::new(ROOT).join("parity/.seed/default");
-    dir.join("db/production.sqlite3").exists().then_some(dir)
-}
 
 fn parity_env(name: &str) -> Option<String> {
     let env = std::fs::read_to_string(Path::new(ROOT).join("parity/.env.reference")).ok()?;
@@ -61,10 +57,7 @@ struct Test {
 }
 
 async fn boot_seeded() -> Option<Test> {
-    let Some(seed) = seed_dir() else {
-        eprintln!("skipping: parity/.seed/default isn't built (parity/bin/seed build default)");
-        return None;
-    };
+    let seed = seed_dir("default")?;
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("db")).unwrap();
     std::fs::copy(seed.join("db/production.sqlite3"), dir.path().join("db/production.sqlite3")).unwrap();
@@ -152,6 +145,94 @@ async fn public_files_are_served_before_routing() {
     assert_eq!(robots.status, StatusCode::OK);
 }
 
+/// Every file `ActionDispatch::Static` serves: `public/` and the digested assets.
+fn static_corpus() -> Vec<String> {
+    let public = ["/robots.txt", "/404.html", "/422.html", "/500.html", "/502.html", "/assets/.manifest.json"];
+    let assets = campfire_assets::manifest().iter().map(|(_, digested)| format!("{}/{digested}", campfire_assets::PREFIX));
+    public.into_iter().map(str::to_string).chain(assets).collect()
+}
+
+fn static_request(method: &str, path: &str, range: Option<&str>, if_modified_since: Option<&str>) -> Request<Body> {
+    let mut request = Request::builder().method(method).uri(path).header(header::HOST, "campfire.test");
+    for (name, value) in [(header::RANGE, range), (header::IF_MODIFIED_SINCE, if_modified_since)] {
+        if let Some(value) = value {
+            request = request.header(name, value);
+        }
+    }
+    request.body(Body::empty()).unwrap()
+}
+
+#[tokio::test]
+async fn static_responses_send_the_embedded_bytes_without_copying_them() {
+    let built_at = campfire_assets::serve(&campfire_assets::StaticRequest { method: "GET", path: "/robots.txt", ..Default::default() })
+        .unwrap()
+        .header("last-modified")
+        .unwrap()
+        .to_string();
+    let variants = [
+        ("GET", None, None),
+        ("HEAD", None, None),
+        ("GET", Some("bytes=1-10"), None),
+        ("GET", Some("bytes=0-1, 4-5"), None),
+        ("GET", Some("bytes=999999999-"), None),
+        ("GET", None, Some(built_at.as_str())),
+    ];
+    for path in static_corpus() {
+        for (method, range, if_modified_since) in variants {
+            let request = static_request(method, &path, range, if_modified_since);
+            let served = campfire_assets::serve(&campfire_assets::StaticRequest {
+                method,
+                path: &path,
+                range,
+                if_modified_since,
+                ..Default::default()
+            })
+            .unwrap();
+            let response = static_response(&request).unwrap();
+            let case = format!("{method} {path} {range:?} {if_modified_since:?}");
+
+            assert_eq!(response.status().as_u16(), served.status, "{case}");
+            let headers: Vec<(String, &str)> = response.headers().iter().map(|(n, v)| (n.to_string(), v.to_str().unwrap())).collect();
+            let expected: Vec<(String, &str)> = served.headers.iter().map(|(n, v)| (n.to_ascii_lowercase(), v.as_str())).collect();
+            assert_eq!(headers, expected, "{case}");
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            assert_eq!(body[..], served.body[..], "{case}");
+            if matches!(served.body, campfire_assets::Body::Borrowed(_)) && !body.is_empty() {
+                assert_eq!(body.as_ptr(), served.body.as_ptr(), "{case}: sent from the embedded bytes");
+            }
+        }
+    }
+}
+
+/// Times `static_response` (ActionDispatch::Static plus building and dropping the response) for
+/// an identity GET of a small public file, the first stylesheet, the largest script and the
+/// largest file; per call, median and range of 7 runs. In release:
+/// `cargo test --release -p campfire --bin campfire static_response_timing -- --ignored --nocapture`
+#[test]
+#[ignore = "timing harness (bench/results/static-body-20260930)"]
+fn static_response_timing() {
+    const ITERATIONS: u32 = 20_000;
+    let size = |path: &str| {
+        campfire_assets::serve(&campfire_assets::StaticRequest { method: "GET", path, ..Default::default() }).map_or(0, |r| r.body.len())
+    };
+    let largest = |suffix: &str| static_corpus().into_iter().filter(|path| path.ends_with(suffix)).max_by_key(|path| size(path)).unwrap();
+    let stylesheet = campfire_assets::stylesheet_path(campfire_assets::all_stylesheet_paths()[0]);
+    for path in ["/robots.txt".to_string(), stylesheet, largest(".js"), largest("")] {
+        let request = static_request("GET", &path, None, None);
+        let mut runs: Vec<std::time::Duration> = (0..7)
+            .map(|_| {
+                let started = std::time::Instant::now();
+                for _ in 0..ITERATIONS {
+                    drop(std::hint::black_box(static_response(std::hint::black_box(&request))));
+                }
+                started.elapsed() / ITERATIONS
+            })
+            .collect();
+        runs.sort();
+        println!("{path} ({} bytes): median {:?}, range {:?}..{:?}", size(&path), runs[3], runs[0], runs[6]);
+    }
+}
+
 #[tokio::test]
 async fn unknown_and_unported_routes() {
     let Some(test) = boot_seeded().await else { return };
@@ -163,6 +244,18 @@ async fn unknown_and_unported_routes() {
     assert_eq!(settings.status, StatusCode::INTERNAL_SERVER_ERROR);
 }
 
+#[test]
+fn database_errors_answer_as_active_record_rescues_them() {
+    assert_eq!(db_error(campfire_db::Error::RecordNotFound("Room")).status(), StatusCode::NOT_FOUND);
+    assert_eq!(db_error(campfire_db::Error::WriterGone).status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+    let mut errors = campfire_db::Errors::default();
+    errors.add("endpoint", "must use HTTPS");
+    let invalid = db_error(errors.into_result().unwrap_err());
+    assert_eq!(invalid.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(format!("{invalid:#}"), "422 Unprocessable Entity: Validation failed: Endpoint must use HTTPS");
+}
+
 /// An action behind `ApplicationController`'s chain that answers with `Current.user`.
 async fn whoami(c: &mut Ctx) -> Result {
     before_actions(c, Before::default()).await?;
@@ -170,8 +263,26 @@ async fn whoami(c: &mut Ctx) -> Result {
     Ok(c.html(name))
 }
 
+/// An action behind the chain that answers with whether `allow_browser` kept a platform, and the
+/// browser and operating system the layout sees.
+async fn platform(c: &mut Ctx) -> Result {
+    before_actions(c, Before::default().allow_unauthenticated_access()).await?;
+    platform_reply(c)
+}
+
+/// The same answer from an action that skips the chain, so `allow_browser` never runs.
+async fn platform_without_the_chain(c: &mut Ctx) -> Result {
+    platform_reply(c)
+}
+
+fn platform_reply(c: &mut Ctx) -> Result {
+    let kept = c.current::<crate::concerns::platform::ApplicationPlatform>().is_some();
+    let view = crate::concerns::platform(c).to_view();
+    Ok(c.html(format!("{kept} {:?} {:?}", view.browser, view.operating_system)))
+}
+
 fn whoami_router(app: &App) -> axum::Router {
-    let kit = Kit::new(KitConfig::production(true), Arc::new(RailsCrypto::new(app.secrets.clone())), app.clock.clone(), app.clone());
+    let kit = Kit::new(KitConfig::production(true), app.secrets.clone(), app.clock.clone(), app.clone());
     campfire_kit::app(axum::Router::new().route("/whoami", campfire_kit::get(whoami).post(campfire_kit::action(whoami))), kit)
 }
 
@@ -232,14 +343,16 @@ async fn the_application_chain_blocks_banned_ips_forgeries_and_old_browsers() {
     assert_eq!(forged.status, StatusCode::UNPROCESSABLE_ENTITY);
 
     let outdated = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Safari/537.36";
-    let request = Request::get("/whoami").header(header::HOST, "campfire.test").header(header::COOKIE, cookie).header(header::USER_AGENT, outdated);
+    let request =
+        Request::get("/whoami").header(header::HOST, "campfire.test").header(header::COOKIE, cookie).header(header::USER_AGENT, outdated);
     let old_browser = send(&router, request.body(Body::empty()).unwrap()).await;
     assert_eq!(old_browser.status, StatusCode::OK);
     assert_ne!(old_browser.text(), vectors.sessions[0].user_name);
 
     // The incompatible-browser page is an explicit `render template:`: HTML whatever the format.
     for (path, accept) in [("/webmanifest.json", "*/*"), ("/service-worker.js", "*/*"), ("/session/new", "application/json")] {
-        let request = Request::get(path).header(header::HOST, "campfire.test").header(header::USER_AGENT, outdated).header(header::ACCEPT, accept);
+        let request =
+            Request::get(path).header(header::HOST, "campfire.test").header(header::USER_AGENT, outdated).header(header::ACCEPT, accept);
         let blocked = send(&test.booted.router, request.body(Body::empty()).unwrap()).await;
         assert_eq!((blocked.status, blocked.header("content-type")), (StatusCode::OK, Some("text/html; charset=utf-8")), "{path} {accept}");
     }
@@ -247,6 +360,36 @@ async fn the_application_chain_blocks_banned_ips_forgeries_and_old_browsers() {
     let request = Request::get("/account/logo").header(header::HOST, "campfire.test").header(header::USER_AGENT, outdated);
     let blocked = send(&test.booted.router, request.body(Body::empty()).unwrap()).await;
     assert_eq!((blocked.status, blocked.header("cache-control"), blocked.header("etag")), (StatusCode::OK, Some("no-cache"), None));
+}
+
+#[tokio::test]
+async fn allow_browser_keeps_the_platform_it_parsed_for_the_layout() {
+    let Some(test) = boot_seeded().await else { return };
+    let app = &test.booted.app;
+    let kit = Kit::new(KitConfig::production(true), app.secrets.clone(), app.clock.clone(), app.clone());
+    let routes = axum::Router::new()
+        .route("/platform", campfire_kit::get(platform))
+        .route("/platform/without_the_chain", campfire_kit::get(platform_without_the_chain));
+    let router = campfire_kit::app(routes, kit);
+
+    let chrome = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
+    // Without a User-Agent to check, the layout parses the gem's default, "Mozilla/4.0 (compatible)".
+    // Where `allow_browser` didn't run, the layout parses the header itself.
+    let cases = [
+        ("/platform", Some(chrome), r#"true "Chrome" "Windows""#),
+        ("/platform", None, r#"false "Mozilla" """#),
+        ("/platform", Some(" "), r#"false "Mozilla" """#),
+        ("/platform/without_the_chain", Some(chrome), r#"false "Chrome" "Windows""#),
+        ("/platform/without_the_chain", None, r#"false "Mozilla" """#),
+    ];
+    for (path, user_agent, expected) in cases {
+        let mut request = Request::get(path).header(header::HOST, "campfire.test");
+        if let Some(user_agent) = user_agent {
+            request = request.header(header::USER_AGENT, user_agent);
+        }
+        let reply = send(&router, request.body(Body::empty()).unwrap()).await;
+        assert_eq!((reply.status, reply.text().as_str()), (StatusCode::OK, expected), "{path} {user_agent:?}");
+    }
 }
 
 #[tokio::test]
@@ -326,7 +469,11 @@ async fn backup_snapshots_the_live_database() {
     let snapshot = rusqlite::Connection::open(config.storage.backup_file()).unwrap();
     let users: i64 = snapshot.query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0)).unwrap();
     assert!(users > 0);
-    let leftovers: Vec<_> = std::fs::read_dir(&config.storage.backups).unwrap().flatten().filter(|entry| entry.file_name().to_string_lossy().starts_with(".backup-")).collect();
+    let leftovers: Vec<_> = std::fs::read_dir(&config.storage.backups)
+        .unwrap()
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with(".backup-"))
+        .collect();
     assert!(leftovers.is_empty(), "{leftovers:?}");
 }
 
@@ -351,7 +498,7 @@ async fn jobs_run_ad_hoc_work_and_purge_unattached_blobs() {
         .write(move |tx| {
             storage
                 .create_and_upload(tx.conn(), b"hello", campfire_storage::Filename::new("hello.txt"), None, now)
-                .map_err(|e| campfire_db::Error::Other(e.to_string()))
+                .map_err(campfire_db::Error::other)
         })
         .await
         .unwrap();
@@ -426,9 +573,12 @@ async fn concurrent_message_posts_all_complete() {
         assert_eq!(status.unwrap(), StatusCode::OK);
     }
 
-    let after = tokio::time::timeout(std::time::Duration::from_secs(10), send(&router, get_with_cookie(&format!("/rooms/{room_id}"), &session.cookie_header)))
-        .await
-        .expect("the server stopped answering");
+    let after = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        send(&router, get_with_cookie(&format!("/rooms/{room_id}"), &session.cookie_header)),
+    )
+    .await
+    .expect("the server stopped answering");
     assert_eq!(after.status, StatusCode::OK);
 }
 
@@ -475,7 +625,8 @@ async fn blob_byte_ranges_are_served_from_the_file() {
     let proxy_path = vectors().blobs[0].redirect_path.replacen("/redirect/", "/proxy/", 1);
     let blob = test.booted.app.db.read(|conn| Ok(campfire_storage::Blob::find(conn, 5).unwrap().unwrap())).await.unwrap();
     let file = std::fs::read(test.booted.app.storage.path_for(&blob)).unwrap();
-    let ranged = |range: &str| Request::get(&proxy_path).header(header::HOST, "campfire.test").header("range", range).body(Body::empty()).unwrap();
+    let ranged =
+        |range: &str| Request::get(&proxy_path).header(header::HOST, "campfire.test").header("range", range).body(Body::empty()).unwrap();
 
     let single = send(router, ranged("bytes=100-")).await;
     assert_eq!(single.status, StatusCode::PARTIAL_CONTENT);
@@ -487,7 +638,8 @@ async fn blob_byte_ranges_are_served_from_the_file() {
     assert_eq!(multiple.status, StatusCode::PARTIAL_CONTENT);
     let boundary = multiple.header("content-type").unwrap().strip_prefix("multipart/byteranges; boundary=").unwrap().to_string();
     let part = |start: usize, end: usize| {
-        let mut part = format!("\r\n--{boundary}\r\nContent-Type: image/jpeg\r\nContent-Range: bytes {start}-{end}/{}\r\n\r\n", file.len()).into_bytes();
+        let mut part = format!("\r\n--{boundary}\r\nContent-Type: image/jpeg\r\nContent-Range: bytes {start}-{end}/{}\r\n\r\n", file.len())
+            .into_bytes();
         part.extend_from_slice(&file[start..=end]);
         part
     };
@@ -498,3 +650,61 @@ async fn blob_byte_ranges_are_served_from_the_file() {
     let unsatisfiable = send(router, ranged(&format!("bytes={}-", file.len() + 10))).await;
     assert_eq!(unsatisfiable.status, StatusCode::RANGE_NOT_SATISFIABLE);
 }
+
+/// `ContentDisposition.format` transliterates the ASCII `filename=` with I18n's whole table, not
+/// just Latin-1.
+#[tokio::test]
+async fn proxied_blobs_name_their_file_like_rails() {
+    let Some(test) = boot_seeded().await else { return };
+    let router = &test.booted.router;
+    test.booted
+        .app
+        .db
+        .write(|tx| Ok(tx.conn().execute("UPDATE active_storage_blobs SET filename = 'Łódź.jpg' WHERE id = 5", [])?))
+        .await
+        .unwrap();
+    let proxy_path = vectors().blobs[0].redirect_path.replacen("/redirect/", "/proxy/", 1);
+    let request = |range: Option<&str>| {
+        let mut request = Request::get(&proxy_path).header(header::HOST, "campfire.test");
+        if let Some(range) = range {
+            request = request.header("range", range);
+        }
+        request.body(Body::empty()).unwrap()
+    };
+
+    let expected = Some("inline; filename=\"Lodz.jpg\"; filename*=UTF-8''%C5%81%C3%B3d%C5%BA.jpg");
+    let whole = send(router, request(None)).await;
+    assert_eq!((whole.status, whole.header("content-disposition")), (StatusCode::OK, expected));
+    let ranged = send(router, request(Some("bytes=0-9"))).await;
+    assert_eq!((ranged.status, ranged.header("content-disposition")), (StatusCode::PARTIAL_CONTENT, expected));
+}
+
+async fn content_dispositions(router: &axum::Router, path: &str) -> (StatusCode, Vec<String>) {
+    let reply = send(router, get(path)).await;
+    let values = reply.headers.get_all(header::CONTENT_DISPOSITION).iter().map(|v| String::from_utf8_lossy(v.as_bytes()).into_owned());
+    (reply.status, values.collect())
+}
+
+/// `send_stream` puts `?disposition=` into Content-Disposition as it is, and Puma writes a value
+/// with line breaks line by line, leaving out lines with control characters (probed in the
+/// reference, where Thruster answers a DEL with a 502).
+#[tokio::test]
+async fn proxied_blobs_write_odd_dispositions_as_puma_does() {
+    let Some(test) = boot_seeded().await else { return };
+    let router = &test.booted.router;
+    let proxy_path = vectors().blobs[0].redirect_path.replacen("/redirect/", "/proxy/", 1);
+    let with = |disposition: &str| format!("{proxy_path}?disposition={disposition}");
+
+    let (_, inline) = content_dispositions(router, &with("inline")).await;
+    let filename = inline[0].strip_prefix("inline").unwrap();
+    assert_eq!(content_dispositions(router, &with("x%0Ay")).await, (StatusCode::OK, vec!["x".into(), format!("y{filename}")]));
+    assert_eq!(content_dispositions(router, &with("%0Aa")).await, (StatusCode::OK, vec!["".into(), format!("a{filename}")]));
+    assert_eq!(content_dispositions(router, &with("x%09y")).await, (StatusCode::OK, vec![format!("x\ty{filename}")]));
+    assert_eq!(content_dispositions(router, &with("%C3%A9")).await, (StatusCode::OK, vec![format!("é{filename}")]));
+    for dropped in ["x%0Dy", "x%01y", "x%00y", "x%7Fy"] {
+        assert_eq!(content_dispositions(router, &with(dropped)).await, (StatusCode::OK, vec![]), "{dropped}");
+    }
+    assert_eq!(content_dispositions(router, &with("%FF")).await.0, StatusCode::BAD_REQUEST);
+}
+
+mod response_cache;

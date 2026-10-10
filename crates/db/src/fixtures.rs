@@ -60,68 +60,21 @@ impl Loaded {
 /// A `belongs_to` in a fixture: the key, and the column it sets (or, for polymorphic
 /// ones, the `_id`/`_type` pair).
 enum Association {
-    BelongsTo {
-        key: &'static str,
-        column: &'static str,
-    },
-    Polymorphic {
-        key: &'static str,
-    },
+    BelongsTo { key: &'static str, column: &'static str },
+    Polymorphic { key: &'static str },
 }
 
 fn associations(table: &str) -> &'static [Association] {
     use Association::*;
     match table {
-        "boosts" => &[
-            BelongsTo {
-                key: "message",
-                column: "message_id",
-            },
-            BelongsTo {
-                key: "booster",
-                column: "booster_id",
-            },
-        ],
-        "memberships" => &[
-            BelongsTo {
-                key: "room",
-                column: "room_id",
-            },
-            BelongsTo {
-                key: "user",
-                column: "user_id",
-            },
-        ],
-        "messages" => &[
-            BelongsTo {
-                key: "room",
-                column: "room_id",
-            },
-            BelongsTo {
-                key: "creator",
-                column: "creator_id",
-            },
-        ],
-        "rooms" => &[BelongsTo {
-            key: "creator",
-            column: "creator_id",
-        }],
-        "bans" | "searches" | "sessions" | "webhooks" | "push_subscriptions" => &[BelongsTo {
-            key: "user",
-            column: "user_id",
-        }],
+        "boosts" => &[BelongsTo { key: "message", column: "message_id" }, BelongsTo { key: "booster", column: "booster_id" }],
+        "memberships" => &[BelongsTo { key: "room", column: "room_id" }, BelongsTo { key: "user", column: "user_id" }],
+        "messages" => &[BelongsTo { key: "room", column: "room_id" }, BelongsTo { key: "creator", column: "creator_id" }],
+        "rooms" => &[BelongsTo { key: "creator", column: "creator_id" }],
+        "bans" | "searches" | "sessions" | "webhooks" | "push_subscriptions" => &[BelongsTo { key: "user", column: "user_id" }],
         "action_text_rich_texts" => &[Polymorphic { key: "record" }],
-        "active_storage_attachments" => &[
-            Polymorphic { key: "record" },
-            BelongsTo {
-                key: "blob",
-                column: "blob_id",
-            },
-        ],
-        "active_storage_variant_records" => &[BelongsTo {
-            key: "blob",
-            column: "blob_id",
-        }],
+        "active_storage_attachments" => &[Polymorphic { key: "record" }, BelongsTo { key: "blob", column: "blob_id" }],
+        "active_storage_variant_records" => &[BelongsTo { key: "blob", column: "blob_id" }],
         _ => &[],
     }
 }
@@ -131,49 +84,26 @@ fn resolve_enum(table: &str, column: &str, value: &str) -> Option<Value> {
     match (table, column) {
         ("users", "role") => Role::from_name(value).map(|r| Value::Integer(r as i64)),
         ("users", "status") => Status::from_name(value).map(|s| Value::Integer(s as i64)),
-        ("memberships", "involvement") => {
-            Involvement::from_name(value).map(|i| Value::Text(i.name().into()))
-        }
+        ("memberships", "involvement") => Involvement::from_name(value).map(|i| Value::Text(i.name().into())),
         _ => None,
     }
 }
 
-/// Loads every `*.yml` under `dir` into `conn`, inside the caller's transaction or its own.
+/// Loads every `*.yml` under `dir` into `conn`, inside the caller's transaction (a
+/// `Database::write`), which checks the foreign keys when it commits.
 pub fn load(conn: &Connection, dir: &Path, options: &Options) -> Result<Loaded> {
     let mut files = Vec::new();
-    collect_yaml_files(dir, dir, &mut files)?;
+    collect_yaml_files(dir, &mut files)?;
     files.sort();
 
-    let autocommit = conn.is_autocommit();
-    if autocommit {
-        conn.execute_batch("BEGIN IMMEDIATE TRANSACTION")?;
-    }
-    let result = load_files(conn, dir, &files, options);
-    if autocommit {
-        match &result {
-            Ok(_) => conn.execute_batch("COMMIT TRANSACTION")?,
-            Err(_) => conn.execute_batch("ROLLBACK TRANSACTION")?,
-        }
-    }
-    result
-}
-
-fn load_files(
-    conn: &Connection,
-    dir: &Path,
-    files: &[PathBuf],
-    options: &Options,
-) -> Result<Loaded> {
     conn.execute_batch("PRAGMA defer_foreign_keys = ON")?;
     let mut erb = Erb::new(options);
     let mut loaded = Loaded::default();
-    for file in files {
+    for file in &files {
         let table = table_name(dir, file);
-        let source = std::fs::read_to_string(file)
-            .map_err(|e| Error::Other(format!("{}: {e}", file.display())))?;
+        let source = std::fs::read_to_string(file).map_err(|e| Error::other(format!("{}: {e}", file.display())))?;
         let yaml = erb.render(&source)?;
-        let rows: Yaml = serde_yaml::from_str(&yaml)
-            .map_err(|e| Error::Other(format!("{}: {e}", file.display())))?;
+        let rows: Yaml = serde_yaml::from_str(&yaml).map_err(|e| Error::other(format!("{}: {e}", file.display())))?;
 
         conn.execute(&format!(r#"DELETE FROM "{table}""#), [])?;
         let columns = table_columns(conn, &table)?;
@@ -182,8 +112,7 @@ fn load_files(
 
         let Yaml::Mapping(rows) = rows else { continue };
         for (label, row) in rows {
-            let label = scalar_string(&label)
-                .ok_or_else(|| Error::Other(format!("bad label in {table}")))?;
+            let label = scalar_string(&label).ok_or_else(|| Error::other(format!("bad label in {table}")))?;
             if label == "DEFAULTS" || label == "_fixture" {
                 continue;
             }
@@ -199,60 +128,35 @@ fn load_files(
     Ok(loaded)
 }
 
-fn fixture_row(
-    table: &str,
-    label: &str,
-    row: Yaml,
-    columns: &[String],
-    now: Timestamp,
-) -> Result<BTreeMap<String, Value>> {
+fn fixture_row(table: &str, label: &str, row: Yaml, columns: &[String], now: Timestamp) -> Result<BTreeMap<String, Value>> {
     let mut values: BTreeMap<String, Value> = BTreeMap::new();
     let mapping = match row {
         Yaml::Mapping(m) => m,
         Yaml::Null => Default::default(),
         _ => {
-            return Err(Error::Other(format!(
-                "fixture {table}.{label} is not a mapping"
-            )));
+            return Err(Error::other(format!("fixture {table}.{label} is not a mapping")));
         }
     };
 
     for (key, value) in mapping {
-        let key = scalar_string(&key)
-            .ok_or_else(|| Error::Other(format!("bad key in {table}.{label}")))?;
+        let key = scalar_string(&key).ok_or_else(|| Error::other(format!("bad key in {table}.{label}")))?;
         let association = associations(table).iter().find(|a| match a {
-            Association::BelongsTo { key: k, .. } | Association::Polymorphic { key: k } => {
-                *k == key
-            }
+            Association::BelongsTo { key: k, .. } | Association::Polymorphic { key: k } => *k == key,
         });
         match association {
             Some(Association::BelongsTo { column, .. }) => {
-                let target = scalar_string(&value)
-                    .ok_or_else(|| Error::Other(format!("{table}.{label}.{key}")))?;
-                values.insert(
-                    (*column).into(),
-                    Value::Integer(identify(target.trim_start_matches(':'))),
-                );
+                let target = scalar_string(&value).ok_or_else(|| Error::other(format!("{table}.{label}.{key}")))?;
+                values.insert((*column).into(), Value::Integer(identify(target.trim_start_matches(':'))));
             }
             Some(Association::Polymorphic { key }) => {
-                let target = scalar_string(&value)
-                    .ok_or_else(|| Error::Other(format!("{table}.{label}.{key}")))?;
-                let (target_label, class) = match target
-                    .trim()
-                    .strip_suffix(')')
-                    .and_then(|t| t.rsplit_once(" ("))
-                {
+                let target = scalar_string(&value).ok_or_else(|| Error::other(format!("{table}.{label}.{key}")))?;
+                let (target_label, class) = match target.trim().strip_suffix(')').and_then(|t| t.rsplit_once(" (")) {
                     Some((l, c)) => (l.to_string(), c.to_string()),
                     None => {
-                        return Err(Error::Other(format!(
-                            "{table}.{label}.{key} needs a (Class)"
-                        )));
+                        return Err(Error::other(format!("{table}.{label}.{key} needs a (Class)")));
                     }
                 };
-                values.insert(
-                    format!("{key}_id"),
-                    Value::Integer(identify(target_label.trim_start_matches(':'))),
-                );
+                values.insert(format!("{key}_id"), Value::Integer(identify(target_label.trim_start_matches(':'))));
                 values.insert(format!("{key}_type"), Value::Text(class));
             }
             None => {
@@ -262,14 +166,10 @@ fn fixture_row(
         }
     }
 
-    values
-        .entry("id".into())
-        .or_insert_with(|| Value::Integer(identify(label)));
+    values.entry("id".into()).or_insert_with(|| Value::Integer(identify(label)));
     for column in ["created_at", "updated_at"] {
         if columns.iter().any(|c| c == column) {
-            values
-                .entry(column.into())
-                .or_insert_with(|| Value::Text(now.to_db()));
+            values.entry(column.into()).or_insert_with(|| Value::Text(now.to_db()));
         }
     }
     Ok(values)
@@ -296,12 +196,7 @@ fn yaml_to_sql(table: &str, column: &str, value: Yaml) -> Result<Value> {
                 Value::Text(s)
             }
         }
-        other => Value::Text(
-            serde_yaml::to_string(&other)
-                .unwrap_or_default()
-                .trim()
-                .to_string(),
-        ),
+        other => Value::Text(serde_yaml::to_string(&other).unwrap_or_default().trim().to_string()),
     })
 }
 
@@ -311,22 +206,16 @@ fn is_datetime_column(column: &str) -> bool {
 
 fn insert_row(conn: &Connection, table: &str, row: &BTreeMap<String, Value>) -> Result<()> {
     let columns: Vec<String> = row.keys().map(|c| format!(r#""{c}""#)).collect();
-    let sql = format!(
-        r#"INSERT INTO "{table}" ({}) VALUES ({})"#,
-        columns.join(", "),
-        crate::sql::placeholders(row.len())
-    );
+    let sql = format!(r#"INSERT INTO "{table}" ({}) VALUES ({})"#, columns.join(", "), crate::sql::placeholders(row.len()));
     conn.execute(&sql, rusqlite::params_from_iter(row.values()))?;
     Ok(())
 }
 
 fn table_columns(conn: &Connection, table: &str) -> Result<Vec<String>> {
     let mut stmt = conn.prepare(&format!(r#"PRAGMA table_info("{table}")"#))?;
-    let columns = stmt
-        .query_map([], |r| r.get::<_, String>("name"))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let columns = stmt.query_map([], |r| r.get::<_, String>("name"))?.collect::<rusqlite::Result<Vec<_>>>()?;
     if columns.is_empty() {
-        return Err(Error::Other(format!("no table {table}")));
+        return Err(Error::other(format!("no table {table}")));
     }
     Ok(columns)
 }
@@ -338,20 +227,17 @@ fn table_name(dir: &Path, file: &Path) -> String {
     relative.to_string_lossy().replace(['/', '\\'], "_")
 }
 
-fn collect_yaml_files(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in
-        std::fs::read_dir(dir).map_err(|e| Error::Other(format!("{}: {e}", dir.display())))?
-    {
-        let path = entry.map_err(|e| Error::Other(e.to_string()))?.path();
+fn collect_yaml_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in std::fs::read_dir(dir).map_err(|e| Error::other(format!("{}: {e}", dir.display())))? {
+        let path = entry.map_err(Error::other)?.path();
         if path.is_dir() {
             if path.file_name().is_some_and(|n| n != "files") {
-                collect_yaml_files(root, &path, files)?;
+                collect_yaml_files(&path, files)?;
             }
         } else if path.extension().is_some_and(|e| e == "yml") {
             files.push(path);
         }
     }
-    let _ = root;
     Ok(())
 }
 
@@ -373,11 +259,7 @@ struct Erb<'a> {
 
 impl<'a> Erb<'a> {
     fn new(options: &'a Options) -> Self {
-        Self {
-            options,
-            locals: HashMap::new(),
-            digests: HashMap::new(),
-        }
+        Self { options, locals: HashMap::new(), digests: HashMap::new() }
     }
 
     fn render(&mut self, source: &str) -> Result<String> {
@@ -386,9 +268,7 @@ impl<'a> Erb<'a> {
         while let Some(start) = rest.find("<%") {
             out.push_str(&rest[..start]);
             let after = &rest[start + 2..];
-            let end = after
-                .find("%>")
-                .ok_or_else(|| Error::Other("unterminated ERB tag".into()))?;
+            let end = after.find("%>").ok_or_else(|| Error::other("unterminated ERB tag"))?;
             let (output, code) = match after.strip_prefix('=') {
                 Some(code) => (true, &code[..end - 1]),
                 None => (false, &after[..end]),
@@ -413,10 +293,7 @@ impl<'a> Erb<'a> {
         if let Some(value) = self.locals.get(code) {
             return Ok(value.clone());
         }
-        if let Some(password) = code
-            .strip_prefix("BCrypt::Password.create(")
-            .and_then(|c| c.strip_suffix(')'))
-        {
+        if let Some(password) = code.strip_prefix("BCrypt::Password.create(").and_then(|c| c.strip_suffix(')')) {
             let password = password.trim().trim_matches('"').to_string();
             if let Some(digest) = self.digests.get(&password) {
                 return Ok(digest.clone());
@@ -433,7 +310,7 @@ impl<'a> Erb<'a> {
             let at = Timestamp::from_second(self.options.now.as_second()).ago(duration);
             return Ok(format!("{} UTC", at.to_db()));
         }
-        Err(Error::Other(format!("unsupported ERB in fixture: {code}")))
+        Err(Error::other(format!("unsupported ERB in fixture: {code}")))
     }
 }
 
@@ -471,31 +348,16 @@ mod tests {
     #[test]
     fn table_names() {
         let dir = Path::new("/f");
-        assert_eq!(
-            table_name(dir, Path::new("/f/action_text/rich_texts.yml")),
-            "action_text_rich_texts"
-        );
-        assert_eq!(
-            table_name(dir, Path::new("/f/push/subscriptions.yml")),
-            "push_subscriptions"
-        );
+        assert_eq!(table_name(dir, Path::new("/f/action_text/rich_texts.yml")), "action_text_rich_texts");
+        assert_eq!(table_name(dir, Path::new("/f/push/subscriptions.yml")), "push_subscriptions");
         assert_eq!(table_name(dir, Path::new("/f/users.yml")), "users");
     }
 
     #[test]
     fn erb_ago_renders_whole_seconds() {
-        let options = Options {
-            now: Timestamp::parse_db("2026-09-26 12:24:38.211309").unwrap(),
-            bcrypt_cost: 4,
-        };
+        let options = Options { now: Timestamp::parse_db("2026-09-26 12:24:38.211309").unwrap(), bcrypt_cost: 4 };
         let mut erb = Erb::new(&options);
-        assert_eq!(
-            erb.render("created_at: <%= 1.hour.ago %>").unwrap(),
-            "created_at: 2026-09-26 11:24:38 UTC"
-        );
-        assert_eq!(
-            erb.render("<% x = 5.minutes.ago %>\na: <%= x %>").unwrap(),
-            "\na: 2026-09-26 12:19:38 UTC"
-        );
+        assert_eq!(erb.render("created_at: <%= 1.hour.ago %>").unwrap(), "created_at: 2026-09-26 11:24:38 UTC");
+        assert_eq!(erb.render("<% x = 5.minutes.ago %>\na: <%= x %>").unwrap(), "\na: 2026-09-26 12:19:38 UTC");
     }
 }

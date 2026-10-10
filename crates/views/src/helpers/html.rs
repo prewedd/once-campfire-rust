@@ -8,33 +8,15 @@
 use std::fmt::{self, Write};
 
 pub use askama::filters::Safe;
+/// `ERB::Util.html_escape`, into a new string or onto the end of one.
+pub use ruby_compat::erb::{html_escape as escape, push_html_escaped as push_escaped};
 
 /// An html_safe string.
 pub type Html = Safe<String>;
 
-/// Escapes like `ERB::Util.html_escape`.
-pub fn escape(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    push_escaped(&mut out, text);
-    out
-}
-
-pub fn push_escaped(out: &mut String, text: &str) {
-    for c in text.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#39;"),
-            _ => out.push(c),
-        }
-    }
-}
-
-/// `raw` / `String#html_safe`.
-pub fn raw(html: impl AsRef<str>) -> Html {
-    Safe(html.as_ref().to_string())
+/// `raw` / `String#html_safe`, without copying `html`.
+pub fn raw<T: fmt::Display>(html: T) -> Safe<T> {
+    Safe(html)
 }
 
 /// `h(text)` as an html_safe value.
@@ -46,53 +28,12 @@ pub fn empty() -> Html {
     Safe(String::new())
 }
 
-/// `ActiveSupport::JSON.encode` output escaping (`escape_html_entities_in_json`): `<`, `>` and
-/// `&` become `\uXXXX`. The JS line separators stay raw (`load_defaults 8.2` turns
-/// `escape_js_separators_in_json` off). Apply to serde_json output for Jbuilder views.
-pub fn rails_json_escape(json: &str) -> String {
-    json.replace('<', "\\u003c").replace('>', "\\u003e").replace('&', "\\u0026")
-}
-
-/// `render json:` / Jbuilder: serde_json with Rails' HTML-entity escaping.
-pub fn to_rails_json<T: serde::Serialize>(value: &T) -> String {
-    rails_json_escape(&serde_json::to_string(value).expect("serializable"))
-}
-
 /// The askama escaper for ERB-compatible output.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ErbEscaper;
 
 impl askama::filters::Escaper for ErbEscaper {
     fn write_escaped_str<W: Write>(&self, mut dest: W, string: &str) -> fmt::Result {
-        let mut last = 0;
-        for (index, byte) in string.bytes().enumerate() {
-            let replacement = match byte {
-                b'&' => "&amp;",
-                b'<' => "&lt;",
-                b'>' => "&gt;",
-                b'"' => "&quot;",
-                b'\'' => "&#39;",
-                _ => continue,
-            };
-            dest.write_str(&string[last..index])?;
-            dest.write_str(replacement)?;
-            last = index + 1;
-        }
-        dest.write_str(&string[last..])
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn escapes_like_erb_util() {
-        assert_eq!(escape(r#"<&>"'x"#), "&lt;&amp;&gt;&quot;&#39;x");
-    }
-
-    #[test]
-    fn escapes_json_like_rails() {
-        assert_eq!(to_rails_json(&"<b>&</b>"), r#""\u003cb\u003e\u0026\u003c/b\u003e""#);
+        ruby_compat::erb::write_html_escaped(&mut dest, string)
     }
 }

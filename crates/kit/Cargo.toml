@@ -2,13 +2,18 @@
 name = "campfire_kit"
 version = "0.1.0"
 edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 rails_compat.workspace = true
+ruby_compat.workspace = true
 axum.workspace = true
 tokio.workspace = true
 tower = { workspace = true, features = ["util"] }
-tower-http.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 jiff.workspace = true
@@ -25,10 +30,10 @@ http-body-util.workspace = true
 futures-util.workspace = true
 uuid.workspace = true
 hyper = { workspace = true, features = ["server", "http1", "http2"] }
-hyper-util = { workspace = true, features = ["server", "server-auto", "service", "http1", "http2", "tokio"] }
+hyper-util = { workspace = true, features = ["server", "server-auto", "http1", "http2", "tokio"] }
 flate2.workspace = true
 crc32fast.workspace = true
-memchr.workspace = true
+foldhash.workspace = true
 indexmap.workspace = true
 bytes.workspace = true
 regex.workspace = true
@@ -43,14 +48,15 @@ p256 = { workspace = true, features = ["pkcs8", "pem"] }
 libc.workspace = true
 hex.workspace = true
 
-[features]
-# `campfire_kit::testing`: insecure stand-ins for tests.
-test-support = []
+# sha2 0.10 compiles its ARMv8 SHA-256 backend (used when the CPU has the instructions) only with
+# `asm`; without it the arm64 image hashes every page body in software. Features unify, so this
+# covers every sha2 user in the app. x86_64 detects SHA-NI without it.
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+sha2 = { workspace = true, features = ["asm"] }
 
 [dev-dependencies]
-campfire_kit = { path = ".", features = ["test-support"] }
-tower = { workspace = true, features = ["util"] }
-tempfile.workspace = true
 hyper = { workspace = true, features = ["client", "http1", "http2"] }
+# tests/front.rs: a WebSocket backend behind the front server
+axum = { workspace = true, features = ["ws"] }
 tokio-tungstenite.workspace = true
-x509-parser.workspace = true
+tracing-subscriber.workspace = true

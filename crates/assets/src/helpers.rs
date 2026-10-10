@@ -18,10 +18,7 @@ impl std::error::Error for MissingAssetError {}
 
 /// The digested path (relative to `/assets/`) for a logical path, from the manifest.
 pub fn digested_path(logical_path: &str) -> Option<&'static str> {
-    embedded::MANIFEST
-        .binary_search_by(|(logical, _)| (*logical).cmp(logical_path))
-        .ok()
-        .map(|index| embedded::MANIFEST[index].1)
+    embedded::MANIFEST.binary_search_by(|(logical, _)| (*logical).cmp(logical_path)).ok().map(|index| embedded::MANIFEST[index].1)
 }
 
 /// `asset_path(source)`: "/assets/<digested>" for pipeline assets; URLs and absolute paths pass
@@ -58,11 +55,7 @@ pub fn stylesheet_path(source: &str) -> String {
 /// which is what Rails uses as the host when no asset_host is configured.
 pub fn asset_url(base_url: &str, source: &str) -> String {
     let path = asset_path(source);
-    if path.is_empty() || is_uri(&path) {
-        path
-    } else {
-        file_join(base_url, &path)
-    }
+    if path.is_empty() || is_uri(&path) { path } else { file_join(base_url, &path) }
 }
 
 pub fn image_url(base_url: &str, source: &str) -> String {
@@ -107,9 +100,7 @@ fn is_uri(source: &str) -> bool {
         return true;
     }
     match lower.find("://") {
-        Some(i) if i > 0 => lower[..i]
-            .chars()
-            .all(|c| c == '-' || c.is_ascii_lowercase()),
+        Some(i) if i > 0 => lower[..i].chars().all(|c| c == '-' || c.is_ascii_lowercase()),
         _ => false,
     }
 }
@@ -122,11 +113,7 @@ fn file_extname(path: &str) -> &str {
 
 /// File.join(host, path)
 fn file_join(host: &str, path: &str) -> String {
-    format!(
-        "{}/{}",
-        host.trim_end_matches('/'),
-        path.trim_start_matches('/')
-    )
+    format!("{}/{}", host.trim_end_matches('/'), path.trim_start_matches('/'))
 }
 
 #[cfg(test)]
@@ -135,39 +122,21 @@ mod tests {
 
     #[test]
     fn digests_logical_paths() {
-        assert_eq!(
-            asset_path("campfire-icon.png"),
-            "/assets/campfire-icon-3d9986c5.png"
-        );
+        assert_eq!(asset_path("campfire-icon.png"), "/assets/campfire-icon-3d9986c5.png");
         assert_eq!(image_path("bot.svg"), "/assets/bot-8a69692e.svg");
         assert_eq!(audio_path("56k.mp3"), "/assets/56k-67359aa6.mp3");
         assert_eq!(
             asset_path("screenshots/android-chat.png"),
-            format!(
-                "/assets/{}",
-                digested_path("screenshots/android-chat.png").unwrap()
-            )
+            format!("/assets/{}", digested_path("screenshots/android-chat.png").unwrap())
         );
     }
 
     #[test]
     fn keeps_tails_and_passes_through_urls_and_absolute_paths() {
-        assert_eq!(
-            asset_path("bot.svg?v=1#x"),
-            "/assets/bot-8a69692e.svg?v=1#x"
-        );
-        assert_eq!(
-            asset_path("https://example.com/a.png"),
-            "https://example.com/a.png"
-        );
-        assert_eq!(
-            asset_path("//cdn.example.com/a.png"),
-            "//cdn.example.com/a.png"
-        );
-        assert_eq!(
-            asset_path("data:image/png;base64,xx"),
-            "data:image/png;base64,xx"
-        );
+        assert_eq!(asset_path("bot.svg?v=1#x"), "/assets/bot-8a69692e.svg?v=1#x");
+        assert_eq!(asset_path("https://example.com/a.png"), "https://example.com/a.png");
+        assert_eq!(asset_path("//cdn.example.com/a.png"), "//cdn.example.com/a.png");
+        assert_eq!(asset_path("data:image/png;base64,xx"), "data:image/png;base64,xx");
         assert_eq!(asset_path("/rooms/1"), "/rooms/1");
         assert_eq!(asset_path(""), "");
     }
@@ -180,17 +149,11 @@ mod tests {
 
     #[test]
     fn urls_join_the_base_url() {
-        assert_eq!(
-            image_url("https://chat.example.com", "add.svg"),
-            format!("https://chat.example.com{}", image_path("add.svg"))
-        );
+        assert_eq!(image_url("https://chat.example.com", "add.svg"), format!("https://chat.example.com{}", image_path("add.svg")));
     }
 
     #[test]
     fn missing_assets_are_errors() {
-        assert_eq!(
-            try_asset_path("nope.png").unwrap_err().to_string(),
-            "The asset 'nope.png' was not found in the load path."
-        );
+        assert_eq!(try_asset_path("nope.png").unwrap_err().to_string(), "The asset 'nope.png' was not found in the load path.");
     }
 }

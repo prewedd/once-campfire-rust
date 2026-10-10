@@ -19,13 +19,12 @@ mod embedded {
 }
 
 pub use helpers::{
-    MissingAssetError, asset_path, asset_url, audio_path, digested_path, image_path, image_url,
-    javascript_path, stylesheet_path, try_asset_path,
+    MissingAssetError, asset_path, asset_url, audio_path, digested_path, image_path, image_url, javascript_path, stylesheet_path,
+    try_asset_path,
 };
 pub use serve::{Body, StaticRequest, StaticResponse, serve};
 pub use tags::{
-    StylesheetTags, all_stylesheet_paths, append_preload_links, javascript_importmap_tags,
-    stylesheet_link_tag, stylesheet_link_tag_all,
+    StylesheetTags, all_stylesheet_paths, append_preload_links, javascript_importmap_tags, stylesheet_link_tag, stylesheet_link_tag_all,
 };
 
 /// The URL prefix digested assets are served under (`config.assets.prefix`).

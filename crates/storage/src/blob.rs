@@ -51,7 +51,13 @@ impl NewBlob {
 
     /// [`NewBlob::unfurl`] for a file, reading only as much of it as identification needs, and
     /// streaming it through the checksum.
-    pub fn unfurl_file(path: &Path, filename: Filename, declared_type: Option<&str>, service_name: &str, identify: bool) -> Result<NewBlob> {
+    pub fn unfurl_file(
+        path: &Path,
+        filename: Filename,
+        declared_type: Option<&str>,
+        service_name: &str,
+        identify: bool,
+    ) -> Result<NewBlob> {
         let mut head = Vec::new();
         std::fs::File::open(path)?.take(marcel::magic_prefix_len() as u64).read_to_end(&mut head)?;
         let content_type = Self::content_type(&head, &filename, declared_type, identify);

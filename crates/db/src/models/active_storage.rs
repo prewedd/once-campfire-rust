@@ -38,13 +38,8 @@ impl Blob {
     }
 
     pub fn find(conn: &Connection, id: i64) -> Result<Self> {
-        query_one(
-            conn,
-            r#"SELECT * FROM "active_storage_blobs" WHERE "active_storage_blobs"."id" = ? LIMIT 1"#,
-            [id],
-            Self::from_row,
-        )?
-        .or_not_found("ActiveStorage::Blob")
+        query_one(conn, r#"SELECT * FROM "active_storage_blobs" WHERE "active_storage_blobs"."id" = ? LIMIT 1"#, [id], Self::from_row)?
+            .or_not_found("ActiveStorage::Blob")
     }
 
     /// Inserts a blob row; `self.id` and `created_at` are ignored and assigned.
@@ -55,11 +50,7 @@ impl Blob {
             params![blob.byte_size, blob.checksum, blob.content_type, now, blob.filename, blob.key, blob.metadata, blob.service_name],
             |r| r.get(0),
         )?;
-        Ok(Self {
-            id,
-            created_at: now,
-            ..blob.clone()
-        })
+        Ok(Self { id, created_at: now, ..blob.clone() })
     }
 }
 
@@ -86,12 +77,7 @@ impl Attachment {
     }
 
     /// `has_one_attached`'s lookup.
-    pub fn find_for(
-        conn: &Connection,
-        record_type: &str,
-        record_id: i64,
-        name: &str,
-    ) -> Result<Option<Self>> {
+    pub fn find_for(conn: &Connection, record_type: &str, record_id: i64, name: &str) -> Result<Option<Self>> {
         query_one(
             conn,
             r#"SELECT * FROM "active_storage_attachments" WHERE "active_storage_attachments"."record_id" = ? AND "active_storage_attachments"."record_type" = ? AND "active_storage_attachments"."name" = ? LIMIT 1"#,
@@ -100,27 +86,14 @@ impl Attachment {
         )
     }
 
-    pub fn create(
-        tx: &Tx<'_>,
-        record_type: &str,
-        record_id: i64,
-        name: &str,
-        blob_id: i64,
-    ) -> Result<Self> {
+    pub fn create(tx: &Tx<'_>, record_type: &str, record_id: i64, name: &str, blob_id: i64) -> Result<Self> {
         let now = tx.now();
         let id: i64 = tx.conn().query_row_cached(
             r#"INSERT INTO "active_storage_attachments" ("blob_id", "created_at", "name", "record_id", "record_type") VALUES (?, ?, ?, ?, ?) RETURNING "id""#,
             params![blob_id, now, name, record_id, record_type],
             |r| r.get(0),
         )?;
-        Ok(Self {
-            id,
-            name: name.into(),
-            record_type: record_type.into(),
-            record_id,
-            blob_id,
-            created_at: now,
-        })
+        Ok(Self { id, name: name.into(), record_type: record_type.into(), record_id, blob_id, created_at: now })
     }
 
     pub fn delete(&self, tx: &Tx<'_>) -> Result<()> {

@@ -9,8 +9,8 @@
 //! do both at once are for tests and tools.
 
 use std::path::Path;
-use std::sync::Arc;
 
+use rails_compat::MessageVerifier;
 use rusqlite::Connection;
 use tempfile::NamedTempFile;
 
@@ -23,12 +23,17 @@ use crate::key::checksum_file;
 use crate::marshal::Value;
 use crate::process;
 use crate::variation::Variation;
-use crate::verifier::Verifier;
 use crate::{Error, Result};
 
 pub struct Storage {
     pub service: DiskService,
-    pub verifier: Arc<dyn Verifier>,
+    /// `ActiveStorage.verifier`: `rails_compat::app_verifier(secrets, "ActiveStorage")`. It signs
+    /// blob ids (purpose "blob_id": `ActiveStorage::Blob` overrides both the signed-id verifier
+    /// and `combine_signed_id_purposes`, so this is *not* the Active Record signed-id scheme),
+    /// variation keys ("variation"), disk URLs ("blob_key") and direct-upload tokens
+    /// ("blob_token"). The data goes in and comes out as encoded JSON, because key order is part
+    /// of the signed bytes (e.g. `{key:, disposition:, content_type:, service_name:}`).
+    pub verifier: MessageVerifier,
 }
 
 /// A new blob whose file is already in the service but whose row isn't saved yet. Dropping it
@@ -66,15 +71,14 @@ impl Drop for Staged {
 }
 
 impl Storage {
-    pub fn new(service: DiskService, verifier: Arc<dyn Verifier>) -> Self {
+    pub fn new(service: DiskService, verifier: MessageVerifier) -> Self {
         Self { service, verifier }
     }
 
     // --- File work: no connection, blocking -------------------------------------------------------
 
     /// The file half of `Blob.create_and_upload!(io:, filename:, content_type:)` as attaching an
-    /// uploaded file does (`identify: true`): unfurls the file at `source` and uploads it with
-    /// checksum verification.
+    /// uploaded file does (`identify: true`): unfurls the file at `source` and uploads it.
     pub fn stage_file(&self, source: &Path, filename: Filename, declared_type: Option<&str>) -> Result<Staged> {
         let blob = NewBlob::unfurl_file(source, filename, declared_type, self.service.name(), true)?;
         self.stage(blob, std::fs::File::open(source)?)
@@ -86,10 +90,14 @@ impl Storage {
         self.stage(blob, data)
     }
 
+    /// Copies the blob's bytes into the service. Unlike `DiskService#upload`, the copy isn't read
+    /// back to verify its checksum: the checksum was just computed from these same local bytes, so
+    /// reading the copy back would only compare them with themselves, and [`Self::open`] still
+    /// verifies the file before it's analyzed or made into a variant or poster. The `Staged` comes
+    /// first, so a failed copy deletes what it wrote.
     fn stage(&self, blob: NewBlob, reader: impl std::io::Read) -> Result<Staged> {
-        let checksum = blob.checksum.clone();
         let staged = Staged { blob, service: self.service.clone(), kept: false };
-        self.service.upload(&staged.blob.key, reader, Some(&checksum))?;
+        self.service.upload(&staged.blob.key, reader, None)?;
         Ok(staged)
     }
 
@@ -99,9 +107,8 @@ impl Storage {
             .prefix(&format!("ActiveStorage-{}-", blob.id))
             .suffix(blob.filename.extension_with_delimiter())
             .tempfile()?;
-        std::fs::copy(self.service.path_for(&blob.key), file.path()).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound { Error::FileNotFound } else { e.into() }
-        })?;
+        std::fs::copy(self.service.path_for(&blob.key), file.path())
+            .map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { Error::FileNotFound } else { e.into() })?;
         if let Some(checksum) = &blob.checksum
             && &checksum_file(file.path())? != checksum
         {
@@ -176,7 +183,14 @@ impl Storage {
     /// The record half of `VariantWithRecord#processed`: the variant record, its image blob and
     /// attachment. `None` when another request recorded the variant first; that one is then
     /// [`Self::existing_variant`], and `image` should be dropped.
-    pub fn record_variant(&self, conn: &Connection, blob: &Blob, variation: &Variation, image: &Staged, now: jiff::Timestamp) -> Result<Option<Blob>> {
+    pub fn record_variant(
+        &self,
+        conn: &Connection,
+        blob: &Blob,
+        variation: &Variation,
+        image: &Staged,
+        now: jiff::Timestamp,
+    ) -> Result<Option<Blob>> {
         let Some(record_id) = blob::insert_variant_record(conn, blob.id, &variation.digest())? else { return Ok(None) };
         let image = image.insert(conn, now)?;
         blob::insert_attachment(conn, "image", "ActiveStorage::VariantRecord", record_id, image.id, now)?;
@@ -300,4 +314,32 @@ fn analyzed(metadata: &Json, mut extracted: Json) -> Json {
     let mut metadata = metadata.clone();
     metadata.merge(&extracted);
     metadata
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Read;
+
+    use super::*;
+
+    struct Broken;
+
+    impl Read for Broken {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("the disk went away"))
+        }
+    }
+
+    #[test]
+    fn a_copy_that_fails_leaves_no_file_behind() {
+        let root = tempfile::tempdir().unwrap();
+        let verifier = rails_compat::app_verifier(&rails_compat::Secrets::new("test"), "ActiveStorage");
+        let storage = Storage::new(DiskService::new(root.path(), "local"), verifier);
+        let blob = NewBlob::unfurl(b"partial and more", Filename::new("a.txt"), None, "local", true);
+        let key = blob.key.clone();
+
+        let Err(Error::Io(error)) = storage.stage(blob, b"partial".chain(Broken)) else { panic!("a broken copy was staged") };
+        assert_eq!(error.to_string(), "the disk went away");
+        assert!(!storage.service.exist(&key));
+    }
 }

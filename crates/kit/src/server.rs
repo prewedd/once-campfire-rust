@@ -28,6 +28,7 @@ pub async fn shutdown_signal() {
 /// (65,536 in Docker's default, 1,024 elsewhere) far below the hard one, which would cap the
 /// number of connected clients however little memory each takes.
 #[cfg(unix)]
+#[allow(unsafe_code, reason = "getrlimit and setrlimit have no safe wrapper in std")]
 pub fn raise_open_file_limit() -> Option<u64> {
     let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
     // SAFETY: getrlimit/setrlimit read and write one `rlimit` through a valid pointer.
@@ -51,6 +52,7 @@ pub fn raise_open_file_limit() -> Option<u64> {
 }
 
 #[cfg(all(test, unix))]
+#[allow(unsafe_code, reason = "reads the limit back with getrlimit")]
 mod open_file_limit_tests {
     #[test]
     fn raises_the_soft_limit_to_the_hard_one() {

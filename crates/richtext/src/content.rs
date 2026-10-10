@@ -4,16 +4,15 @@
 //! string, `inner_html=`, a filter returning HTML) does the same here, in the same parse context,
 //! because those round trips are where the output takes its shape.
 
+use ruby_compat::strip;
 use serde_json::Value;
 
-use crate::attachables::{
-    self, Attachable, Attachment, PlainTextRepresentation, RenderContext, attachment_from_node,
-};
+use crate::Error;
+use crate::attachables::{self, Attachable, Attachment, PlainTextRepresentation, RenderContext, attachment_from_node};
 use crate::dom::{Dom, NodeId};
 use crate::plain_text;
-use crate::ruby::{self, is_blank, presence, strip};
+use crate::ruby::{self, is_blank, presence};
 use crate::sanitizer::{self, ATTACHMENT_ATTRIBUTES, SafeList};
-use crate::Error;
 
 pub const ATTACHMENT_TAG: &str = "action-text-attachment";
 
@@ -73,7 +72,7 @@ impl Content {
         let root = self.root;
         render_attachments(&mut dom, root, ctx, depth)?;
         render_attachment_galleries(&mut dom, root, ctx, depth)?;
-        sanitizer::sanitize(&dom.to_html(root), &SafeList::action_text()).map_err(Error::Parse)
+        sanitizer::sanitize(&dom.to_html(root), SafeList::action_text()).map_err(Error::Parse)
     }
 
     /// `Content#to_s`: the content partial inside `layouts/action_text/contents/_content.html.erb`,
@@ -175,7 +174,7 @@ fn convert_trix_attachments(dom: &mut Dom, root: NodeId, ctx: &RenderContext) ->
 /// Text's allowlist, and dropped if that leaves nothing.
 fn sanitize_content_attribute(dom: &mut Dom, node: NodeId) -> Result<(), Error> {
     if let Some(content) = dom.remove_attr(node, "content") {
-        let sanitized = sanitizer::sanitize(&content, &SafeList::action_text()).map_err(Error::Parse)?;
+        let sanitized = sanitizer::sanitize(&content, SafeList::action_text()).map_err(Error::Parse)?;
         if !is_blank(&sanitized) {
             dom.set_attr(node, "content", &sanitized);
         }

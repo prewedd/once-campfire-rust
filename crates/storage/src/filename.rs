@@ -22,11 +22,7 @@ impl Filename {
     pub fn base(&self) -> &str {
         let base = basename(&self.0);
         let ext = self.extension_with_delimiter();
-        if !ext.is_empty() && base.len() > ext.len() && base.ends_with(ext) {
-            &base[..base.len() - ext.len()]
-        } else {
-            base
-        }
+        if !ext.is_empty() && base.len() > ext.len() && base.ends_with(ext) { &base[..base.len() - ext.len()] } else { base }
     }
 
     pub fn extension_with_delimiter(&self) -> &str {
@@ -40,10 +36,7 @@ impl Filename {
 
     /// `strip`, then replace RTL override, path separators and shell/HTML metacharacters with "-".
     pub fn sanitized(&self) -> String {
-        strip(&self.0)
-            .chars()
-            .map(|c| if "\u{202E}%$|:;/<>?*\"\t\r\n\\".contains(c) { '-' } else { c })
-            .collect()
+        ruby_compat::strip(&self.0).chars().map(|c| if "\u{202E}%$|:;/<>?*\"\t\r\n\\".contains(c) { '-' } else { c }).collect()
     }
 }
 
@@ -51,11 +44,6 @@ impl std::fmt::Display for Filename {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.sanitized())
     }
-}
-
-/// Ruby's `String#strip`: ASCII whitespace and NUL on both ends.
-fn strip(s: &str) -> &str {
-    s.trim_matches(|c| matches!(c, '\0' | '\t' | '\n' | '\u{b}' | '\u{c}' | '\r' | ' '))
 }
 
 /// `File.basename(path)`: the last component, ignoring trailing slashes.

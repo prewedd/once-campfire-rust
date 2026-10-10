@@ -21,9 +21,9 @@ tracker where it can be worked on.
 3. Read [`AGENTS.md`](AGENTS.md) for the layout and working rules: how to build and test, what has
    to stay compatible with existing installs, and where deliberate differences from the Rails app
    are recorded.
-4. When you have something ready for review or collaboration, open a PR. CI runs clippy and the
-   tests; changes to what pages render should also pass the parity gate
-   (`parity/bin/candidate compare`, see the README).
+4. When you have something ready for review or collaboration, run `cargo fmt --all` and open a PR.
+   CI checks the formatting and runs clippy and the tests; changes to what pages render should also
+   pass the parity gate (`parity/bin/candidate compare`, see the README).
 
 ### If you've found a bug...
 

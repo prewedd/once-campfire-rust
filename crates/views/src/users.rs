@@ -20,8 +20,12 @@ pub struct New<'a> {
 }
 
 impl Page for New<'_> {
-    fn page_title(&self) -> Option<String> { Some("Sign up".into()) }
-    fn body_class(&self) -> Option<&str> { Some("signup") }
+    fn page_title(&self) -> Option<String> {
+        Some("Sign up".into())
+    }
+    fn body_class(&self) -> Option<&str> {
+        Some("signup")
+    }
 }
 
 /// A profile in the room page's right-hand panel (plans/redesign.md).
@@ -47,7 +51,9 @@ pub struct Show<'a> {
 }
 
 impl Page for Show<'_> {
-    fn page_title(&self) -> Option<String> { Some(self.user.name.clone()) }
+    fn page_title(&self) -> Option<String> {
+        Some(self.user.name.clone())
+    }
 }
 
 /// `users/_ban_button.html.erb` on its own.
@@ -68,7 +74,9 @@ pub struct MentionUser {
 
 impl std::ops::Deref for MentionUser {
     type Target = UserSummary;
-    fn deref(&self) -> &UserSummary { &self.user }
+    fn deref(&self) -> &UserSummary {
+        &self.user
+    }
 }
 
 /// `users/_mention.html.erb`: the mention attachment's HTML.
@@ -137,7 +145,9 @@ impl<'a> ProfileShow<'a> {
 }
 
 impl Page for ProfileShow<'_> {
-    fn page_title(&self) -> Option<String> { Some(self.user.name.clone()) }
+    fn page_title(&self) -> Option<String> {
+        Some(self.user.name.clone())
+    }
 }
 
 /// `users/profiles/_transfer.html.erb` on its own.
@@ -168,7 +178,9 @@ pub struct PushSubscriptionsIndex<'a> {
 }
 
 impl Page for PushSubscriptionsIndex<'_> {
-    fn page_title(&self) -> Option<String> { Some("Push notification subscriptions".into()) }
+    fn page_title(&self) -> Option<String> {
+        Some("Push notification subscriptions".into())
+    }
 }
 
 /// A direct room in the sidebar (`users/sidebars/rooms/_direct`).
@@ -203,33 +215,36 @@ impl From<SidebarDirect> for SidebarDirectItem {
 /// `users/sidebars/rooms/_direct` for `membership`, whose body is `cache membership` (and which
 /// `users/sidebars/show` renders with `cached: true`): the first rendering of a membership
 /// version is what later renders reuse.
-pub fn direct_room(ctx: &ViewContext, membership: &SidebarDirect) -> String {
+pub fn direct_room(ctx: &ViewContext, membership: &SidebarDirect) -> crate::fragment_cache::Fragment {
     crate::fragment_cache::fetch(
-        || direct_room_fragment_key(membership.membership_id, membership.membership_updated_at),
+        |key| direct_room_fragment_key(key, membership.membership_id, membership.membership_updated_at),
         || SidebarDirectPartial { ctx, membership: membership.clone() }.render().expect("users/sidebars/rooms/_direct renders"),
     )
 }
 
 /// [`direct_room`] where a template renders the partial.
-pub fn cached_direct_room<'a>(ctx: &ViewContext, item: &'a SidebarDirectItem) -> askama::filters::Safe<std::borrow::Cow<'a, str>> {
+pub fn cached_direct_room(ctx: &ViewContext, item: &SidebarDirectItem) -> askama::filters::Safe<crate::fragment_cache::Fragment> {
     askama::filters::Safe(match item {
-        SidebarDirectItem::Fragment(html) => std::borrow::Cow::Borrowed(html.as_str()),
-        SidebarDirectItem::View(membership) => std::borrow::Cow::Owned(direct_room(ctx, membership)),
+        SidebarDirectItem::Fragment(html) => html.clone(),
+        SidebarDirectItem::View(membership) => direct_room(ctx, membership),
     })
 }
 
 /// The `users/sidebars/rooms/_direct` fragment for this membership version, if the current store
 /// holds it.
 pub fn cached_direct_room_fragment(membership_id: i64, updated_at: jiff::Timestamp) -> Option<crate::fragment_cache::Fragment> {
-    crate::fragment_cache::read(&direct_room_fragment_key(membership_id, updated_at))
+    crate::fragment_cache::read(|key| direct_room_fragment_key(key, membership_id, updated_at))
 }
 
-fn direct_room_fragment_key(membership_id: i64, updated_at: jiff::Timestamp) -> String {
-    format!(
-        "views/users/sidebars/rooms/_direct:{}/{}",
+fn direct_room_fragment_key(key: &mut String, membership_id: i64, updated_at: jiff::Timestamp) {
+    crate::fragment_cache::push_record_fragment_key(
+        key,
+        "users/sidebars/rooms/_direct",
         direct_room_digest(),
-        crate::fragment_cache::cache_key_with_version("memberships", membership_id, updated_at)
-    )
+        "memberships",
+        membership_id,
+        updated_at,
+    );
 }
 
 fn direct_room_digest() -> &'static str {

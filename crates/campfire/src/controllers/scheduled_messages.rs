@@ -1,11 +1,12 @@
 //! Scheduled messages (plans/scheduled-messages.md): write now, post later. A JSON API for the
 //! composer's "Schedule" menu and the panel listing yours; the posting is [`deliver_in_background`].
 use campfire_db::{Message, NewScheduledMessage, Room, ScheduledMessage};
+use ruby_compat::integer_cast;
 use campfire_kit::{Ctx, Error, Result, StatusCode, format};
 use serde_json::{Value, json};
 
 use crate::app::{App, AppCtx};
-use crate::concerns::{self, Before, before_actions, cast_integer, require_current_user};
+use crate::concerns::{self, Before, before_actions, require_current_user};
 use crate::controllers::messages::{broadcast_create_on, canonicalize_body, deliver_webhooks_to_bots_on, plain_text_of, thread_root_id};
 use crate::controllers::presenters::page::{self, db_error};
 
@@ -50,7 +51,7 @@ fn unprocessable(c: &mut Ctx, reason: &str) -> Result {
 }
 
 async fn find_mine(c: &mut Ctx, room: &Room) -> Result<ScheduledMessage> {
-    let id = c.param_str("id").and_then(cast_integer).ok_or(Error::NotFound)?;
+    let id = c.param_str("id").and_then(integer_cast).ok_or(Error::NotFound)?;
     let (user_id, room_id) = (require_current_user(c)?.id, room.id);
     let scheduled = c.app().db.read(move |conn| ScheduledMessage::find(conn, id)).await.map_err(|_| Error::NotFound)?;
     if scheduled.creator_id != user_id || scheduled.room_id != room_id || scheduled.message_id.is_some() {
@@ -93,7 +94,7 @@ pub async fn create(c: &mut Ctx) -> Result {
         return unprocessable(c, "Write something to schedule");
     }
     let body = canonicalize_body(c.app(), body, Some(c.request.host())).await?;
-    let requested_parent = c.param_str("thread_parent_id").and_then(cast_integer);
+    let requested_parent = c.param_str("thread_parent_id").and_then(integer_cast);
     let room_id = room.id;
     let app = c.app().clone();
     let created = c

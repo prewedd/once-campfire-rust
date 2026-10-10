@@ -42,11 +42,21 @@ pub struct UserSummary {
 }
 
 impl UserSummary {
-    pub fn active(&self) -> bool { self.status == Status::Active }
-    pub fn banned(&self) -> bool { self.status == Status::Banned }
-    pub fn deactivated(&self) -> bool { self.status == Status::Deactivated }
-    pub fn bot(&self) -> bool { self.role == Role::Bot }
-    pub fn administrator(&self) -> bool { self.role == Role::Administrator }
+    pub fn active(&self) -> bool {
+        self.status == Status::Active
+    }
+    pub fn banned(&self) -> bool {
+        self.status == Status::Banned
+    }
+    pub fn deactivated(&self) -> bool {
+        self.status == Status::Deactivated
+    }
+    pub fn bot(&self) -> bool {
+        self.role == Role::Bot
+    }
+    pub fn administrator(&self) -> bool {
+        self.role == Role::Administrator
+    }
 
     /// `User#title`.
     pub fn title(&self) -> String {

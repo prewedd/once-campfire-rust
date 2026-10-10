@@ -3,12 +3,12 @@
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
+use rails_compat::MessageVerifier;
 use sha1::{Digest, Sha1};
 
 use crate::json::Json;
 use crate::marcel;
 use crate::marshal::{self, Value};
-use crate::verifier::Verifier;
 use crate::{Error, Result};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -26,10 +26,7 @@ impl Variation {
     /// `resize_to_limit: [width, height]` plus an optional `format:` symbol, the only shape the
     /// app's named variants and previews use (`Message::Attachment`, `User::Avatar`, `Account`).
     pub fn resize_to_limit(width: i64, height: i64, format: Option<&str>) -> Self {
-        let mut transformations = vec![(
-            "resize_to_limit".to_string(),
-            Value::Array(vec![Value::Int(width), Value::Int(height)]),
-        )];
+        let mut transformations = vec![("resize_to_limit".to_string(), Value::Array(vec![Value::Int(width), Value::Int(height)]))];
         if let Some(format) = format {
             transformations.push(("format".to_string(), Value::Symbol(format.to_string())));
         }
@@ -107,12 +104,12 @@ impl Variation {
     }
 
     /// `Variation#key`: `ActiveStorage.verifier.generate(transformations, purpose: :variation)`.
-    pub fn key(&self, verifier: &dyn Verifier) -> String {
-        verifier.generate(&self.to_json().encode(), "variation", None)
+    pub fn key(&self, verifier: &MessageVerifier) -> String {
+        verifier.generate_raw(&self.to_json().encode(), Some("variation"), None)
     }
 
-    pub fn decode(verifier: &dyn Verifier, key: &str, now: jiff::Timestamp) -> Result<Variation> {
-        let data = verifier.verified(key, "variation", now).ok_or(Error::InvalidSignature)?;
+    pub fn decode(verifier: &MessageVerifier, key: &str, now: jiff::Timestamp) -> Result<Variation> {
+        let data = verifier.verify_raw(key, Some("variation"), now).map_err(|_| Error::InvalidSignature)?;
         Variation::from_json(&Json::parse(&data).map_err(|_| Error::InvalidSignature)?)
     }
 }
@@ -136,8 +133,6 @@ fn from_json(json: &Json) -> Result<Value> {
         Json::Float(_) => return Err(Error::InvalidVariation("float transformation arguments are unsupported".into())),
         Json::String(s) => Value::Str(s.clone()),
         Json::Array(items) => Value::Array(items.iter().map(from_json).collect::<Result<_>>()?),
-        Json::Object(entries) => {
-            Value::Hash(entries.iter().map(|(k, v)| Ok((k.clone(), from_json(v)?))).collect::<Result<_>>()?)
-        }
+        Json::Object(entries) => Value::Hash(entries.iter().map(|(k, v)| Ok((k.clone(), from_json(v)?))).collect::<Result<_>>()?),
     })
 }

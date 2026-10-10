@@ -31,10 +31,7 @@ pub fn by_path(path: &str) -> Option<&'static str> {
 
 /// `Marcel::Magic.new(type).extensions`.
 pub fn extensions(content_type: &str) -> &'static [&'static str] {
-    tables::TYPE_EXTS
-        .binary_search_by(|(t, _)| (*t).cmp(content_type))
-        .map(|i| tables::TYPE_EXTS[i].1)
-        .unwrap_or(&[])
+    tables::TYPE_EXTS.binary_search_by(|(t, _)| (*t).cmp(content_type)).map(|i| tables::TYPE_EXTS[i].1).unwrap_or(&[])
 }
 
 /// `Marcel::Magic.child?`.
@@ -43,10 +40,7 @@ pub fn is_child(child: &str, parent: &str) -> bool {
 }
 
 fn parents(content_type: &str) -> &'static [&'static str] {
-    tables::TYPE_PARENTS
-        .binary_search_by(|(t, _)| (*t).cmp(content_type))
-        .map(|i| tables::TYPE_PARENTS[i].1)
-        .unwrap_or(&[])
+    tables::TYPE_PARENTS.binary_search_by(|(t, _)| (*t).cmp(content_type)).map(|i| tables::TYPE_PARENTS[i].1).unwrap_or(&[])
 }
 
 /// How many leading bytes [`by_magic`] can look at: identifying the first `magic_prefix_len()`
@@ -72,10 +66,7 @@ pub fn magic_prefix_len() -> usize {
 
 /// `Marcel::Magic.by_magic`: the first table entry whose matches hit.
 pub fn by_magic(data: &[u8]) -> Option<String> {
-    tables::MAGIC
-        .iter()
-        .find(|(_, matches)| matches_any(data, matches))
-        .map(|(content_type, _)| content_type.to_lowercase())
+    tables::MAGIC.iter().find(|(_, matches)| matches_any(data, matches)).map(|(content_type, _)| content_type.to_lowercase())
 }
 
 fn matches_any(data: &[u8], matches: &[Match]) -> bool {

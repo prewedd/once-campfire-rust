@@ -86,9 +86,8 @@ mime!(TURBO_STREAM, "turbo_stream", "text/vnd.turbo-stream.html", [], []);
 pub static ALL: Mime = Mime { symbol: "*/*", string: "*/*", synonyms: &[], extensions: &[] };
 
 pub static REGISTERED: [&Mime; 37] = [
-    &HTML, &TEXT, &JS, &CSS, &ICS, &CSV, &VCF, &VTT, &MD, &PNG, &JPEG, &GIF, &BMP, &TIFF, &SVG, &WEBP, &MPEG, &MP3,
-    &OGG, &M4A, &WEBM, &MP4, &OTF, &TTF, &WOFF, &WOFF2, &XML, &RSS, &ATOM, &YAML, &MULTIPART_FORM, &URL_ENCODED_FORM,
-    &JSON, &PDF, &ZIP, &GZIP, &TURBO_STREAM,
+    &HTML, &TEXT, &JS, &CSS, &ICS, &CSV, &VCF, &VTT, &MD, &PNG, &JPEG, &GIF, &BMP, &TIFF, &SVG, &WEBP, &MPEG, &MP3, &OGG, &M4A, &WEBM,
+    &MP4, &OTF, &TTF, &WOFF, &WOFF2, &XML, &RSS, &ATOM, &YAML, &MULTIPART_FORM, &URL_ENCODED_FORM, &JSON, &PDF, &ZIP, &GZIP, &TURBO_STREAM,
 ];
 
 /// `Mime[ext]` / `Mime::Type.lookup_by_extension`.
@@ -141,7 +140,9 @@ fn valid_mime_type(string: &str) -> bool {
 struct AcceptItem {
     index: usize,
     name: String,
-    q: i64,
+    /// `(q.to_f * 100).to_i`, kept in a float so that q-values past `i64` still order as Ruby's
+    /// Integers do. An infinite one, where Rails raises FloatDomainError, sorts first (or last).
+    q: f64,
 }
 
 /// `Mime::Type.parse(accept_header)`, keeping only registered types and `*/*` (the
@@ -150,7 +151,7 @@ pub fn parse_accept(header: &str) -> Result<Vec<Format>, InvalidMimeType> {
     let mut formats: Vec<Format> = Vec::new();
     if !header.contains(',') {
         let header = match find_q_separator(header) {
-            Some(index) => header[..index].trim(),
+            Some((index, _)) => header[..index].trim(),
             None => header,
         };
         if header.trim().is_empty() {
@@ -165,15 +166,10 @@ pub fn parse_accept(header: &str) -> Result<Vec<Format>, InvalidMimeType> {
     let mut list = Vec::new();
     let mut index = 0;
     for item in scan_accept_items(header) {
-        let (params, q) = match find_q_separator(item) {
-            Some(i) => {
-                let rest = &item[i..];
-                let q_start = rest.find('=').map(|e| e + 1).unwrap_or(rest.len());
-                let q = rest[q_start..].trim_start_matches('"');
-                (&item[..i], Some(q))
-            }
-            None => (item, None),
-        };
+        // `params, q = header.split(PARAMETER_SEPARATOR_REGEXP)`
+        let fields = ruby_split(item, find_q_separator);
+        let Some(params) = fields.first() else { continue };
+        let q = fields.get(1).copied();
         let params = params.trim();
         if params.is_empty() {
             continue;
@@ -184,22 +180,24 @@ pub fn parse_accept(header: &str) -> Result<Vec<Format>, InvalidMimeType> {
         };
         for name in names {
             let q = match q {
-                Some(q) => ruby_to_f(q),
+                Some(q) => ruby_compat::to_f(q),
                 None if name == "*/*" => 0.0,
                 None => 1.0,
             };
-            list.push(AcceptItem { index, name, q: (q * 100.0) as i64 });
+            list.push(AcceptItem { index, name, q: (q * 100.0).trunc() });
             index += 1;
         }
     }
-    list.sort_by(|a, b| b.q.cmp(&a.q).then(a.index.cmp(&b.index)));
+    // -0.0 ties with 0.0, as both are Ruby's 0 (`to_f` never gives NaN).
+    list.sort_by(|a, b| b.q.partial_cmp(&a.q).unwrap_or(std::cmp::Ordering::Equal).then(a.index.cmp(&b.index)));
     sort_xml(&mut list);
 
     for item in &list {
         if let Some(mime) = lookup(&item.name)?
-            && !formats.contains(&mime) {
-                formats.push(mime);
-            }
+            && !formats.contains(&mime)
+        {
+            formats.push(mime);
+        }
     }
     Ok(formats)
 }
@@ -239,19 +237,38 @@ fn sort_xml(list: &mut Vec<AcceptItem>) {
     }
 }
 
-/// `/;\s*q="?/`
-fn find_q_separator(s: &str) -> Option<usize> {
+/// `PARAMETER_SEPARATOR_REGEXP = /;\s*q="?/`: where the first one starts and ends.
+fn find_q_separator(s: &str) -> Option<(usize, usize)> {
     let bytes = s.as_bytes();
-    (0..bytes.len()).find(|&i| {
+    (0..bytes.len()).find_map(|i| {
         if bytes[i] != b';' {
-            return false;
+            return None;
         }
         let mut j = i + 1;
         while j < bytes.len() && bytes[j].is_ascii_whitespace() {
             j += 1;
         }
-        bytes.get(j) == Some(&b'q') && bytes.get(j + 1) == Some(&b'=')
+        if bytes.get(j) != Some(&b'q') || bytes.get(j + 1) != Some(&b'=') {
+            return None;
+        }
+        Some((i, if bytes.get(j + 2) == Some(&b'"') { j + 3 } else { j + 2 }))
     })
+}
+
+/// `String#split` with a separator finder. It drops trailing empty fields, so a `q=` with nothing
+/// after it leaves `q` nil (1.0), not "" (0.0).
+fn ruby_split(s: &str, find: impl Fn(&str) -> Option<(usize, usize)>) -> Vec<&str> {
+    let mut fields = Vec::new();
+    let mut rest = s;
+    while let Some((start, end)) = find(rest) {
+        fields.push(&rest[..start]);
+        rest = &rest[end..];
+    }
+    fields.push(rest);
+    while fields.last() == Some(&"") {
+        fields.pop();
+    }
+    fields
 }
 
 /// `ACCEPT_HEADER_REGEXP = /[^,\s"](?:[^,"]|"[^"]*")*/`
@@ -289,18 +306,6 @@ fn trailing_star(accept: &str) -> Option<Vec<Format>> {
     Some(REGISTERED.iter().copied().filter(|m| m.matches(prefix)).collect())
 }
 
-/// Ruby's `String#to_f`: the longest numeric prefix, 0.0 when there is none.
-fn ruby_to_f(s: &str) -> f64 {
-    let s = s.trim_start();
-    let end = s
-        .char_indices()
-        .take_while(|(i, c)| c.is_ascii_digit() || *c == '.' || (*i == 0 && (*c == '-' || *c == '+')))
-        .map(|(i, c)| i + c.len_utf8())
-        .last()
-        .unwrap_or(0);
-    s[..end].parse().unwrap_or(0.0)
-}
-
 /// Everything `MimeNegotiation#formats` looks at.
 #[derive(Debug, Default, Clone)]
 pub struct NegotiationInput<'a> {
@@ -319,11 +324,7 @@ pub fn formats(input: &NegotiationInput) -> Result<Vec<Format>, InvalidMimeType>
     }
     if valid_accept_header(input) {
         let accept = input.accept.unwrap_or("").trim();
-        return if accept.is_empty() {
-            Ok(content_mime_type(input.content_type)?.into_iter().collect())
-        } else {
-            parse_accept(accept)
-        };
+        return if accept.is_empty() { Ok(content_mime_type(input.content_type)?.into_iter().collect()) } else { parse_accept(accept) };
     }
     if let Some(format) = format_from_path_extension(input.path) {
         return Ok(vec![format]);
@@ -351,8 +352,7 @@ pub fn should_apply_vary_header(input: &NegotiationInput) -> bool {
 fn valid_accept_header(input: &NegotiationInput) -> bool {
     let accept = input.accept.unwrap_or("");
     let present = !accept.trim().is_empty();
-    (input.xhr && (present || input.content_type.is_some_and(|ct| !ct.is_empty())))
-        || (present && !browser_like(accept))
+    (input.xhr && (present || input.content_type.is_some_and(|ct| !ct.is_empty()))) || (present && !browser_like(accept))
 }
 
 /// `BROWSER_LIKE_ACCEPTS = /,\s*\*\/\*|\*\/\*\s*,/`
@@ -413,6 +413,42 @@ mod tests {
         assert_eq!(fmts(Some("application/json, */*"), "/", false), vec!["html"]);
         assert_eq!(fmts(Some("*/*, application/json;q=0.1"), "/", false), vec!["html"]);
         assert_eq!(fmts(Some("application/json;q=0.1,text/html;q=0.1"), "/", false), vec!["json", "html"]);
+    }
+
+    #[test]
+    fn q_values_read_like_rails() {
+        // `Mime::Type.parse(header)` in the reference.
+        for (accept, order) in [
+            ("text/html;q=, application/json", ["html", "json"]),
+            ("text/html; q=, application/json;q=0.5", ["html", "json"]),
+            ("text/html;q=;q=, application/json;q=0.5", ["html", "json"]),
+            ("text/html;q=0.5, application/json;q=", ["json", "html"]),
+            ("text/html;q=;x=1, application/json", ["json", "html"]),
+            ("text/html;q=;q=0.9, application/json;q=0.5", ["json", "html"]),
+            ("text/html;q=0.4;q=0.9, application/json;q=0.5", ["json", "html"]),
+            ("text/html;q=0.5.1, application/json;q=0.6", ["json", "html"]),
+            ("text/html;q=0.5.1.2, application/json;q=0.49", ["html", "json"]),
+            ("text/html;q=\"0.9\", application/json;q=0.5", ["html", "json"]),
+            ("text/html;q=\"\"0.9, application/json;q=0.5", ["json", "html"]),
+            ("text/html;q=1e-1, application/json;q=0.5", ["json", "html"]),
+            ("text/html;q=1_0, application/json;q=5", ["html", "json"]),
+            ("text/html;q=abc, application/json;q=0.1", ["json", "html"]),
+            ("text/html;q=+0.3, application/json;q=0.2", ["html", "json"]),
+            ("text/html;q= 0.3, application/json;q=0.2", ["html", "json"]),
+            ("text/html;q=1e17, application/json;q=1e18", ["json", "html"]),
+            ("text/html;q=1e19, application/json;q=1e20", ["json", "html"]),
+            ("text/html;q=-0.001, application/json;q=0", ["html", "json"]),
+            ("application/json;q=0, text/html;q=-0.001", ["json", "html"]),
+            // `String#to_f` reads hexadecimal after a sign only.
+            ("text/html;q=0.5, application/json;q=+0x1", ["json", "html"]),
+            ("text/html;q=0.5, application/json;q=0x1", ["html", "json"]),
+        ] {
+            assert_eq!(symbols(&parse_accept(accept).unwrap()), order, "{accept}");
+        }
+        assert_eq!(symbols(&parse_accept("*/*;q=, application/json;q=0.5").unwrap()), ["json", "*/*"]);
+        // Rails raises FloatDomainError (a 500) on an infinite q-value.
+        assert_eq!(symbols(&parse_accept("text/html;q=1e400, application/json").unwrap()), ["html", "json"]);
+        assert_eq!(symbols(&parse_accept("text/html;q=-1e400, application/json").unwrap()), ["json", "html"]);
     }
 
     #[test]

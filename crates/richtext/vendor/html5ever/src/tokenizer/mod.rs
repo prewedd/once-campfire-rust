@@ -77,6 +77,11 @@ pub struct TokenizerOpts {
     /// FIXME: Can't use Tendril because we want TokenizerOpts
     /// to be Send.
     pub last_start_tag_name: Option<String>,
+
+    /// Stop collecting a tag's attributes once it has this many, and
+    /// note it (see `too_many_attributes`), as Gumbo does.  Default: None
+    /// (Not upstream: see Cargo.toml.)
+    pub max_attributes: Option<usize>,
 }
 
 impl Default for TokenizerOpts {
@@ -87,6 +92,7 @@ impl Default for TokenizerOpts {
             profile: false,
             initial_state: None,
             last_start_tag_name: None,
+            max_attributes: None,
         }
     }
 }
@@ -162,6 +168,9 @@ pub struct Tokenizer<Sink> {
 
     /// Track current line
     current_line: Cell<u64>,
+
+    /// Did a tag have more than `opts.max_attributes` attributes?
+    too_many_attributes: Cell<bool>,
 }
 
 impl<Sink: TokenSink> Tokenizer<Sink> {
@@ -196,6 +205,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             state_profile: RefCell::new(BTreeMap::new()),
             time_in_sink: Cell::new(0),
             current_line: Cell::new(1),
+            too_many_attributes: Cell::new(false),
         }
     }
 
@@ -220,6 +230,17 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
 
     pub fn set_plaintext_state(&self) {
         self.state.set(states::Plaintext);
+    }
+
+    /// Has a tag started more attributes than `opts.max_attributes`?
+    pub fn too_many_attributes(&self) -> bool {
+        self.too_many_attributes.get()
+    }
+
+    fn at_max_attributes(&self) -> bool {
+        self.opts
+            .max_attributes
+            .is_some_and(|max| self.current_tag_attrs.borrow().len() >= max)
     }
 
     fn process_token(&self, token: Token) -> TokenSinkResult<Sink::Handle> {
@@ -502,12 +523,22 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
 
     fn create_attribute(&self, c: char) {
         self.finish_attribute();
+        if self.at_max_attributes() {
+            self.too_many_attributes.set(true);
+        }
 
         self.current_attr_name.borrow_mut().push_char(c);
     }
 
     fn finish_attribute(&self) {
         if self.current_attr_name.borrow().is_empty() {
+            return;
+        }
+
+        // Drop attributes past the limit without scanning for a duplicate, as Gumbo does.
+        if self.at_max_attributes() {
+            self.current_attr_name.borrow_mut().clear();
+            self.current_attr_value.borrow_mut().clear();
             return;
         }
 
@@ -2251,6 +2282,7 @@ mod test {
             profile: false,
             initial_state: None,
             last_start_tag_name: None,
+            max_attributes: None,
         };
         let vector = vec![
             StrTendril::from("<a>\n"),
@@ -2276,6 +2308,7 @@ mod test {
             profile: false,
             initial_state: None,
             last_start_tag_name: None,
+            max_attributes: None,
         };
         let vector = vec![
             StrTendril::from("<a>\r\n"),

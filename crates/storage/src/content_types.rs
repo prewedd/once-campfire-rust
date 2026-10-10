@@ -36,14 +36,8 @@ pub const SERVE_AS_BINARY: &[&str] = &[
 pub const BINARY_CONTENT_TYPE: &str = "application/octet-stream";
 
 /// `ActiveStorage.video_preview_arguments` from `load_defaults 7.0`, already shell-split.
-pub const VIDEO_PREVIEW_ARGUMENTS: &[&str] = &[
-    "-vf",
-    r"select=eq(n\,0)+eq(key\,1)+gt(scene\,0.015),loop=loop=-1:size=2,trim=start_frame=1",
-    "-frames:v",
-    "1",
-    "-f",
-    "image2",
-];
+pub const VIDEO_PREVIEW_ARGUMENTS: &[&str] =
+    &["-vf", r"select=eq(n\,0)+eq(key\,1)+gt(scene\,0.015),loop=loop=-1:size=2,trim=start_frame=1", "-frames:v", "1", "-f", "image2"];
 
 pub fn is_variable(content_type: &str) -> bool {
     VARIABLE.contains(&content_type)

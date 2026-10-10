@@ -2,13 +2,13 @@
 //! signed-in user's own profile.
 
 use campfire_db::UserChanges;
-use campfire_kit::{Ctx, Error, Redirect, Result, StatusCode, format, permit_keys};
+use campfire_kit::{Ctx, Redirect, Result, StatusCode, format, permit_keys};
 use campfire_views::users;
 
 use crate::app::AppCtx;
-use crate::controllers::presenters::page::framed_page;
 use crate::concerns::{self, Before};
 use crate::controllers::presenters::attachments::{self, Assignment, Record};
+use crate::controllers::presenters::page::framed_page;
 use crate::controllers::presenters::{self, accounts::string_attribute};
 
 /// `set_user` (`Current.user`); memberships partitioned into direct and shared rooms.
@@ -22,15 +22,13 @@ pub async fn show(c: &mut Ctx) -> Result {
         let user = user.clone();
         let now = crate::huddles::unix_now();
         c.app()
-            .db
             .read(move |conn| {
                 let attached = attachments::attached_blob(conn, "User", user.id, "avatar")?.is_some();
                 let status = campfire_db::UserStatus::for_user(conn, user.id, now)?.map(|status| (status.emoji, status.text));
                 let paused_until = campfire_db::NotificationPause::until(conn, user.id, now)?;
                 Ok((attached, presenters::accounts::profile_memberships(conn, &user)?, status, paused_until))
             })
-            .await
-            .map_err(Error::internal)?
+            .await?
     };
     let user = presenters::user_summary(&secrets, &user);
     framed_page!(c, StatusCode::OK, |ctx| users::ProfileShow {
@@ -76,13 +74,11 @@ pub async fn update(c: &mut Ctx) -> Result {
     let avatar = avatar.stage(c.app()).await?;
     let pending = c
         .app()
-        .db
         .write(move |tx| {
             user.update(tx, changes)?;
             attachments::assign(tx, Record::user(user.id), "avatar", avatar)
         })
-        .await
-        .map_err(Error::internal)?;
+        .await?;
     attachments::analyze_later(c.app(), pending);
 
     let location = c.url_for(&campfire_routes::user_profile());

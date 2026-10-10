@@ -2,6 +2,16 @@
 # formatting elements before inserting <svg> or <math> in body, as the HTML spec (and Gumbo, which
 # Nokogiri uses) does. Later releases also adopt the customizable-<select> parsing rules, which
 # Gumbo doesn't, so upgrading isn't an option. See crates/richtext/src/dom.rs.
+#
+# Two additions of ours let dom.rs hold a parse to Gumbo's limits while it runs, not after the
+# whole tree is built, which takes quadratic time for hostile input:
+# - `TreeBuilder::open_elements_len`, a read accessor on the stack of open elements, which Gumbo
+#   checks against its tree depth limit before each token.
+# - `TokenizerOpts::max_attributes` and `Tokenizer::too_many_attributes`: starting an attribute on a
+#   tag that already has `max_attributes` sets the flag, and attributes past the limit are dropped
+#   without the duplicate scan (quadratic in a tag's attributes), as Gumbo's tokenizer does.
+#
+# rustfmt.toml is ours too: it keeps `cargo fmt --all` off upstream's code.
 [package]
 edition = "2021"
 name = "html5ever"

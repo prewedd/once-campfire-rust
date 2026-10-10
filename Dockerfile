@@ -90,15 +90,17 @@ RUN apt-get source -qq ffmpeg=${FFMPEG_VERSION} && \
     strip --strip-unneeded /opt/ffmpeg/lib/*.so.* /opt/ffmpeg/bin/*
 
 
-# The toolchain CI runs the tests and clippy in, with the source bind-mounted: the same libvips and
-# ffmpeg as the image, so the storage vectors' byte comparisons run rather than skip.
+# The toolchain CI runs rustfmt, clippy and the tests in, with the source bind-mounted: the same
+# libvips and ffmpeg as the image, so the storage vectors' byte comparisons run rather than skip
+# (CAMPFIRE_REQUIRE_MEDIA_VECTORS turns a version mismatch into a failure).
 FROM media-base AS toolchain
 COPY --from=vips /opt/vips /opt/vips
 COPY --from=ffmpeg /opt/ffmpeg /opt/ffmpeg
 ENV LIBRARY_PATH=/opt/vips/lib \
     LD_LIBRARY_PATH=/opt/vips/lib:/opt/ffmpeg/lib \
-    PATH=/opt/ffmpeg/bin:$PATH
-RUN rustup component add clippy && apt-get install --no-install-recommends -y mold
+    PATH=/opt/ffmpeg/bin:$PATH \
+    CAMPFIRE_REQUIRE_MEDIA_VECTORS=1
+RUN rustup component add clippy rustfmt && apt-get install --no-install-recommends -y mold
 # Every build in this image links with mold: dev server, tests and deploys alike (the same flags,
 # so they never invalidate each other's build directories).
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"

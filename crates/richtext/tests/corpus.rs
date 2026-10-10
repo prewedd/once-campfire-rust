@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use campfire_richtext::dom::Dom;
 use campfire_richtext::sanitizer::SafeList;
 use campfire_richtext::{
-    AttachableResolver, GidLookup, MentionUser, Presentation, RenderContext, SignedLookup, editable_value,
-    mentioned_users, present_message, to_plain_text,
+    AttachableResolver, GidLookup, MentionUser, Presentation, RenderContext, SignedLookup, editable_value, mentioned_users,
+    present_message, to_plain_text,
 };
 use serde_json::Value;
 
@@ -75,9 +75,7 @@ impl TestResolver {
 impl AttachableResolver for TestResolver {
     fn locate_signed(&self, sgid: &str) -> SignedLookup {
         match self.signed.iter().find(|(s, ..)| s == sgid) {
-            Some((_, model, id, true)) if model == "User" => {
-                SignedLookup::User(self.users.iter().find(|u| u.id == *id).unwrap().clone())
-            }
+            Some((_, model, id, true)) if model == "User" => SignedLookup::User(self.users.iter().find(|u| u.id == *id).unwrap().clone()),
             Some((_, model, _, _)) => SignedLookup::MissingRecord { model_name: model.clone() },
             None => SignedLookup::Invalid,
         }
@@ -175,7 +173,9 @@ fn with_port_divergences(rails: &str) -> String {
 #[test]
 fn port_divergences_apply_to_attribute_values_only() {
     assert_eq!(
-        with_port_divergences("<p title=\"a>b <a target=\"_blank\" href=\"http://x.test/\">http://x.test/</a>\">c > <a target=\"_blank\" href=\"http://y.test/\">y</a></p>"),
+        with_port_divergences(
+            "<p title=\"a>b <a target=\"_blank\" href=\"http://x.test/\">http://x.test/</a>\">c > <a target=\"_blank\" href=\"http://y.test/\">y</a></p>"
+        ),
         "<p title=\"a&gt;b http://x.test/\">c > <a target=\"_blank\" href=\"http://y.test/\">y</a></p>"
     );
     assert_eq!(with_port_divergences("<a name=\"x y\" title=\"name=\">n</a>"), "<a title=\"name=\">n</a>");
@@ -184,8 +184,8 @@ fn port_divergences_apply_to_attribute_values_only() {
 // --- Security assertions -------------------------------------------------------------------------
 
 const DANGEROUS_ELEMENTS: &[&str] = &[
-    "script", "style", "iframe", "frame", "frameset", "object", "embed", "applet", "base", "meta", "link", "form",
-    "input", "button", "textarea", "select", "svg", "math", "template", "noscript", "xmp", "plaintext", "noembed",
+    "script", "style", "iframe", "frame", "frameset", "object", "embed", "applet", "base", "meta", "link", "form", "input", "button",
+    "textarea", "select", "svg", "math", "template", "noscript", "xmp", "plaintext", "noembed",
 ];
 
 const URL_ATTRIBUTES: &[&str] = &["href", "src", "action", "formaction", "poster", "cite", "background", "xlink:href", "srcset", "data"];
@@ -298,7 +298,8 @@ fn corpus_matches_rails() {
         let label = format!("[presentation] {name}");
         // Deliberate: a missing attachable Rails can't find a partial for (a deleted user's
         // mention) renders ☒ instead of raising and blanking the message.
-        let missing_partial = case["presentation_raised_message"].as_str().is_some_and(|m| m.contains("to_missing_attachable_partial_path"));
+        let missing_partial =
+            case["presentation_raised_message"].as_str().is_some_and(|m| m.contains("to_missing_attachable_partial_path"));
         match (&expected, &actual) {
             (Presentation::Html(_), Presentation::Html(a)) if missing_partial => {
                 assert!(a.contains('☒'), "{label}: {a}");
@@ -364,7 +365,12 @@ fn corpus_matches_rails() {
     let mut failed = false;
     for (kind, tally) in &tallies {
         let total = tally.exact + tally.mismatched.len();
-        println!("{kind}: {total} cases, {} byte-identical, {} DOM-equal only, {} different", tally.exact, tally.dom_equal, tally.mismatched.len() - tally.dom_equal);
+        println!(
+            "{kind}: {total} cases, {} byte-identical, {} DOM-equal only, {} different",
+            tally.exact,
+            tally.dom_equal,
+            tally.mismatched.len() - tally.dom_equal
+        );
         for m in &tally.mismatched {
             println!("  MISMATCH {m}");
             failed = true;

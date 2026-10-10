@@ -49,7 +49,9 @@ fn operations(variation: &Variation) -> Result<Vec<(Option<i32>, Option<i32>)>> 
             ("resize_to_limit", Value::Array(args)) if args.len() == 2 => {
                 let dimension = |v: Option<&Value>| match v {
                     None | Some(Value::Nil) => Ok(None),
-                    Some(Value::Int(n)) => Ok(Some(*n as i32)),
+                    Some(Value::Int(n)) => {
+                        i32::try_from(*n).map(Some).map_err(|_| Error::InvalidVariation(format!("resize_to_limit argument {n}")))
+                    }
                     Some(other) => Err(Error::InvalidVariation(format!("resize_to_limit argument {other:?}"))),
                 };
                 let (width, height) = (dimension(args.first())?, dimension(args.get(1))?);
@@ -81,12 +83,7 @@ fn blank(value: &Value) -> bool {
 pub fn ffmpeg_exists() -> bool {
     static EXISTS: OnceLock<bool> = OnceLock::new();
     *EXISTS.get_or_init(|| {
-        Command::new(ffmpeg_path())
-            .arg("-version")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success())
+        Command::new(ffmpeg_path()).arg("-version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success())
     })
 }
 
@@ -147,13 +144,57 @@ fn wait_until(child: &mut Child, deadline: Instant) -> std::io::Result<Option<Ex
             return Ok(None);
         }
         std::thread::sleep(pause.min(deadline - now));
-        pause = (pause * 2).min(Duration::from_millis(50));
+        pause = next_pause(pause);
     }
+}
+
+/// The longest `wait_until` sleeps between checks. `try_wait` is one `waitpid(WNOHANG)`, so polling
+/// often is cheap and keeps the return close to the exit: a child that exits between checks is
+/// noticed up to this much later.
+const MAX_PAUSE: Duration = Duration::from_millis(5);
+
+fn next_pause(pause: Duration) -> Duration {
+    (pause * 2).min(MAX_PAUSE)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fixture(name: &str) -> std::path::PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../reference/test/fixtures/files").join(name)
+    }
+
+    fn thumbnail(input: &Path, size: i64, format: &str) -> Result<NamedTempFile> {
+        transform(input, &Variation::resize_to_limit(size, size, Some(format)))
+    }
+
+    #[test]
+    fn a_failing_variant_reports_its_own_error_after_many_variants() {
+        // libvips' error buffer is process-wide and holds 10 KB. Probing JPEG and PNG loaders for
+        // `page` used to append "no property named `page'" to it on every variant, until it was
+        // full and the next real error was cut off.
+        let jpeg = thumbnail(&fixture("moon.jpg"), 8, "jpg").unwrap();
+        let png = thumbnail(jpeg.path(), 8, "png").unwrap();
+        for _ in 0..200 {
+            thumbnail(jpeg.path(), 4, "webp").unwrap();
+            thumbnail(png.path(), 4, "webp").unwrap();
+        }
+
+        let corrupt = tempfile::Builder::new().suffix(".jpg").tempfile().unwrap();
+        std::fs::write(corrupt.path(), b"\xFF\xD8\xFF\xE0 not really a JPEG").unwrap();
+        let Err(Error::Vips(message)) = thumbnail(corrupt.path(), 4, "webp") else { panic!("a corrupt JPEG made a variant") };
+        assert!(message.contains("JPEG datastream contains no image"), "{message}");
+        assert!(!message.contains("no property named"), "{message}");
+    }
+
+    #[test]
+    fn resize_arguments_must_fit_libvips() {
+        let too_wide = Variation::resize_to_limit(i64::from(i32::MAX) + 1, 100, None);
+        assert!(matches!(operations(&too_wide), Err(Error::InvalidVariation(_))));
+        let widest = Variation::resize_to_limit(i64::from(i32::MAX), 100, None);
+        assert_eq!(operations(&widest).unwrap(), [(Some(i32::MAX), Some(100))]);
+    }
 
     #[test]
     fn output_within_captures_a_quick_child() {
@@ -163,6 +204,32 @@ mod tests {
         assert!(output.status.success());
         assert_eq!(output.stdout, b"out\n");
         assert_eq!(output.stderr, b"err\n");
+    }
+
+    #[test]
+    fn the_pause_between_checks_doubles_up_to_five_milliseconds() {
+        let pauses = std::iter::successors(Some(Duration::from_millis(1)), |&pause| Some(next_pause(pause)));
+        assert_eq!(pauses.take(6).map(|pause| pause.as_millis()).collect::<Vec<_>>(), [1, 2, 4, 5, 5, 5]);
+    }
+
+    #[test]
+    fn output_within_returns_soon_after_the_child_exits() {
+        // With pauses growing to 50 ms, a child that exited at 35 ms was noticed at 63 ms.
+        let run = |within: bool| {
+            let mut command = Command::new("sleep");
+            command.arg("0.035");
+            let started = Instant::now();
+            let output = if within { output_within(&mut command, Duration::from_secs(10)) } else { command.output() };
+            assert!(output.unwrap().status.success());
+            started.elapsed()
+        };
+        // The fastest of a few runs each, so a busy machine doesn't fail it.
+        let (mut plain, mut within) = (Duration::MAX, Duration::MAX);
+        for _ in 0..5 {
+            plain = plain.min(run(false));
+            within = within.min(run(true));
+        }
+        assert!(within < plain + Duration::from_millis(15), "output() {plain:?}, output_within {within:?}");
     }
 
     #[test]

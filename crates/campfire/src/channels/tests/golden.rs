@@ -24,6 +24,7 @@ use std::time::Duration;
 
 use campfire_cable::Config;
 use campfire_db::{Database, Event, EventSink, Message, Room, User};
+use campfire_kit::{SharedClock, SystemClock};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -106,7 +107,10 @@ fn script(tokens: &BTreeMap<String, String>) -> Vec<(String, Step)> {
         ("A presence", Send("A", subscribe(&presence))),
         ("A presence in a room A isn't in", Send("A", subscribe(&json!({ "channel": "PresenceChannel", "room_id": closed_id })))),
         ("A presence with a non-numeric room", Send("A", subscribe(&json!({ "channel": "PresenceChannel", "room_id": "abc" })))),
-        ("A presence with a numeric string room", Send("A", subscribe(&json!({ "channel": "PresenceChannel", "room_id": room_id.to_string() })))),
+        (
+            "A presence with a numeric string room",
+            Send("A", subscribe(&json!({ "channel": "PresenceChannel", "room_id": room_id.to_string() }))),
+        ),
         ("A room", Send("A", subscribe(&room))),
         ("A room A isn't in", Send("A", subscribe(&json!({ "channel": "RoomChannel", "room_id": closed_id })))),
         ("A room without an id", Send("A", subscribe(&json!({ "channel": "RoomChannel" })))),
@@ -121,8 +125,14 @@ fn script(tokens: &BTreeMap<String, String>) -> Vec<(String, Step)> {
             Send("A", subscribe(&json!({ "channel": "RoomMessagesChannel", "signed_stream_name": t("CLOSED_MESSAGES_SIGNED") }))),
         ),
         ("A room messages without a name", Send("A", subscribe(&json!({ "channel": "RoomMessagesChannel" })))),
-        ("A room messages with a forged name", Send("A", subscribe(&json!({ "channel": "RoomMessagesChannel", "signed_stream_name": forged })))),
-        ("A room messages with the rooms name", Send("A", subscribe(&json!({ "channel": "RoomMessagesChannel", "signed_stream_name": t("ROOMS_SIGNED") })))),
+        (
+            "A room messages with a forged name",
+            Send("A", subscribe(&json!({ "channel": "RoomMessagesChannel", "signed_stream_name": forged }))),
+        ),
+        (
+            "A room messages with the rooms name",
+            Send("A", subscribe(&json!({ "channel": "RoomMessagesChannel", "signed_stream_name": t("ROOMS_SIGNED") }))),
+        ),
         ("A turbo rooms", Send("A", subscribe(&rooms))),
         ("A turbo own rooms", Send("A", subscribe(&turbo(t("A_ROOMS_SIGNED"))))),
         ("A turbo guarded room messages", Send("A", subscribe(&guarded))),
@@ -298,7 +308,8 @@ fn sql_value(value: &Value) -> rusqlite::types::Value {
 /// A fresh database holding the reference's rows, and our channels over it.
 async fn start_rust(fixtures: &Fixtures, dir: &Path) -> Target {
     let sink = Arc::new(CableSink::default());
-    let env = campfire_db::Env { sink: sink.clone(), ..campfire_db::Env::default() };
+    let clock: SharedClock = Arc::new(SystemClock);
+    let env = campfire_db::Env { clock: clock.clone(), sink: sink.clone(), ..campfire_db::Env::default() };
     let mut config = campfire_db::Config::new(dir.join("production.sqlite3"));
     config.readers = 2;
     let db = Database::open(config, env).unwrap();
@@ -317,12 +328,7 @@ async fn start_rust(fixtures: &Fixtures, dir: &Path) -> Target {
     .unwrap();
 
     let secrets = Arc::new(rails_compat::Secrets::new(&reference_secret_key_base()));
-    let deps = Deps {
-        db: db.clone(),
-        secrets: secrets.clone(),
-        crypto: Arc::new(campfire_kit::RailsCrypto::new(secrets)),
-        clock: Arc::new(campfire_kit::SystemClock),
-    };
+    let deps = Deps { db: db.clone(), secrets, clock };
     // The reference runs with DISABLE_SSL, so without assume_ssl.
     let server = channels::server(deps, Config { assume_ssl: false, ..Config::default() });
     let _ = sink.server.set(server.clone());

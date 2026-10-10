@@ -36,8 +36,11 @@
 pub mod platform;
 pub mod user_agent;
 
+use std::borrow::Cow;
+
 use campfire_db::{Ban, Membership, PasswordDigest, Room, Session, User};
 use campfire_kit::{Cookie, Ctx, Error, Result, SameSite, StatusCode, halt};
+use ruby_compat::integer_cast;
 
 use crate::app::AppCtx;
 
@@ -184,7 +187,7 @@ pub async fn reject_banned_ip(c: &mut Ctx) -> Result<()> {
         return Ok(());
     }
     let ip = c.request.remote_ip()?.to_string();
-    let banned = c.app().db.read(move |conn| Ban::banned(conn, &ip)).await.map_err(Error::internal)?;
+    let banned = c.app().read(move |conn| Ban::banned(conn, &ip)).await?;
     if banned {
         return halt(head(StatusCode::TOO_MANY_REQUESTS));
     }
@@ -196,7 +199,7 @@ pub async fn reject_banned_ip(c: &mut Ctx) -> Result<()> {
 /// `Authentication::SessionLookup#find_session_by_cookie`
 pub async fn find_session_by_cookie(c: &Ctx) -> Result<Option<Session>> {
     let Some(token) = c.cookies.signed("session_token") else { return Ok(None) };
-    c.app().db.read(move |conn| Session::find_by_token(conn, &token)).await.map_err(Error::internal)
+    c.app().read(move |conn| Session::find_by_token(conn, &token)).await
 }
 
 /// `require_authentication`: `restore_authentication || bot_authentication || request_authentication`.
@@ -222,10 +225,10 @@ pub async fn restore_authentication(c: &mut Ctx) -> Result<bool> {
 pub async fn bot_authentication(c: &mut Ctx) -> Result<bool> {
     let Some(param) = c.params.get("bot_key").filter(|p| p.is_present()) else { return Ok(false) };
     // `params[:bot_key].strip` raises NoMethodError for a hash or array.
-    let Some(bot_key) = param.as_str().map(|key| ruby_strip(key).to_string()) else {
+    let Some(bot_key) = param.as_str().map(|key| ruby_compat::strip(key).to_string()) else {
         return Err(Error::internal(anyhow::anyhow!("undefined method 'strip' for bot_key")));
     };
-    let bot = c.app().db.read(move |conn| User::authenticate_bot(conn, &bot_key)).await.map_err(Error::internal)?;
+    let bot = c.app().read(move |conn| User::authenticate_bot(conn, &bot_key)).await?;
     match bot {
         Some(bot) => {
             c.set_current(CurrentUser(bot));
@@ -267,7 +270,7 @@ pub async fn authenticate_by(c: &Ctx, email_address: String, password: String) -
     if password.is_empty() {
         return Ok(None);
     }
-    let candidate = c.app().db.read(move |conn| User::find_active_by_email_address(conn, &email_address)).await.map_err(Error::internal)?;
+    let candidate = c.app().read(move |conn| User::find_active_by_email_address(conn, &email_address)).await?;
     tokio::task::spawn_blocking(move || User::authenticated(candidate, &password)).await.map_err(Error::internal)
 }
 
@@ -275,12 +278,7 @@ pub async fn authenticate_by(c: &Ctx, email_address: String, password: String) -
 pub async fn start_new_session_for(c: &mut Ctx, user: User) -> Result<Session> {
     let (user_agent, ip) = (c.request.user_agent().map(str::to_string), c.request.remote_ip()?.to_string());
     let user_id = user.id;
-    let session = c
-        .app()
-        .db
-        .write(move |tx| Session::start(tx, user_id, user_agent.as_deref(), Some(&ip)))
-        .await
-        .map_err(Error::internal)?;
+    let session = c.app().write(move |tx| Session::start(tx, user_id, user_agent.as_deref(), Some(&ip))).await?;
     authenticated_as(c, session.clone(), Some(user), true).await?;
     Ok(session)
 }
@@ -296,14 +294,12 @@ pub async fn resume_session(c: &mut Ctx, session: Session) -> Result<()> {
     let session = if refresh {
         let (user_agent, ip) = (c.request.user_agent().map(str::to_string), c.request.remote_ip()?.to_string());
         c.app()
-            .db
             .write(move |tx| {
                 let mut session = session;
                 session.resume(tx, user_agent.as_deref(), Some(&ip))?;
                 Ok(session)
             })
-            .await
-            .map_err(Error::internal)?
+            .await?
     } else {
         session
     };
@@ -317,7 +313,7 @@ async fn authenticated_as(c: &mut Ctx, session: Session, user: Option<User>, set
         Some(user) => Some(user),
         None => {
             let user_id = session.user_id;
-            c.app().db.read(move |conn| User::find_by_id(conn, user_id)).await.map_err(Error::internal)?
+            c.app().read(move |conn| User::find_by_id(conn, user_id)).await?
         }
     };
     if set_cookie {
@@ -341,15 +337,19 @@ fn set_authentication_cookie(c: &mut Ctx, session: &Session) -> Result<()> {
 /// and disconnect the user's sockets (`reset_remote_connections`, errors only logged).
 pub async fn terminate_current_session(c: &mut Ctx) -> Result<()> {
     if let Some(session) = current_session(c).cloned() {
-        c.app().db.write(move |tx| session.destroy(tx)).await.map_err(Error::internal)?;
+        c.app().write(move |tx| session.destroy(tx)).await?;
     }
     c.reset_session();
     c.cookies.delete("session_token");
     if let Some(user) = current_user(c).cloned()
-        && let Err(error) = c.app().db.write(move |tx| {
-            user.reset_remote_connections(tx);
-            Ok(())
-        }).await
+        && let Err(error) = c
+            .app()
+            .db
+            .write(move |tx| {
+                user.reset_remote_connections(tx);
+                Ok(())
+            })
+            .await
     {
         tracing::warn!("Could not disconnect remote connections on sign out: {error}");
     }
@@ -388,8 +388,17 @@ pub fn ensure_can_administer(c: &mut Ctx) -> Result<()> {
 // --- AllowBrowser --------------------------------------------------------------------------------
 
 /// `allow_browser versions: VERSIONS, block: -> { render template: "sessions/incompatible_browser" }`
+///
+/// The platform parsed for the check is kept for the layout's [`platform`], so a page parses its
+/// User-Agent once. A missing or blank one isn't checked, and is parsed only if a page renders.
 pub async fn allow_browser(c: &mut Ctx) -> Result<()> {
-    if platform::browser_blocked(c.request.user_agent()) {
+    let Some(header) = c.request.user_agent().filter(|header| user_agent::is_present(header)) else {
+        return Ok(());
+    };
+    let platform = platform::ApplicationPlatform::new(Some(header));
+    let blocked = platform.browser_blocked();
+    c.set_current(platform);
+    if blocked {
         return halt(render_incompatible_browser(c).await?);
     }
     Ok(())
@@ -415,10 +424,15 @@ async fn render_incompatible_browser(c: &mut Ctx) -> Result {
     let response = if own_layout {
         page_in_any_format(c, StatusCode::OK, |ctx| IncompatibleBrowser { ctx }.render()).await?
     } else {
-        page_or_frame_in_any_format(c, StatusCode::OK, |ctx| IncompatibleBrowser { ctx }.render(), |ctx| {
-            let page = IncompatibleBrowser { ctx };
-            campfire_views::layouts::frame(ctx, page.as_head(), page.as_content())
-        })
+        page_or_frame_in_any_format(
+            c,
+            StatusCode::OK,
+            |ctx| IncompatibleBrowser { ctx }.render(),
+            |ctx| {
+                let page = IncompatibleBrowser { ctx };
+                campfire_views::layouts::frame(ctx, page.as_head(), page.as_content())
+            },
+        )
         .await?
     };
     Ok(response.content_type(campfire_kit::response::HTML_UTF8))
@@ -426,9 +440,13 @@ async fn render_incompatible_browser(c: &mut Ctx) -> Result {
 
 // --- SetPlatform -------------------------------------------------------------------------------
 
-/// `platform` (`helper_method`): `ApplicationPlatform.new(request.user_agent)`.
-pub fn platform(c: &Ctx) -> platform::ApplicationPlatform {
-    platform::ApplicationPlatform::new(c.request.user_agent())
+/// `platform` (`helper_method`): `@platform ||= ApplicationPlatform.new(request.user_agent)`, the
+/// one [`allow_browser`] kept, or a new one when it didn't parse the header.
+pub fn platform(c: &Ctx) -> Cow<'_, platform::ApplicationPlatform> {
+    match c.current::<platform::ApplicationPlatform>() {
+        Some(platform) => Cow::Borrowed(platform),
+        None => Cow::Owned(platform::ApplicationPlatform::new(c.request.user_agent())),
+    }
 }
 
 // --- TrackedRoomVisit ----------------------------------------------------------------------------
@@ -447,20 +465,24 @@ pub fn remember_last_room_visited(c: &mut Ctx, room_id: i64) {
 /// `Current.user.rooms.original`.
 pub async fn last_room_visited(c: &Ctx) -> Result<Option<Room>> {
     let Some(user_id) = current_user(c).map(|user| user.id) else { return Ok(None) };
-    // `find_by(id: cookies[:last_room])` casts the cookie like an integer column would.
-    let last_room = c.cookies.get("last_room").and_then(cast_integer);
-    c.app()
-        .db
-        .read(move |conn| {
-            if let Some(room_id) = last_room
-                && let Some(room) = Room::find_for_user(conn, user_id, room_id)?
-            {
-                return Ok(Some(room));
-            }
-            Room::original_for_user(conn, user_id)
-        })
-        .await
-        .map_err(Error::internal)
+    let last_room = last_room_cookie(c);
+    c.app().read(move |conn| last_room_visited_in(conn, user_id, last_room)).await
+}
+
+/// The `last_room` cookie, as `find_by(id: cookies[:last_room])` casts it (like an integer column).
+pub fn last_room_cookie(c: &Ctx) -> Option<i64> {
+    c.cookies.get("last_room").and_then(integer_cast)
+}
+
+/// [`last_room_visited`] inside a read that's already on a reader, for the user and the
+/// [`last_room_cookie`].
+pub fn last_room_visited_in(conn: &campfire_db::Connection, user_id: i64, last_room: Option<i64>) -> campfire_db::Result<Option<Room>> {
+    if let Some(room_id) = last_room
+        && let Some(room) = Room::find_for_user(conn, user_id, room_id)?
+    {
+        return Ok(Some(room));
+    }
+    Room::original_for_user(conn, user_id)
 }
 
 // --- RoomScoped ----------------------------------------------------------------------------------
@@ -469,17 +491,19 @@ pub async fn last_room_visited(c: &Ctx) -> Result<Option<Room>> {
 /// otherwise. Returns the membership and its room.
 pub async fn set_room(c: &mut Ctx) -> Result<(Membership, Room)> {
     let user_id = require_current_user(c)?.id;
-    let Some(room_id) = c.param_str("room_id").and_then(cast_integer) else { return Err(Error::NotFound) };
+    let Some(room_id) = c.param_str("room_id").and_then(integer_cast) else { return Err(Error::NotFound) };
     c.app()
-        .db
         .read(move |conn| {
-            let Some(membership) = Membership::find_by_room_and_user(conn, room_id, user_id)? else { return Ok(None) };
-            let room = membership.room(conn)?;
-            Ok(Some((membership, room)))
+            let membership =
+                Membership::find_by_room_and_user(conn, room_id, user_id)?.ok_or(campfire_db::Error::RecordNotFound("Membership"))?;
+            // `@membership.room` is nil when the room is gone (memberships have no foreign key to
+            // rooms), and the action fails on it: a 500, where `Membership#room`'s
+            // `RecordNotFound` would be a 404.
+            let room =
+                Room::find_by_id(conn, membership.room_id)?.ok_or_else(|| campfire_db::Error::other("the membership's room is gone"))?;
+            Ok((membership, room))
         })
         .await
-        .map_err(Error::internal)?
-        .ok_or(Error::NotFound)
 }
 
 // --- Helpers -------------------------------------------------------------------------------------
@@ -494,78 +518,9 @@ pub fn head(status: StatusCode) -> campfire_kit::Response {
     if matches!(status.as_u16(), 100..=199 | 204 | 205 | 304) { response } else { response.content_type("text/html") }
 }
 
-/// ActiveModel's integer cast of a string attribute value (`"12abc"` → 12, `"abc"` → nil).
-pub fn cast_integer(value: &str) -> Option<i64> {
-    let value = value.trim_start();
-    let (sign, digits) = match value.as_bytes().first() {
-        Some(b'-') => (-1, &value[1..]),
-        Some(b'+') => (1, &value[1..]),
-        _ => (1, value),
-    };
-    let digits: String = digits.chars().take_while(char::is_ascii_digit).collect();
-    digits.parse::<i64>().ok().map(|n| sign * n)
-}
-
-/// `String#to_i`: optional leading whitespace and sign, then digits (underscores between them).
-pub fn ruby_to_i(value: &str) -> i64 {
-    let value = value.trim_start_matches([' ', '\t', '\n', '\u{b}', '\u{c}', '\r']);
-    let (negative, rest) = match value.as_bytes().first() {
-        Some(b'-') => (true, &value[1..]),
-        Some(b'+') => (false, &value[1..]),
-        _ => (false, value),
-    };
-    let rest = rest.strip_prefix("0d").or_else(|| rest.strip_prefix("0D")).unwrap_or(rest);
-    let mut number: i64 = 0;
-    let mut previous_digit = false;
-    for c in rest.chars() {
-        match c {
-            '0'..='9' => {
-                number = number.saturating_mul(10).saturating_add(i64::from(c as u8 - b'0'));
-                previous_digit = true;
-            }
-            '_' if previous_digit => previous_digit = false,
-            _ => break,
-        }
-    }
-    if negative { -number } else { number }
-}
-
-/// Ruby's `String#strip` (ASCII whitespace and NUL).
-fn ruby_strip(s: &str) -> &str {
-    s.trim_matches(|c: char| c == '\0' || c.is_ascii_whitespace() || c == '\u{b}')
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn casts_integers_like_active_model() {
-        assert_eq!(cast_integer("12"), Some(12));
-        assert_eq!(cast_integer("12abc"), Some(12));
-        assert_eq!(cast_integer(" -3"), Some(-3));
-        assert_eq!(cast_integer("abc"), None);
-        assert_eq!(cast_integer(""), None);
-    }
-
-    #[test]
-    fn to_i_like_ruby() {
-        assert_eq!(ruby_to_i("1717243200000"), 1717243200000);
-        assert_eq!(ruby_to_i(" +12abc"), 12);
-        assert_eq!(ruby_to_i("\t\n\u{b}\u{c}\r 7"), 7);
-        assert_eq!(ruby_to_i("\u{a0}5"), 0);
-        assert_eq!(ruby_to_i("abc"), 0);
-        assert_eq!(ruby_to_i("-5"), -5);
-        assert_eq!(ruby_to_i("--5"), 0);
-        assert_eq!(ruby_to_i("5_6"), 56);
-        assert_eq!(ruby_to_i("5__6"), 5);
-        assert_eq!(ruby_to_i("_5"), 0);
-        assert_eq!(ruby_to_i("0__5"), 0);
-        assert_eq!(ruby_to_i("-0d5"), -5);
-        assert_eq!(ruby_to_i("0d_5"), 0);
-        assert_eq!(ruby_to_i("0x5"), 0);
-        assert_eq!(ruby_to_i("99999999999999999999"), i64::MAX);
-    }
 
     #[test]
     fn before_builders() {

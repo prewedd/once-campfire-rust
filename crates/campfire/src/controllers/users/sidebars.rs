@@ -1,7 +1,6 @@
 //! `Users::SidebarsController` (reference/app/controllers/users/sidebars_controller.rb): the room
 //! list, loaded into the `user_sidebar` turbo frame.
 
-use askama::Template;
 use campfire_db::Account;
 use campfire_kit::{Ctx, Error, Result, StatusCode, format};
 use campfire_views::users;
@@ -14,20 +13,21 @@ use crate::controllers::presenters::{self, view_context};
 pub async fn show(c: &mut Ctx) -> Result {
     concerns::before_actions(c, Before::default()).await?;
     c.respond_to(&[&format::HTML])?;
+    if let Some(response) = crate::response_cache::lookup(c) {
+        return Ok(response);
+    }
     let user = concerns::require_current_user(c)?.clone();
     let secrets = c.app().secrets.clone();
     let (sidebar, restricted) = {
-        let (user, secrets, fragments) = (user.clone(), secrets.clone(), c.app().fragment_cache.clone());
+        let (user, secrets, fragments) = (user.clone(), secrets.clone(), crate::response_cache::fragments(c));
         c.app()
-            .db
             .read(move |conn| {
                 // The direct rooms' fragments come from the store the render then uses.
                 let sidebar = campfire_views::fragment_cache::with(&fragments, || presenters::accounts::sidebar(conn, &secrets, &user))?;
                 let restricted = Account::first(conn)?.is_some_and(|account| account.settings().restrict_room_creation_to_administrators());
                 Ok((sidebar, restricted))
             })
-            .await
-            .map_err(Error::internal)?
+            .await?
     };
 
     let data = SidebarData {
@@ -42,7 +42,7 @@ pub async fn show(c: &mut Ctx) -> Result {
     view_context::page_or_frame(
         c,
         StatusCode::OK,
-        |ctx| data.page(ctx).render(),
+        |ctx| campfire_views::render_sized!(data.page(ctx)),
         |ctx| {
             let page = data.page(ctx);
             campfire_views::layouts::frame(ctx, page.as_head(), page.as_content())

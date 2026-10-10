@@ -65,10 +65,7 @@ fn image_metadata(path: &Path) -> Json {
 /// `ffprobe -print_format json -show_streams -show_format -v error <path>`; `{}` without ffprobe.
 fn probe(path: &Path) -> Result<Json> {
     let mut command = Command::new(content_types::ffprobe_path());
-    command
-        .args(["-print_format", "json", "-show_streams", "-show_format", "-v", "error"])
-        .arg(path)
-        .stderr(Stdio::inherit());
+    command.args(["-print_format", "json", "-show_streams", "-show_format", "-v", "error"]).arg(path).stderr(Stdio::inherit());
     let output = match output_within(&mut command, FFPROBE_TIMEOUT) {
         Ok(output) => output,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Json::object()),
@@ -124,9 +121,7 @@ fn video_metadata(probe: &Json) -> Result<Json> {
         Some(rotate) => Some(ruby_integer(rotate)?),
         None => {
             let display_matrix = match field("side_data_list") {
-                Some(Json::Array(list)) => {
-                    list.iter().find(|d| d.get("side_data_type").and_then(Json::as_str) == Some("Display Matrix"))
-                }
+                Some(Json::Array(list)) => list.iter().find(|d| d.get("side_data_type").and_then(Json::as_str) == Some("Display Matrix")),
                 _ => None,
             };
             match display_matrix.and_then(|d| d.get("rotation")).filter(|r| **r != Json::Null) {
@@ -158,11 +153,8 @@ fn video_metadata(probe: &Json) -> Result<Json> {
         _ => None,
     };
     let rotated = matches!(angle, Some(90 | 270 | -90 | -270));
-    let (width, height) = if rotated {
-        (computed_height.or(encoded_height), encoded_width)
-    } else {
-        (encoded_width, computed_height.or(encoded_height))
-    };
+    let (width, height) =
+        if rotated { (computed_height.or(encoded_height), encoded_width) } else { (encoded_width, computed_height.or(encoded_height)) };
 
     let duration = match field("duration").or_else(|| probe.get("format").and_then(|f| f.get("duration"))) {
         Some(d) if *d != Json::Null => Some(ruby_float(d)?),

@@ -8,26 +8,35 @@ use campfire_views::searches::{Index, IndexView, search_path};
 use crate::app::AppCtx;
 use crate::concerns::{self, Before, before_actions, require_current_user};
 use crate::controllers::messages::present;
-use crate::controllers::presenters::page::{self, db_error};
+use crate::controllers::presenters::page;
 
 pub async fn index(c: &mut Ctx) -> Result {
     before_actions(c, Before::default()).await?;
     let q = query_param(c)?;
-    let messages = set_messages(c, q.as_deref()).await?;
+    if let Some(response) = crate::response_cache::lookup(c) {
+        return Ok(response);
+    }
     let user_id = require_current_user(c)?.id;
-    let query = query(q.as_deref()).filter(|query| is_present(query));
-    let recent_searches: Vec<String> = c
+    let query = searchable_query(q.as_deref());
+    let last_room = concerns::last_room_cookie(c);
+    // `set_messages`, the recent searches and `last_room_visited` in one trip to a reader, off the
+    // runtime's workers since the search's cost grows with the whole database.
+    let searched = query.clone();
+    let (messages, recent_searches, return_to_room_id) = c
         .app()
-        .db
-        .read(move |conn| Ok(Search::ordered_for_user(conn, user_id)?.into_iter().map(|search| search.query).collect()))
-        .await
-        .map_err(db_error)?;
-    let return_to_room_id = concerns::last_room_visited(c).await?.map(|room| room.id).unwrap_or_default();
+        .read_offloaded(move |conn| {
+            let messages = match &searched {
+                Some(query) => Message::search_reachable(conn, user_id, query)?,
+                None => Vec::new(),
+            };
+            let recent_searches: Vec<String> = Search::ordered_for_user(conn, user_id)?.into_iter().map(|search| search.query).collect();
+            let return_to_room_id = concerns::last_room_visited_in(conn, user_id, last_room)?.map(|room| room.id).unwrap_or_default();
+            Ok((messages, recent_searches, return_to_room_id))
+        })
+        .await?;
     let messages = present(c, move |presenter| presenter.messages(&messages)).await?;
     let index = IndexView { query, q, messages, recent_searches, return_to_room_id };
-    let response = page::framed_page!(c, StatusCode::OK, |ctx| Index { ctx, index: &index }).await?;
-    let fragments = campfire_views::messages::MessageItem::cached_fragments(&c.app().fragment_cache, &index.messages);
-    Ok(response.with_cached_fragments(fragments))
+    page::framed_page!(c, StatusCode::OK, |ctx| Index { ctx, index: &index }).await
 }
 
 pub async fn create(c: &mut Ctx) -> Result {
@@ -38,7 +47,7 @@ pub async fn create(c: &mut Ctx) -> Result {
     let query = query(q.as_deref());
     // Current.user.searches.record(query): a nil query violates `query`'s NOT NULL.
     let recorded = query.clone().ok_or_else(|| Error::internal(anyhow::anyhow!("NOT NULL constraint failed: searches.query")))?;
-    c.app().db.write(move |tx| Search::record(tx, user_id, &recorded).map(|_| ())).await.map_err(db_error)?;
+    c.app().write(move |tx| Search::record(tx, user_id, &recorded).map(|_| ())).await?;
     let path = match &query {
         Some(query) => search_path(query),
         None => campfire_routes::searches(),
@@ -52,7 +61,7 @@ pub async fn clear(c: &mut Ctx) -> Result {
     let q = query_param(c)?;
     set_messages(c, q.as_deref()).await?;
     let user_id = require_current_user(c)?.id;
-    c.app().db.write(move |tx| Search::destroy_all_for_user(tx, user_id)).await.map_err(db_error)?;
+    c.app().write(move |tx| Search::destroy_all_for_user(tx, user_id)).await?;
     let url = c.url_for(&campfire_routes::searches());
     c.redirect_to(&url)
 }
@@ -62,10 +71,9 @@ fn query_param(c: &Ctx) -> Result<Option<String>> {
     match c.param("q") {
         None => Ok(None),
         Some(param) if param.is_null() => Ok(None),
-        Some(param) => param
-            .as_str()
-            .map(|q| Some(q.to_string()))
-            .ok_or_else(|| Error::internal(anyhow::anyhow!("undefined method 'gsub'"))),
+        Some(param) => {
+            param.as_str().map(|q| Some(q.to_string())).ok_or_else(|| Error::internal(anyhow::anyhow!("undefined method 'gsub'")))
+        }
     }
 }
 
@@ -78,11 +86,16 @@ fn is_present(value: &str) -> bool {
     !value.chars().all(char::is_whitespace)
 }
 
+/// The [`query`] `set_messages` searches for: none when it's blank.
+fn searchable_query(q: Option<&str>) -> Option<String> {
+    query(q).filter(|query| is_present(query))
+}
+
 /// `set_messages`: `Current.user.reachable_messages.search(query).last(100)` when there's a query.
 async fn set_messages(c: &Ctx, q: Option<&str>) -> Result<Vec<Message>> {
-    let Some(query) = query(q).filter(|query| is_present(query)) else { return Ok(Vec::new()) };
+    let Some(query) = searchable_query(q) else { return Ok(Vec::new()) };
     let user_id = require_current_user(c)?.id;
-    c.app().db.read(move |conn| Message::search_reachable(conn, user_id, &query)).await.map_err(db_error)
+    c.app().read_offloaded(move |conn| Message::search_reachable(conn, user_id, &query)).await
 }
 
 #[cfg(test)]
@@ -113,6 +126,35 @@ mod tests {
 
         let missing = david.write(Req::new(Method::POST, "/searches")).await;
         assert_eq!(missing.status, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    /// The index reads the results, the recent searches and the last room visited together.
+    #[tokio::test]
+    async fn the_index_shows_results_recent_searches_and_the_way_back() {
+        let Some(app) = TestApp::boot().await else { return };
+        let mut david = app.david();
+        let exit_to = |room_id: i64| format!(r#"ws-search__close" data-form-target="cancel" href="/rooms/{room_id}""#);
+        let original = app.db().read(|conn| campfire_db::Room::original_for_user(conn, DAVID)).await.unwrap().unwrap().id;
+        assert!(david.get("/searches").await.text().contains(&exit_to(original)), "no last room yet");
+
+        let posted = david
+            .write(
+                Req::new(Method::POST, &format!("/rooms/{ALL_TALK}/messages"))
+                    .header("accept", "text/vnd.turbo-stream.html")
+                    .form(&[("message[body]", "Zanzibar at sunrise")]),
+            )
+            .await;
+        assert_eq!(posted.status, StatusCode::OK);
+        david.write(Req::new(Method::POST, "/searches").form(&[("q", "zanzibar")])).await;
+        david.get(&format!("/rooms/{QUIET_CORNER}")).await;
+
+        let page = david.get("/searches?q=zanzibar").await.text();
+        assert!(page.contains("Zanzibar at sunrise"), "{page}");
+        assert!(page.contains(r#"<span class="ws-hint">1 message</span>"#), "one result");
+        assert!(page.contains(&exit_to(QUIET_CORNER)));
+        // Recent searches are on the empty search, as Slack's (plans/redesign.md).
+        let start = david.get("/searches").await.text();
+        assert_eq!(start.matches(r#"href="/searches?q=zanzibar""#).count(), 1, "the recent search");
     }
 
     #[test]

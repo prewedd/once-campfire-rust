@@ -22,23 +22,11 @@ pub struct Sound {
 }
 
 const fn text(name: &'static str, text: &'static str) -> Sound {
-    Sound {
-        name,
-        text: Some(text),
-        image: None,
-    }
+    Sound { name, text: Some(text), image: None }
 }
 
 const fn image(name: &'static str, file: &'static str, width: u32, height: u32) -> Sound {
-    Sound {
-        name,
-        text: None,
-        image: Some(SoundImage {
-            name: file,
-            width,
-            height,
-        }),
-    }
+    Sound { name, text: None, image: Some(SoundImage { name: file, width, height }) }
 }
 
 impl Sound {
@@ -86,10 +74,7 @@ pub const BUILTIN: &[Sound] = &[
     text("honk", "HONK"),
     text("horn", "🐶 ✂️ 🐱"),
     text("horror", "💀 💀 💀 💀 💀 💀 💀"),
-    text(
-        "inconceivable",
-        "doesn't think it means what you think it means…",
-    ),
+    text("inconceivable", "doesn't think it means what you think it means…"),
     text("letitgo", "❄️👩❄️⛄️❄️"),
     text("live", "is DOING IT LIVE"),
     image("loggins", "loggins.webp", 200, 151),
@@ -127,37 +112,15 @@ mod tests {
 
     #[test]
     fn builtin_sounds_match_reference() {
-        let ruby = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../reference/app/models/sound.rb"
-        ))
-        .unwrap();
-        let count = ruby
-            .lines()
-            .filter(|l| l.trim_start().starts_with("new(name:"))
-            .count();
+        let ruby = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../reference/app/models/sound.rb")).unwrap();
+        let count = ruby.lines().filter(|l| l.trim_start().starts_with("new(name:")).count();
         assert_eq!(count, BUILTIN.len());
         for sound in BUILTIN {
-            assert!(
-                ruby.contains(&format!("new(name: \"{}\"", sound.name)),
-                "{}",
-                sound.name
-            );
+            assert!(ruby.contains(&format!("new(name: \"{}\"", sound.name)), "{}", sound.name);
             if let Some(text) = sound.text {
-                assert!(
-                    ruby.contains(&format!("text: \"{text}\"")),
-                    "{}",
-                    sound.name
-                );
+                assert!(ruby.contains(&format!("text: \"{text}\"")), "{}", sound.name);
             }
         }
-        assert_eq!(
-            Sound::find_by_name("deeper")
-                .unwrap()
-                .image
-                .unwrap()
-                .asset_path(),
-            "sounds/top.webp"
-        );
+        assert_eq!(Sound::find_by_name("deeper").unwrap().image.unwrap().asset_path(), "sounds/top.webp");
     }
 }

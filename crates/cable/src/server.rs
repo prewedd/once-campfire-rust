@@ -7,13 +7,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use axum::extract::Request;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
+use rails_compat::json;
 use serde::Serialize;
 use tokio::sync::{broadcast, watch};
 
 use crate::channel::Channel;
 use crate::pubsub::{Frame, Hub};
 use crate::socket::Handshake;
-use crate::{connection, json, naming, protocol};
+use crate::{connection, naming, protocol};
 
 /// `config.action_cable.*` as the production reference runs it.
 #[derive(Debug, Clone)]
@@ -74,7 +75,7 @@ type ChannelFactory<U> = Arc<dyn Fn() -> Box<dyn Channel<U>> + Send + Sync>;
 pub struct ServerBuilder<U: Send + Sync + 'static> {
     config: Config,
     authenticator: Arc<dyn Authenticate<U>>,
-    channels: HashMap<String, ChannelFactory<U>>,
+    channels: HashMap<Arc<str>, ChannelFactory<U>>,
 }
 
 impl<U: Identified + Send + Sync + 'static> ServerBuilder<U> {
@@ -85,7 +86,7 @@ impl<U: Identified + Send + Sync + 'static> ServerBuilder<U> {
         C: Channel<U>,
         F: Fn() -> C + Send + Sync + 'static,
     {
-        self.channels.insert(class_name.to_string(), Arc::new(move || Box::new(factory()) as Box<dyn Channel<U>>));
+        self.channels.insert(class_name.into(), Arc::new(move || Box::new(factory()) as Box<dyn Channel<U>>));
         self
     }
 
@@ -118,7 +119,7 @@ struct Inner<U: Send + Sync + 'static> {
     config: Config,
     hub: Arc<Hub>,
     authenticator: Arc<dyn Authenticate<U>>,
-    channels: HashMap<String, ChannelFactory<U>>,
+    channels: HashMap<Arc<str>, ChannelFactory<U>>,
     heartbeat: OnceLock<watch::Receiver<Frame>>,
     restart: broadcast::Sender<()>,
 }
@@ -161,10 +162,13 @@ impl<U: Identified + Send + Sync + 'static> Server<U> {
     /// An Axum router serving [`Server::call`] at `path` (normally [`protocol::DEFAULT_MOUNT_PATH`]).
     pub fn router<S: Clone + Send + Sync + 'static>(&self, path: &str) -> axum::Router<S> {
         let server = self.clone();
-        axum::Router::new().route(path, axum::routing::any(move |request: Request| {
-            let server = server.clone();
-            async move { server.call(request).await }
-        }))
+        axum::Router::new().route(
+            path,
+            axum::routing::any(move |request: Request| {
+                let server = server.clone();
+                async move { server.call(request).await }
+            }),
+        )
     }
 }
 
@@ -181,9 +185,10 @@ impl<U: Send + Sync + 'static> Server<U> {
         &self.inner.authenticator
     }
 
-    pub(crate) fn channel_factory(&self, class_name: &str) -> Option<&ChannelFactory<U>> {
-        // `safe_constantize` resolves "::RoomChannel" too.
-        self.inner.channels.get(class_name.strip_prefix("::").unwrap_or(class_name))
+    /// The channel a client's `channel` names, with its class name: `safe_constantize` resolves
+    /// "::RoomChannel" too, but the class (and so every broadcasting it names) is "RoomChannel".
+    pub(crate) fn channel(&self, requested: &str) -> Option<(&Arc<str>, &ChannelFactory<U>)> {
+        self.inner.channels.get_key_value(requested.strip_prefix("::").unwrap_or(requested))
     }
 
     pub(crate) fn heartbeat(&self) -> watch::Receiver<Frame> {
@@ -196,13 +201,8 @@ impl<U: Send + Sync + 'static> Server<U> {
 
     /// `ActionCable.server.broadcast(broadcasting, message)`.
     pub fn broadcast<T: Serialize + ?Sized>(&self, broadcasting: &str, message: &T) -> usize {
-        self.broadcast_json(broadcasting, json::encode(message))
-    }
-
-    /// Broadcasts an already-encoded JSON document.
-    pub fn broadcast_json(&self, broadcasting: &str, encoded: String) -> usize {
         tracing::debug!(broadcasting, "[ActionCable] Broadcasting");
-        self.inner.hub.broadcast(broadcasting, &json::escape_html_entities(encoded))
+        self.inner.hub.broadcast(broadcasting, &json::encode(message))
     }
 
     /// `SomeChannel.broadcast_to(broadcastables, message)`.
@@ -282,21 +282,18 @@ fn unix_now() -> i64 {
 
 /// `WebSocket::Driver.websocket?(env)`: a GET with `Connection: upgrade` and `Upgrade: websocket`.
 fn websocket_request(method: &Method, headers: &HeaderMap) -> bool {
-    let connection_upgrade = headers.get_all(header::CONNECTION).iter().any(|value| {
-        value.to_str().is_ok_and(|v| v.split(',').any(|token| token.trim().eq_ignore_ascii_case("upgrade")))
-    });
-    let upgrade_websocket = headers
-        .get(header::UPGRADE)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| v.eq_ignore_ascii_case("websocket"));
+    let connection_upgrade = headers
+        .get_all(header::CONNECTION)
+        .iter()
+        .any(|value| value.to_str().is_ok_and(|v| v.split(',').any(|token| token.trim().eq_ignore_ascii_case("upgrade"))));
+    let upgrade_websocket = headers.get(header::UPGRADE).and_then(|v| v.to_str().ok()).is_some_and(|v| v.eq_ignore_ascii_case("websocket"));
     method == Method::GET && connection_upgrade && upgrade_websocket
 }
 
 /// `Rack::Request#ssl?` for a request that didn't arrive over TLS itself.
 fn ssl_request(headers: &HeaderMap) -> bool {
-    let first = |name: &str| {
-        headers.get(name).and_then(|v| v.to_str().ok()).map(|v| v.split(',').next().unwrap_or("").trim().to_ascii_lowercase())
-    };
+    let first =
+        |name: &str| headers.get(name).and_then(|v| v.to_str().ok()).map(|v| v.split(',').next().unwrap_or("").trim().to_ascii_lowercase());
     first("x-forwarded-ssl").as_deref() == Some("on")
         || first("x-forwarded-scheme").as_deref() == Some("https")
         || first("x-forwarded-proto").as_deref() == Some("https")
@@ -326,11 +323,7 @@ fn connections_runtime() -> &'static tokio::runtime::Handle {
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RUNTIME
         .get_or_init(|| {
-            tokio::runtime::Builder::new_multi_thread()
-                .thread_name("cable")
-                .enable_all()
-                .build()
-                .expect("the cable runtime starts")
+            tokio::runtime::Builder::new_multi_thread().thread_name("cable").enable_all().build().expect("the cable runtime starts")
         })
         .handle()
 }

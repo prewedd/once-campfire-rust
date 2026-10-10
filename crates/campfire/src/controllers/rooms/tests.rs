@@ -45,6 +45,27 @@ async fn inaccessible_rooms_redirect_home_with_an_alert() {
     assert_eq!(reply.status, StatusCode::FOUND);
 }
 
+/// `@membership.room` is nil for a membership whose room is gone, and Rails fails on it: a 500,
+/// not the 404 of a membership that isn't there.
+#[tokio::test]
+async fn a_membership_of_a_missing_room_is_a_server_error() {
+    let Some(app) = TestApp::boot().await else { return };
+    let missing_room = 999_999;
+    app.db()
+        .write(move |tx| {
+            tx.conn().execute(
+                "INSERT INTO memberships (room_id, user_id, created_at, updated_at) VALUES (?1, ?2, '2026-01-01', '2026-01-01')",
+                [missing_room, DAVID],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    let mut david = app.david();
+    assert_eq!(david.get(&format!("/rooms/{missing_room}/messages")).await.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(david.get(&format!("/rooms/{}/messages", missing_room + 1)).await.status, StatusCode::NOT_FOUND);
+}
+
 #[tokio::test]
 async fn index_redirects_to_the_last_room() {
     let Some(app) = TestApp::boot().await else { return };
@@ -90,7 +111,12 @@ async fn open_rooms_are_created_edited_and_updated() {
     let shown = david.get(&format!("/rooms/opens/{room_id}")).await;
     assert_eq!(shown.location(), Some(format!("http://campfire.test/rooms/{room_id}").as_str()));
 
-    let updated = david.write(Req::new(Method::PATCH, &format!("/rooms/closeds/{room_id}")).form(&[("room[name]", "Private"), ("user_ids[]", &DAVID.to_string())])).await;
+    let updated = david
+        .write(
+            Req::new(Method::PATCH, &format!("/rooms/closeds/{room_id}"))
+                .form(&[("room[name]", "Private"), ("user_ids[]", &DAVID.to_string())]),
+        )
+        .await;
     assert_eq!(updated.status, StatusCode::FOUND, "{}", updated.text());
     let room = app.db().read(move |conn| Room::find(conn, room_id)).await.unwrap();
     assert_eq!((room.name.as_deref(), room.room_type), (Some("Private"), RoomType::Closed));
@@ -126,7 +152,8 @@ async fn closed_rooms_are_created_with_the_selected_users() {
         .await;
     assert_eq!(created.status, StatusCode::FOUND, "{}", created.text());
     let room_id: i64 = created.location().unwrap().rsplit('/').next().unwrap().parse().unwrap();
-    let mut members: Vec<i64> = app.db().read(move |conn| Membership::for_room(conn, room_id)).await.unwrap().iter().map(|m| m.user_id).collect();
+    let mut members: Vec<i64> =
+        app.db().read(move |conn| Membership::for_room(conn, room_id)).await.unwrap().iter().map(|m| m.user_id).collect();
     members.sort();
     assert_eq!(members, vec![DAVID, JASON]);
     assert_eq!(david.get(&format!("/rooms/closeds/{room_id}/edit")).await.status, StatusCode::OK);
@@ -166,7 +193,9 @@ async fn refresh_streams_messages_since_a_time() {
     let Some(app) = TestApp::boot().await else { return };
     let mut david = app.david();
     let reply = david
-        .send(Req::new(Method::GET, &format!("/rooms/{ALL_TALK}/refresh?since=0")).header("accept", "text/vnd.turbo-stream.html, text/html"))
+        .send(
+            Req::new(Method::GET, &format!("/rooms/{ALL_TALK}/refresh?since=0")).header("accept", "text/vnd.turbo-stream.html, text/html"),
+        )
         .await;
     assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
     assert_eq!(reply.content_type(), Some("text/vnd.turbo-stream.html; charset=utf-8"));
@@ -184,7 +213,8 @@ async fn involvement_is_shown_and_changed() {
     let shown = david.get(&format!("/rooms/{ALL_TALK}/involvement")).await;
     assert_eq!(shown.status, StatusCode::OK);
     assert!(shown.text().contains("turbo-frame"));
-    let updated = david.write(Req::new(Method::PATCH, &format!("/rooms/{ALL_TALK}/involvement")).form(&[("involvement", "invisible")])).await;
+    let updated =
+        david.write(Req::new(Method::PATCH, &format!("/rooms/{ALL_TALK}/involvement")).form(&[("involvement", "invisible")])).await;
     assert_eq!(updated.location(), Some(format!("http://campfire.test/rooms/{ALL_TALK}/involvement").as_str()));
     let membership = app.db().read(|conn| Membership::find_by_room_and_user(conn, ALL_TALK, DAVID)).await.unwrap().unwrap();
     assert_eq!(membership.involvement, Some(campfire_db::Involvement::Invisible));
@@ -219,12 +249,42 @@ async fn cross_site_writes_are_refused() {
 async fn the_last_room_cookie_is_set_only_when_it_changes() {
     let Some(app) = TestApp::boot().await else { return };
     let mut david = app.david();
-    let last_room = |reply: &Reply| {
-        reply.headers.get_all(axum::http::header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().starts_with("last_room="))
-    };
+    let last_room =
+        |reply: &Reply| reply.headers.get_all(axum::http::header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().starts_with("last_room="));
     assert!(last_room(&david.get(&format!("/rooms/{HQ}")).await));
     assert!(!last_room(&david.get(&format!("/rooms/{HQ}")).await), "the same room again");
     assert!(last_room(&david.get(&format!("/rooms/{ALL_TALK}")).await));
+}
+
+/// Where a page's `link_back_to_last_room_visited` goes.
+fn back_link(html: &str) -> &str {
+    let link = &html[..html.find("Go Back</span></a>").expect("a back link")];
+    let tag = &link[link.rfind("<a ").unwrap()..];
+    let href = &tag[tag.find(r#"href=""#).unwrap() + 6..];
+    &href[..href.find('"').unwrap()]
+}
+
+/// The layout's `last_room_visited`: the `last_room` cookie's room when the user is in it, else
+/// their first room.
+#[tokio::test]
+async fn back_links_go_to_the_last_room_visited() {
+    let Some(app) = TestApp::boot().await else { return };
+    let original = app.db().read(|conn| Room::original_for_user(conn, DAVID)).await.unwrap().unwrap().id;
+    assert_ne!(original, QUIET_CORNER);
+    let mut david = app.david();
+    let back_link_of = |reply: Reply| {
+        assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+        back_link(&reply.text()).to_string()
+    };
+
+    assert_eq!(back_link_of(david.get("/rooms/opens/new").await), format!("/rooms/{original}"), "no cookie");
+    david.get(&format!("/rooms/{QUIET_CORNER}")).await;
+    assert_eq!(back_link_of(david.get("/rooms/opens/new").await), format!("/rooms/{QUIET_CORNER}"));
+    assert_eq!(back_link_of(david.get("/account/edit").await), format!("/rooms/{QUIET_CORNER}"));
+    david.set_cookie("last_room", &DIRECT_KEVIN_BENDER.to_string());
+    assert_eq!(back_link_of(david.get("/rooms/opens/new").await), format!("/rooms/{original}"), "a room he isn't in");
+    david.set_cookie("last_room", "nonsense");
+    assert_eq!(back_link_of(david.get("/rooms/opens/new").await), format!("/rooms/{original}"));
 }
 
 #[tokio::test]
@@ -238,4 +298,57 @@ async fn a_room_page_has_the_same_etag_cold_and_warm() {
     assert_eq!(cold.text(), warm.text());
     assert!(etag(&cold).is_some());
     assert_eq!(etag(&cold), etag(&warm));
+}
+
+/// A page of messages goes out in parts that are never joined: as they are to a client without
+/// gzip, gzipped from their stored pieces, and as just its length for HEAD. It's the same page with
+/// the same ETag every way (a room page, its Turbo-Frame version, and a page of older messages).
+#[tokio::test]
+async fn pages_of_messages_go_out_in_parts() {
+    let Some(app) = TestApp::boot().await else { return };
+    let mut david = app.david();
+    let mut messages = app.db().read(|conn| campfire_db::Message::for_room(conn, ALL_TALK)).await.unwrap();
+    messages.sort_by_key(|m| (m.created_at, m.id));
+    let pages = [
+        (format!("/rooms/{ALL_TALK}"), None),
+        (format!("/rooms/{ALL_TALK}"), Some("messages")),
+        (format!("/rooms/{ALL_TALK}/messages?before={}", messages[60].id), None),
+    ];
+    for (path, frame) in &pages {
+        let send = |method: Method, gzip: bool| {
+            // This checks the fragment-splicing pipeline beneath the completed-response cache.
+            let mut request = Req::new(method, path).header("cache-control", "no-store");
+            if gzip {
+                request = request.header("accept-encoding", "gzip");
+            }
+            if let Some(frame) = frame {
+                request = request.header("turbo-frame", frame);
+            }
+            request
+        };
+        let plain = david.send(send(Method::GET, false)).await;
+        assert_eq!(plain.status, StatusCode::OK, "{path}");
+        assert_eq!(plain.text().matches(r#"data-controller="reply""#).count(), 40, "{path}");
+        assert!(plain.frames > 40, "{path}: {} frames, one per part", plain.frames);
+        assert_eq!(plain.header("content-length"), Some(plain.body.len().to_string().as_str()), "{path}");
+
+        let gzipped = david.send(send(Method::GET, true)).await;
+        assert_eq!(gzipped.header("content-encoding"), Some("gzip"), "{path}");
+        assert_eq!(gzipped.header("content-length"), None, "{path}");
+        let mut decoded = Vec::new();
+        std::io::Read::read_to_end(&mut flate2::read::GzDecoder::new(&gzipped.body[..]), &mut decoded).unwrap();
+        assert!(decoded == plain.body, "{path}: gzip decodes to the plain page");
+
+        for gzip in [false, true] {
+            let head = david.send(send(Method::HEAD, gzip)).await;
+            assert_eq!(head.status, StatusCode::OK, "{path}");
+            assert_eq!(head.header("etag"), plain.header("etag"), "{path}");
+            if !gzip {
+                assert!(head.body.is_empty(), "{path}");
+                assert_eq!(head.header("content-length"), plain.header("content-length"), "{path}");
+            }
+        }
+        assert!(plain.header("etag").is_some_and(|etag| etag.starts_with("W/")), "{path}");
+        assert_eq!(gzipped.header("etag"), plain.header("etag"), "{path}");
+    }
 }

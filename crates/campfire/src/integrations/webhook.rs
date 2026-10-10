@@ -113,7 +113,8 @@ async fn post(net: &Network, url: &str, payload: String) -> Result<(u16, Option<
     let hostname = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')).unwrap_or(&host);
     let uri_host = if port == if https { 443 } else { 80 } { hostname.to_string() } else { format!("{hostname}:{port}") };
     let headers = vec![("Content-Type".to_string(), "application/json".to_string())];
-    let mut request = http::Request::net_http(hyper::Method::POST, http::request_uri(&uri), Some(uri_host), headers).transport(true, &endpoint);
+    let mut request =
+        http::Request::net_http(hyper::Method::POST, http::request_uri(&uri), Some(uri_host), headers).transport(true, &endpoint);
     request.body = payload.into_bytes();
 
     let timeouts = Timeouts { open: ENDPOINT_TIMEOUT, read: ENDPOINT_TIMEOUT };
@@ -151,11 +152,7 @@ fn mime_lookup(string: &str) -> Result<(Option<&'static str>, String), WebhookEr
     if let Some(found) = registered(string) {
         return Ok(found);
     }
-    if MIME_REGEXP.is_match(string) {
-        Ok((None, string.to_string()))
-    } else {
-        Err(WebhookError::InvalidMimeType(string.to_string()))
-    }
+    if MIME_REGEXP.is_match(string) { Ok((None, string.to_string())) } else { Err(WebhookError::InvalidMimeType(string.to_string())) }
 }
 
 /// `Mime::Type::MIME_REGEXP` (in the Ruby source, "\s" inside the double-quoted parameter
@@ -260,7 +257,8 @@ mod tests {
 
         let runs = cases.iter().map(|c| {
             let net = net.clone();
-            let url = c["url"].as_str().map(str::to_string).unwrap_or_else(|| format!("http://{}/{}", server.addr, c["name"].as_str().unwrap()));
+            let url =
+                c["url"].as_str().map(str::to_string).unwrap_or_else(|| format!("http://{}/{}", server.addr, c["name"].as_str().unwrap()));
             async move { deliver(&net, &url, r#"{"message":"hi"}"#.to_string()).await }
         });
         let outcomes = futures_join_all(runs).await;
@@ -272,7 +270,9 @@ mod tests {
                     let reply = match delivery.reply {
                         WebhookReply::None => Value::Null,
                         WebhookReply::Text(text) => serde_json::json!({ "text": text }),
-                        WebhookReply::Attachment(a) => serde_json::json!({ "filename": a.filename, "content_type": a.content_type, "data": a.data }),
+                        WebhookReply::Attachment(a) => {
+                            serde_json::json!({ "filename": a.filename, "content_type": a.content_type, "data": a.data })
+                        }
                     };
                     serde_json::json!({ "status": delivery.status, "reply": reply })
                 }
@@ -328,7 +328,11 @@ mod tests {
     async fn reaches_internal_services() {
         let server = FakeServer::start(vec![Route::new("POST", "*", "/hook", 200).header("Content-Type", "text/plain").body("ok")]).await;
         let resolver = Arc::new(FakeResolver::new([("bots.internal", vec!["10.0.0.7"])]));
-        let dialer = Arc::new(MappingDialer { public: HashSet::from(["10.0.0.7".parse().unwrap()]), to: server.addr, dialed: Mutex::new(Vec::new()) });
+        let dialer = Arc::new(MappingDialer {
+            public: HashSet::from(["10.0.0.7".parse().unwrap()]),
+            to: server.addr,
+            dialed: Mutex::new(Vec::new()),
+        });
         let net = network(resolver.clone(), dialer.clone());
         let delivery = deliver(&net, "http://bots.internal:8080/hook", "{}".into()).await.unwrap();
         assert_eq!(delivery, WebhookDelivery { status: Some(200), reply: WebhookReply::Text("ok".into()) });

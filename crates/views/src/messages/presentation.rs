@@ -1,8 +1,8 @@
 //! `MessagesHelper#message_presentation` and `Messages::AttachmentPresentation`
 //! (`reference/app/helpers/messages_helper.rb`, `reference/app/helpers/messages/attachment_presentation.rb`).
 
-use crate::helpers::escape;
 use crate::ViewContext;
+use crate::helpers::escape;
 
 use super::support::RubyNumber;
 use super::{AttachmentPreview, AttachmentView, MessageContent, MessageView, SoundView};
@@ -25,10 +25,9 @@ pub fn message_presentation(ctx: &ViewContext, message: &MessageView) -> String 
 /// `message_sound_presentation`: a play button followed by the sound's image or text.
 fn sound_presentation(sound: &SoundView) -> String {
     let content = match (&sound.image, &sound.text) {
-        (Some(image), _) => format!(
-            r#"<img width="{}" height="{}" class="align--middle" src="{}" />"#,
-            image.width, image.height, escape(&image.src)
-        ),
+        (Some(image), _) => {
+            format!(r#"<img width="{}" height="{}" class="align--middle" src="{}" />"#, image.width, image.height, escape(&image.src))
+        }
         (None, Some(text)) => escape(text),
         (None, None) => String::new(),
     };
@@ -62,10 +61,7 @@ fn lightboxed_image_preview(attachment: &AttachmentView, thumb_url: &str) -> Str
         Some((width, height)) => format!(r#" width="{width}" height="{height}""#),
         None => String::new(),
     };
-    let image = format!(
-        r#"<img{size} class="message__attachment" loading="lazy" src="{}" />"#,
-        escape(thumb_url)
-    );
+    let image = format!(r#"<img{size} class="message__attachment" loading="lazy" src="{}" />"#, escape(thumb_url));
     let link = format!(
         r#"<a class="flex" data-lightbox-target="image" data-action="lightbox#open" data-lightbox-url-value="{}" href="{}">{image}</a>"#,
         escape(&attachment.download_path),

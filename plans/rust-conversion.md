@@ -184,8 +184,8 @@ concrete obstruction in Axum, we revisit the decision then, with evidence.
 
 | Concern | Choice | Notes |
 |---|---|---|
-| HTTP | `axum`, `hyper`, `tokio`, `tower-http` (limits, timeouts only) | See above |
-| WebSockets | Axum's upgrade (tungstenite) | Action Cable protocol implemented in `cable/` |
+| HTTP | `axum`, `hyper`, `tokio` | See above. The front server in kit enforces body limits and timeouts (MAX_REQUEST_BODY, HTTP_READ/WRITE_TIMEOUT) |
+| WebSockets | Our own upgrade and framing over hyper (`cable/src/socket.rs`) | Action Cable protocol implemented in `cable/` |
 | Database | `rusqlite`, bundled SQLite with FTS5 | One writer task that owns the write connection and takes a bounded queue of work, plus a reader pool. We chose it for simplicity and transparency. (SQLx's offline mode does exist, so we aren't avoiding it for build-time reasons.) |
 | Templates | `askama` | One template per ERB file at the same relative path. We port `content_for`, `form_with`, `link_to`/`button_to`, `image_tag`, `turbo_frame_tag`, polymorphic paths and `SafeString` escaping as a helpers module, each one tested against golden output from the reference app's helpers. |
 | JSON views | hand-written `serde` serializers | One per Jbuilder file, diffed against Rails' output |

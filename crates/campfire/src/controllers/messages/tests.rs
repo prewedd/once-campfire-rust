@@ -2,14 +2,14 @@
 //! parity seed.
 
 use axum::http::{Method, StatusCode};
-use campfire_db::{Boost, Message};
+use campfire_db::{Boost, Message, PushSubscription, Webhook};
 
 use crate::controllers::presenters::test_support::*;
 
 const PNG: &[u8] = &[
-    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 4, 0, 0, 0, 3, 8, 2, 0, 0, 0, 59, 150, 57, 145, 0, 0,
-    0, 16, 73, 68, 65, 84, 120, 156, 99, 248, 207, 192, 0, 71, 12, 56, 57, 0, 245, 49, 11, 245, 53, 123, 251, 130, 0, 0, 0, 0,
-    73, 69, 78, 68, 174, 66, 96, 130,
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 4, 0, 0, 0, 3, 8, 2, 0, 0, 0, 59, 150, 57, 145, 0, 0, 0, 16, 73,
+    68, 65, 84, 120, 156, 99, 248, 207, 192, 0, 71, 12, 56, 57, 0, 245, 49, 11, 245, 53, 123, 251, 130, 0, 0, 0, 0, 73, 69, 78, 68, 174,
+    66, 96, 130,
 ];
 
 const TURBO_STREAM_ACCEPT: &str = "text/vnd.turbo-stream.html, text/html, application/xhtml+xml";
@@ -32,7 +32,7 @@ async fn index_pages_with_conditional_gets() {
     assert!(!reply.text().contains("<html"), "layout false");
     let etag = reply.header("etag").unwrap().to_string();
     assert!(etag.starts_with("W/\""));
-    assert!(reply.header("last-modified").is_some());
+    assert!(reply.header("last-modified").is_none(), "the representation includes dependencies without reliable update timestamps");
 
     let cached = david
         .send(Req::new(Method::GET, &format!("/rooms/{ALL_TALK}/messages?before={}", messages[50].id)).header("if-none-match", &etag))
@@ -67,13 +67,95 @@ async fn create_appends_the_message_as_a_turbo_stream() {
     assert_eq!((message.client_message_id.as_str(), message.creator_id), ("abc-123", DAVID));
 }
 
+/// The message in a turbo stream: what's inside its `<template>`.
+fn template(stream: &str) -> &str {
+    let start = stream.find("<template>").expect("a template") + "<template>".len();
+    &stream[start..stream.rfind("</template>").unwrap()]
+}
+
+type Socket = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+/// The next cable frame that isn't a ping.
+async fn next_frame(socket: &mut Socket) -> serde_json::Value {
+    use futures_util::StreamExt;
+    loop {
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(10), socket.next()).await.expect("a frame").unwrap().unwrap();
+        let frame: serde_json::Value = serde_json::from_str(frame.to_text().unwrap()).unwrap();
+        if frame["type"] != "ping" {
+            return frame;
+        }
+    }
+}
+
+/// A text message answers and broadcasts the row `Message::create` returned, not one read back
+/// from the database: it has to render as the stored row does. The room page, which reads the
+/// message from the database, shows the same fragment (cached under the stored `updated_at`).
+#[tokio::test]
+async fn a_text_message_is_answered_and_broadcast_as_it_was_stored() {
+    use futures_util::SinkExt;
+    use tokio_tungstenite::tungstenite::Message as Frame;
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+    let Some(app) = TestApp::boot().await else { return };
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let service = campfire_kit::front::app_service(app.booted.router.clone());
+    let shutdown = campfire_kit::front::Shutdown::when(std::future::pending());
+    tokio::spawn(campfire_kit::front::serve_plain(listener, service, campfire_kit::front::Protocol::Http1, Default::default(), shutdown));
+
+    let room = app.db().read(|conn| campfire_db::Room::find(conn, ALL_TALK)).await.unwrap();
+    let streamables = [crate::channels::room_gid(&room).to_param(), "messages".into()];
+    let signed = rails_compat::turbo::signed_stream_name(&app.booted.app.secrets, &streamables.each_ref().map(String::as_str));
+    let identifier = serde_json::json!({ "channel": "RoomMessagesChannel", "signed_stream_name": signed }).to_string();
+    let mut request = format!("ws://{address}/cable").into_client_request().unwrap();
+    request.headers_mut().insert("origin", format!("http://{address}").parse().unwrap());
+    request.headers_mut().insert("sec-websocket-protocol", "actioncable-v1-json".parse().unwrap());
+    request.headers_mut().insert("cookie", david_cookie().parse().unwrap());
+    let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+    assert_eq!(next_frame(&mut socket).await["type"], "welcome");
+    let subscribe = serde_json::json!({ "command": "subscribe", "identifier": identifier }).to_string();
+    socket.send(Frame::text(subscribe)).await.unwrap();
+    assert_eq!(next_frame(&mut socket).await["type"], "confirm_subscription");
+
+    let mut david = app.david();
+    let reply = david
+        .write(
+            Req::new(Method::POST, &format!("/rooms/{ALL_TALK}/messages"))
+                .header("accept", TURBO_STREAM_ACCEPT)
+                .form(&[("message[body]", "<p>Straight from the <em>writer</em></p>"), ("message[client_message_id]", "as-stored")]),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    let broadcast = next_frame(&mut socket).await;
+    assert_eq!(broadcast["identifier"], identifier);
+    let broadcast = broadcast["message"].as_str().unwrap().to_string();
+
+    let stored = messages_in(&app, ALL_TALK).await.pop().unwrap();
+    assert_eq!((stored.client_message_id.as_str(), stored.creator_id), ("as-stored", DAVID));
+    let response = reply.text();
+    let message = template(&response);
+    assert_eq!(template(&broadcast), message);
+    assert!(broadcast.starts_with(r#"<turbo-stream action="append" target="messages_rooms_closed_486777696"><template>"#), "{broadcast}");
+    assert!(message.contains(r#"id="message_as-stored""#), "{message}");
+    assert!(message.contains(&format!(r#"data-message-id="{}""#, stored.id)));
+    let epoch_ms = campfire_views::messages::support::epoch_ms;
+    assert!(message.contains(&format!(r#"data-message-timestamp="{}""#, epoch_ms(stored.created_at.jiff()))));
+    assert!(message.contains(&format!(r#"data-message-updated-at="{}""#, epoch_ms(stored.updated_at.jiff()))));
+    // Cached under the stored row's key (its `updated_at` to the microsecond), which is what the
+    // room page, reading the message from the database, looks up.
+    let cached = campfire_views::fragment_cache::with(&app.booted.app.fragments(), || {
+        campfire_views::messages::cached_message_fragment(stored.id, stored.updated_at.jiff())
+    });
+    assert_eq!(cached.as_deref().map(String::as_str), Some(message));
+    assert!(david.get(&format!("/rooms/{ALL_TALK}")).await.text().contains(message), "the room page's copy of the message");
+}
+
 #[tokio::test]
 async fn create_in_a_room_you_left_renders_room_not_found() {
     let Some(app) = TestApp::boot().await else { return };
     let mut david = app.david();
-    let reply = david
-        .write(Req::new(Method::POST, &format!("/rooms/{DIRECT_KEVIN_BENDER}/messages")).form(&[("message[body]", "hi")]))
-        .await;
+    let reply =
+        david.write(Req::new(Method::POST, &format!("/rooms/{DIRECT_KEVIN_BENDER}/messages")).form(&[("message[body]", "hi")])).await;
     assert_eq!(reply.status, StatusCode::OK);
     assert!(reply.text().contains("This room was deleted."));
     assert!(reply.text().contains("<html"), "in the application layout");
@@ -105,10 +187,75 @@ async fn uploads_attach_and_process_the_file() {
     assert_eq!(blob.filename, "red.png");
     let variants: i64 = app
         .db()
-        .read(move |conn| Ok(conn.query_row("SELECT count(*) FROM active_storage_variant_records WHERE blob_id = ?", [blob.id], |r| r.get(0))?))
+        .read(move |conn| {
+            Ok(conn.query_row("SELECT count(*) FROM active_storage_variant_records WHERE blob_id = ?", [blob.id], |r| r.get(0))?)
+        })
         .await
         .unwrap();
     assert_eq!(variants, 1, "the :thumb variant is processed");
+}
+
+/// Rails raises reading this body's plain text (`ArgumentError: invalid base64`), after the
+/// create commits; here it's saved with no plain text, or its attachment's filename (see "Known
+/// differences" in the README).
+const MENTION_WITH_A_BAD_SGID: &str =
+    r#"<p>Hey <action-text-attachment sgid="!!!" content-type="application/vnd.campfire.mention"></action-text-attachment></p>"#;
+
+const UNRENDERABLE: &str = "Failed to load message content";
+
+/// What search, a push and a bot's webhook get for a message.
+async fn plain_texts(app: &TestApp, message: Message) -> (String, String, String) {
+    let db = app.db().clone();
+    app.db()
+        .read(move |conn| {
+            let rich_text = &*db.env().rich_text;
+            let indexed = conn.query_row("SELECT body FROM message_search_index WHERE rowid = ?", [message.id], |r| r.get(0))?;
+            let (push, _, _) = PushSubscription::pushes_for(conn, rich_text, &message, db.env().now())?;
+            let webhook = Webhook::find_by_user(conn, BENDER)?.unwrap().payload(conn, rich_text, &message, "/bot", "/message")?;
+            let webhook: serde_json::Value = serde_json::from_str(&webhook).unwrap();
+            Ok((indexed, push.body, webhook["message"]["body"]["plain"].as_str().unwrap().to_string()))
+        })
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_message_whose_plain_text_raises_goes_out_without_one() {
+    let Some(app) = TestApp::boot().await else { return };
+    let mut david = app.david();
+    let room = format!("/rooms/{ALL_TALK}");
+    let unrenderable_before = david.get(&room).await.text().matches(UNRENDERABLE).count();
+
+    let reply = david
+        .write(
+            Req::new(Method::POST, &format!("/rooms/{ALL_TALK}/messages"))
+                .header("accept", TURBO_STREAM_ACCEPT)
+                .form(&[("message[body]", MENTION_WITH_A_BAD_SGID), ("message[client_message_id]", "bad-sgid")]),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    assert!(reply.text().contains(UNRENDERABLE), "{}", reply.text());
+    let message = messages_in(&app, ALL_TALK).await.pop().unwrap();
+    assert_eq!(message.client_message_id, "bad-sgid");
+    assert_eq!(plain_texts(&app, message.clone()).await, ("".into(), "David: ".into(), "".into()));
+
+    let page = david.get(&room).await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert_eq!(page.text().matches(UNRENDERABLE).count(), unrenderable_before + 1, "{}", page.text());
+    let shown = david.get(&format!("{room}/messages/{}", message.id)).await;
+    assert_eq!(shown.status, StatusCode::OK);
+    assert!(shown.text().contains(UNRENDERABLE), "{}", shown.text());
+
+    let reply = david
+        .write(Req::new(Method::POST, &format!("/rooms/{ALL_TALK}/messages")).header("accept", TURBO_STREAM_ACCEPT).multipart(
+            &[("message[body]", MENTION_WITH_A_BAD_SGID), ("message[client_message_id]", "bad-sgid-upload")],
+            ("message[attachment]", "red.png", "image/png", PNG),
+        ))
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    let message = messages_in(&app, ALL_TALK).await.pop().unwrap();
+    assert_eq!(message.client_message_id, "bad-sgid-upload");
+    assert_eq!(plain_texts(&app, message).await, ("red.png".into(), "David: red.png".into(), "red.png".into()));
 }
 
 #[tokio::test]
@@ -141,7 +288,10 @@ async fn show_edit_update_and_destroy() {
 
     let destroyed = david.write(Req::new(Method::DELETE, &path).header("accept", TURBO_STREAM_ACCEPT)).await;
     assert_eq!(destroyed.status, StatusCode::OK);
-    assert_eq!(destroyed.text().trim(), format!(r#"<turbo-stream action="remove" target="message_{}"></turbo-stream>"#, message.client_message_id));
+    assert_eq!(
+        destroyed.text().trim(),
+        format!(r#"<turbo-stream action="remove" target="message_{}"></turbo-stream>"#, message.client_message_id)
+    );
     assert!(app.db().read(move |conn| Message::find_by_id(conn, message.id)).await.unwrap().is_none());
     assert_eq!(david.get(&path).await.status, StatusCode::NOT_FOUND);
 }

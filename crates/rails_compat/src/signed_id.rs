@@ -30,7 +30,8 @@ pub fn verify(secrets: &Secrets, model_name: &str, signed_id: &str, purpose: Opt
 
 pub fn verifier(secrets: &Secrets) -> MessageVerifier {
     let secret = secrets.key_generator.generate_key(SALT, 64);
-    let fallback = MessageVerifier::new(secret.clone(), Digest::Sha1, Encoding::Strict, Serializer::JsonWithFallback { allow_marshal: true });
+    let fallback =
+        MessageVerifier::new(secret.clone(), Digest::Sha1, Encoding::Strict, Serializer::JsonWithFallback { allow_marshal: true });
     MessageVerifier::new(secret, Digest::Sha256, Encoding::UrlSafe, Serializer::Json).fall_back_to(fallback)
 }
 

@@ -2,12 +2,13 @@
 //! controller asks for, which work like a room's over the thread's parent and replies.
 
 use askama::Template;
+use ruby_compat::integer_cast;
 use campfire_db::{Message, Room, Timeline};
 use campfire_kit::{Ctx, Error, Freshness, Result, StatusCode, format};
 use campfire_views::threads as views;
 
 use crate::app::AppCtx;
-use crate::concerns::{self, Before, before_actions, cast_integer, require_current_user};
+use crate::concerns::{self, Before, before_actions, require_current_user};
 use crate::controllers::messages::find_paged;
 use crate::controllers::presenters::page::{self, db_error};
 use crate::controllers::presenters::{Presenter, cache_key_with_version, user_view};
@@ -24,7 +25,7 @@ pub async fn show(c: &mut Ctx) -> Result {
         return c.redirect_to(&url);
     }
     concerns::remember_last_room_visited(c, room.id);
-    let around = c.param_str("message_id").and_then(cast_integer);
+    let around = c.param_str("message_id").and_then(integer_cast);
     render_show(c, room, message, around).await
 }
 
@@ -52,8 +53,7 @@ pub async fn messages(c: &mut Ctx) -> Result {
     let items = crate::controllers::messages::present(c, move |presenter| presenter.messages(&messages)).await?;
     let response =
         page::bare(c, StatusCode::OK, &format::HTML, |ctx| campfire_views::messages::Index { ctx, messages: &items }.render()).await?;
-    let fragments = campfire_views::messages::MessageItem::cached_fragments(&c.app().fragment_cache, &items);
-    Ok(response.with_cached_fragments(fragments))
+    Ok(response)
 }
 
 /// `GET /rooms/:room_id/threads/:thread_id/refresh`: what changed in the thread since the client
@@ -92,7 +92,7 @@ pub async fn refresh(c: &mut Ctx) -> Result {
 
 /// The message named by the `param` path parameter, in the room.
 async fn set_thread_message(c: &mut Ctx, room: &Room, param: &str) -> Result<Message> {
-    let Some(id) = c.param_str(param).and_then(cast_integer) else {
+    let Some(id) = c.param_str(param).and_then(integer_cast) else {
         return Err(Error::NotFound);
     };
     let room_id = room.id;
@@ -134,8 +134,7 @@ async fn render_show(c: &mut Ctx, room: Room, parent: Message, around: Option<i6
     } else {
         page::framed_page!(c, StatusCode::OK, |ctx| views::Show { ctx, show: &show }).await?
     };
-    let fragments = campfire_views::messages::MessageItem::cached_fragments(&c.app().fragment_cache, &show.messages);
-    Ok(response.with_cached_fragments(fragments))
+    Ok(response)
 }
 
 #[cfg(test)]

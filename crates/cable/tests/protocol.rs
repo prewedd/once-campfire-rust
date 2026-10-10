@@ -148,6 +148,31 @@ async fn leading_colons_resolve_like_safe_constantize() {
     assert_eq!(client.next_text().await, confirm(&heartbeat));
 }
 
+/// A channel's broadcastings are named after its class, not after how the client spelled it.
+#[tokio::test]
+async fn leading_colons_stream_and_broadcast_under_the_class_name() {
+    let app = start(test_config()).await;
+    let mut prefixed = app.connect(1).await;
+    let mut plain = app.connect(1).await;
+    prefixed.next_text().await;
+    plain.next_text().await;
+    let prefixed_room = identifier(json!({ "channel": "::RoomChannel", "room_id": 1 }));
+    prefixed.subscribe(&prefixed_room).await;
+    assert_eq!(prefixed.next_text().await, confirm(&prefixed_room));
+    let plain_room = room(1);
+    plain.subscribe(&plain_room).await;
+    assert_eq!(plain.next_text().await, confirm(&plain_room));
+
+    assert_eq!(app.server.broadcast_to("RoomChannel", &["room-1"], &json!({ "roomId": 1 })), 2);
+    assert_eq!(prefixed.next_text().await, message(&prefixed_room, r#"{"roomId":1}"#));
+    assert_eq!(plain.next_text().await, message(&plain_room, r#"{"roomId":1}"#));
+
+    prefixed.perform(&prefixed_room, json!({ "action": "start" })).await;
+    let start = r#"{"action":"start","user":{"id":1}}"#;
+    assert_eq!(plain.next_text().await, message(&plain_room, start));
+    assert_eq!(prefixed.next_text().await, message(&prefixed_room, start));
+}
+
 #[tokio::test]
 async fn broadcasts_reach_subscribers_as_escaped_json() {
     let app = start(test_config()).await;
@@ -341,9 +366,7 @@ async fn http_get(url: &str, headers: &[(&str, &str)]) -> (u16, Option<String>, 
     stream.read_to_string(&mut response).await.unwrap();
     let (head, body) = response.split_once("\r\n\r\n").unwrap();
     let status = head.split(' ').nth(1).unwrap().parse().unwrap();
-    let content_type = head
-        .lines()
-        .find_map(|line| line.to_ascii_lowercase().strip_prefix("content-type: ").map(str::to_string));
+    let content_type = head.lines().find_map(|line| line.to_ascii_lowercase().strip_prefix("content-type: ").map(str::to_string));
     (status, content_type, body.to_string())
 }
 
@@ -357,6 +380,20 @@ async fn a_client_close_is_answered_with_its_code() {
     let close = CloseFrame { code: CloseCode::Away, reason: "".into() };
     client.socket.send(tokio_tungstenite::tungstenite::Message::Close(Some(close))).await.unwrap();
     assert_eq!(client.next().await, Frame::Close(Some((1001, String::new()))));
+}
+
+/// websocket-driver's code for the failure, not a blanket 1002.
+#[tokio::test]
+async fn a_protocol_error_closes_with_its_code() {
+    use futures_util::SinkExt;
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::protocol::frame::coding::{Data, OpCode};
+    let app = start(test_config()).await;
+    let mut client = app.connect(1).await;
+    assert_eq!(client.next_text().await, WELCOME);
+    let not_utf8 = tokio_tungstenite::tungstenite::protocol::frame::Frame::message(vec![0xff, 0xfe], OpCode::Data(Data::Text), true);
+    client.socket.send(Message::Frame(not_utf8)).await.unwrap();
+    assert_eq!(client.next().await, Frame::Close(Some((1007, String::new()))));
 }
 
 #[tokio::test]

@@ -4,6 +4,7 @@
 //! chunked (and the front server's compression leaves it alone).
 
 use std::io::Write;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use axum::body::Body;
 use axum::extract::Request;
@@ -18,6 +19,8 @@ use http_body_util::BodyExt;
 
 pub mod splice;
 
+use splice::{ENTRY_OVERHEAD, Generations, lock};
+
 /// A response `ActionDispatch::Static` served (a public file or an asset). Marks responses the
 /// middleware below `Static` in the reference (`Rack::Runtime`, `ActionDispatch::RequestId`)
 /// never saw.
@@ -28,6 +31,14 @@ pub struct StaticFile;
 /// as opposed to one hyper adds after this middleware from the body's size.
 #[derive(Debug, Clone, Copy)]
 pub struct AppContentLength;
+
+/// The SHA-256 `Rack::ETag` took of a response's whole body: the body's identity, so the gzip of a
+/// body that repeats (the sidebar) comes from [`GZIPPED`] instead of being deflated again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct BodyDigest(pub(crate) [u8; 32]);
+
+/// A bound on the bytes of kept gzip members (a sidebar's is ~6 KB).
+const MAX_GZIPPED_BYTES: usize = 16 << 20;
 
 /// The `Rack::Deflater` middleware.
 pub async fn deflater(request: Request, next: Next) -> Response {
@@ -68,10 +79,16 @@ pub async fn deflater(request: Request, next: Next) -> Response {
             headers.insert(header::CONTENT_ENCODING, HeaderValue::from_static("gzip"));
             headers.remove(header::CONTENT_LENGTH);
             let (mut parts, body) = response.into_parts();
-            match parts.extensions.remove::<std::sync::Arc<splice::PageParts>>() {
-                Some(page_parts) => Response::from_parts(parts, gzip_page_parts(body, &page_parts, mtime).await),
-                None => Response::from_parts(parts, gzip_stream(body, mtime)),
-            }
+            let page_parts = parts.extensions.remove::<Arc<splice::PageParts>>();
+            let body = if let Some(page_parts) = page_parts.filter(|page_parts| page_parts.fits(&body)) {
+                // The same decoded bytes as `gzip_stream`, from the parts' stored pieces.
+                single_chunk(page_parts.gzip(mtime).into())
+            } else if let Some(digest) = parts.extensions.remove::<BodyDigest>() {
+                gzip_digested(body, digest, mtime).await
+            } else {
+                gzip_stream(body, mtime)
+            };
+            Response::from_parts(parts, body)
         }
         Some(_) => response,
         None => {
@@ -128,32 +145,16 @@ fn parse_accept_encoding(header: &str) -> Vec<(String, f64)> {
                 Some((a, p)) => (a.trim(), Some(p.trim())),
                 None => (part, None),
             };
+            // `/\Aq=([\d.]+)/ =~ parameters`, else 1.0.
             let quality = parameters
                 .and_then(|p| p.strip_prefix("q="))
-                .map(|q| {
-                    let digits: String = q.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
-                    ruby_to_f(&digits)
-                })
+                .map(|q| &q[..q.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(q.len())])
+                .filter(|digits| !digits.is_empty())
+                .map(ruby_compat::to_f)
                 .unwrap_or(1.0);
             (attribute.to_string(), quality)
         })
         .collect()
-}
-
-/// `String#to_f` on `[\d.]+`: the longest leading float.
-fn ruby_to_f(s: &str) -> f64 {
-    let mut end = 0;
-    let mut dot = false;
-    for (i, c) in s.char_indices() {
-        if c == '.' {
-            if dot {
-                break;
-            }
-            dot = true;
-        }
-        end = i + 1;
-    }
-    s[..end].trim_end_matches('.').parse().unwrap_or(0.0)
 }
 
 /// `Rack::Utils.select_best_encoding`
@@ -191,7 +192,7 @@ fn select_best_encoding(available: &[&'static str], accept: &[(String, f64)]) ->
 /// `GzipStream` with `sync: true`: each body chunk is compressed and flushed as it arrives.
 /// `Zlib::GzipWriter` writes the header with the given mtime and the Unix OS code.
 fn gzip_stream(body: Body, mtime: u32) -> Body {
-    let encoder = GzBuilder::new().mtime(mtime).operating_system(3).write(Vec::new(), Compression::default());
+    let encoder = gzip_encoder(mtime);
     let chunks = body.into_data_stream();
     let stream = futures_util::stream::unfold(Some((chunks, encoder)), |state| async move {
         let (mut chunks, mut encoder) = state?;
@@ -212,19 +213,49 @@ fn gzip_stream(body: Body, mtime: u32) -> Body {
     Body::from_stream(stream)
 }
 
-/// A body split into [`splice::PageParts`] (always a single buffer), as their stored pieces; the
-/// same decoded bytes as [`gzip_stream`].
-async fn gzip_page_parts(body: Body, page_parts: &splice::PageParts, mtime: u32) -> Body {
-    let bytes = match body.collect().await {
-        Ok(collected) => collected.to_bytes(),
-        Err(error) => return Body::from_stream(futures_util::stream::once(async move { Err::<Bytes, _>(std::io::Error::other(error)) })),
-    };
-    if !page_parts.fits(&bytes) {
-        return gzip_stream(Body::from(bytes), mtime);
+fn gzip_encoder(mtime: u32) -> GzEncoder<Vec<u8>> {
+    GzBuilder::new().mtime(mtime).operating_system(3).write(Vec::new(), Compression::default())
+}
+
+/// A body `Rack::ETag` digested (always a single buffer), gzipped once while it keeps repeating.
+async fn gzip_digested(body: Body, digest: BodyDigest, mtime: u32) -> Body {
+    let key = (digest, mtime);
+    let cached = lock(&GZIPPED).get(&key, Bytes::clone);
+    if let Some(gzipped) = cached {
+        return single_chunk(gzipped);
     }
-    let gzipped = page_parts.gzip(&bytes, mtime);
-    // Streamed like `gzip_stream`'s output, so no `Content-Length` goes with it.
-    Body::from_stream(futures_util::stream::once(async move { Ok::<_, std::io::Error>(Bytes::from(gzipped)) }))
+    let gzipped = match body.collect().await {
+        Ok(collected) => gzip_member(&collected.to_bytes(), mtime),
+        Err(error) => Err(std::io::Error::other(error)),
+    };
+    match gzipped {
+        Ok(gzipped) => {
+            // One huge body mustn't push out everything else.
+            if gzipped.len() <= MAX_GZIPPED_BYTES / 4 {
+                lock(&GZIPPED).insert(key, gzipped.clone());
+            }
+            single_chunk(gzipped)
+        }
+        Err(error) => Body::from_stream(futures_util::stream::once(async move { Err::<Bytes, _>(error) })),
+    }
+}
+
+/// What [`gzip_stream`] sends for a single-buffer body, in one piece.
+fn gzip_member(body: &[u8], mtime: u32) -> std::io::Result<Bytes> {
+    let mut encoder = gzip_encoder(mtime);
+    if !body.is_empty() {
+        encoder.write_all(body)?;
+        encoder.flush()?;
+    }
+    let mut member = encoder.finish()?;
+    // Kept for as long as it's used, so without the spare capacity growing it left.
+    member.shrink_to_fit();
+    Ok(member.into())
+}
+
+/// Streamed like [`gzip_stream`]'s output, so no `Content-Length` goes with it.
+fn single_chunk(gzipped: Bytes) -> Body {
+    Body::from_stream(futures_util::stream::once(async move { Ok::<_, std::io::Error>(gzipped) }))
 }
 
 fn compress(encoder: &mut GzEncoder<Vec<u8>>, chunk: &[u8]) -> std::io::Result<Bytes> {
@@ -233,9 +264,14 @@ fn compress(encoder: &mut GzEncoder<Vec<u8>>, chunk: &[u8]) -> std::io::Result<B
     Ok(Bytes::from(std::mem::take(encoder.get_mut())))
 }
 
+/// Gzip members by body digest and gzip mtime.
+static GZIPPED: LazyLock<Mutex<Generations<(BodyDigest, u32), Bytes>>> =
+    LazyLock::new(|| Mutex::new(Generations::with_budget(MAX_GZIPPED_BYTES, |_, gzipped| gzipped.len() + ENTRY_OVERHEAD)));
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::Digest;
 
     fn best(header: &str) -> Option<&'static str> {
         select_best_encoding(&["gzip", "identity"], &parse_accept_encoding(header))
@@ -251,6 +287,25 @@ mod tests {
         assert_eq!(best("*"), Some("gzip"));
         assert_eq!(best("identity;q=0, *;q=0"), None);
         assert_eq!(best("gzip;q=0, identity;q=0"), None);
+    }
+
+    #[test]
+    fn q_values_read_like_rack() {
+        // `Rack::Request#accept_encoding` and `select_best_encoding` in the reference, where
+        // `identity;q=` is a 200 and `identity;q=0` a 406.
+        assert_eq!(best("identity;q="), Some("identity"));
+        assert_eq!(best("identity;q=0"), None);
+        assert_eq!(best("gzip;q="), Some("gzip"));
+        assert_eq!(best("gzip;q=abc"), Some("gzip"));
+        assert_eq!(best("gzip;Q=0.5, identity;q=0.9"), Some("gzip"));
+        assert_eq!(best("gzip;q=.5"), Some("gzip"));
+        assert_eq!(best("gzip;q=."), Some("identity"));
+        assert_eq!(best("gzip;q=0..5, identity;q=0.1"), Some("identity"));
+        assert_eq!(best("gzip;q=0.5.1, identity;q=0.6"), Some("identity"));
+        assert_eq!(
+            parse_accept_encoding("gzip;q=0.5.1, identity;q=, br;q=1."),
+            [("gzip".to_string(), 0.5), ("identity".to_string(), 1.0), ("br".to_string(), 1.0)]
+        );
     }
 
     #[test]
@@ -272,5 +327,45 @@ mod tests {
             flate2::read::GzDecoder::new(&bytes[..]).read_to_end(&mut out).unwrap();
             assert_eq!(out, input);
         }
+    }
+
+    async fn gzipped(body: Body) -> Bytes {
+        body.collect().await.unwrap().to_bytes()
+    }
+
+    fn digest(body: &[u8]) -> BodyDigest {
+        BodyDigest(sha2::Sha256::digest(body).into())
+    }
+
+    #[tokio::test]
+    async fn digested_bodies_are_gzipped_once() {
+        let body = Bytes::from("<a href=\"/rooms/1\">Room</a>".repeat(300));
+        let first = gzipped(gzip_digested(Body::from(body.clone()), digest(&body), 0).await).await;
+        assert_eq!(first, gzipped(gzip_stream(Body::from(body.clone()), 0)).await, "what gzip_stream sends");
+        let kept = lock(&GZIPPED).get(&(digest(&body), 0), Bytes::clone).expect("kept");
+        let again = gzipped(gzip_digested(Body::from(body.clone()), digest(&body), 0).await).await;
+        assert_eq!(again.as_ptr(), kept.as_ptr(), "not gzipped again");
+
+        let other = Bytes::from("<a href=\"/rooms/2\">Room</a>".repeat(300));
+        let gzip = gzipped(gzip_digested(Body::from(other.clone()), digest(&other), 0).await).await;
+        assert_eq!(gzip, gzipped(gzip_stream(Body::from(other), 0)).await);
+    }
+
+    #[tokio::test]
+    async fn gzip_round_trip_of_a_page_larger_than_the_window() {
+        use std::io::Read;
+        // Long repeats and several windows' worth of input, in chunks: the match comparison, the
+        // window slide and the CRC all run, in their SIMD versions where zlib-rs has them for this
+        // CPU (the scalar ones compute the same bytes).
+        let page: Vec<u8> = (0..3000)
+            .flat_map(|n| format!("<div id=\"message_{n}\" class=\"message\">{}</div>\n", "hello there ".repeat(n % 13)).into_bytes())
+            .collect();
+        assert!(page.len() > 4 * 32 * 1024);
+        let chunks: Vec<std::io::Result<Bytes>> = page.chunks(40_000).map(|chunk| Ok(Bytes::copy_from_slice(chunk))).collect();
+        let body = gzip_stream(Body::from_stream(futures_util::stream::iter(chunks)), 0);
+        let bytes = body.collect().await.unwrap().to_bytes();
+        let mut out = Vec::new();
+        flate2::read::GzDecoder::new(&bytes[..]).read_to_end(&mut out).unwrap();
+        assert_eq!(out, page);
     }
 }

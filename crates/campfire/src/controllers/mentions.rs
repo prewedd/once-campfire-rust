@@ -18,8 +18,7 @@ pub async fn index(c: &mut Ctx) -> Result {
     let messages = c.app().db.read(move |conn| Message::mentioning(conn, &*app.db.env().rich_text, user_id, LIMIT)).await.map_err(db_error)?;
     let messages = present(c, move |presenter| presenter.messages(&messages)).await?;
     let response = page::framed_page!(c, StatusCode::OK, |ctx| Mentions { ctx, messages: &messages }).await?;
-    let fragments = campfire_views::messages::MessageItem::cached_fragments(&c.app().fragment_cache, &messages);
-    Ok(response.with_cached_fragments(fragments))
+    Ok(response)
 }
 
 #[cfg(test)]

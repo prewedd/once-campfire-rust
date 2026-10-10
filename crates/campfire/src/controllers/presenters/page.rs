@@ -3,14 +3,18 @@
 //! broadcasts (`ApplicationController.render`).
 
 use campfire_db::{Account, Boost, Membership, Message, Room};
-use campfire_kit::{Ctx, Error, Format, Result, StatusCode};
+use campfire_kit::{Ctx, Format, Result, StatusCode};
+use campfire_views::fragment_cache::Fragment;
 use campfire_views::helpers as h;
 use campfire_views::layouts::{Application, FrameLayout};
+use campfire_views::recorded::RecordedPage;
 use campfire_views::{Platform, ViewContext};
 
 use crate::app::App;
+/// Moved to `app` upstream; this app's controllers still reach it through `page`.
+pub use crate::app::db_error;
 use crate::channels::Partials;
-use crate::controllers::presenters::view_context::{Layout, account_summary, find_template};
+use crate::controllers::presenters::view_context::{Layout, account_summary, find_template, render_recorded};
 
 /// A template that extends `layouts/application` itself (with `blocks = ["head", "content"]`):
 /// the full page, or for a Turbo-Frame request its `head` and `content` in turbo-rails' frame
@@ -22,7 +26,7 @@ macro_rules! framed_page {
         $crate::controllers::presenters::view_context::page_or_frame(
             $c,
             $status,
-            |$ctx| askama::Template::render(&$page),
+            |$ctx| campfire_views::render_sized!($page),
             |$ctx| {
                 let page = $page;
                 campfire_views::layouts::frame($ctx, page.as_head(), page.as_content())
@@ -41,8 +45,12 @@ pub async fn content(c: &mut Ctx, status: StatusCode, render: impl FnOnce(&ViewC
     let layout = Layout::load(c).await?;
     let frame = c.is_turbo_frame_request();
     let html = layout.render(c, |ctx| {
-        let content = h::raw(render(ctx)?);
-        if frame { FrameLayout { ctx, head: h::empty(), content }.render() } else { Application::new(ctx, content).render() }
+        let content = render(ctx)?;
+        if frame {
+            FrameLayout { ctx, head: h::empty(), content: h::raw(content.into()) }.render()
+        } else {
+            Application::new(ctx, h::raw(content)).render()
+        }
     })?;
     Ok(if frame { layout.frame(c, status, html) } else { layout.page(c, status, html) })
 }
@@ -65,18 +73,19 @@ pub async fn content_in_application_layout(
 
 /// A template rendered with `layout false` (or a turbo stream), no layout, labelled with the
 /// template's format.
-pub async fn bare(c: &mut Ctx, status: StatusCode, template: Format, render: impl FnOnce(&ViewContext) -> askama::Result<String>) -> Result {
+pub async fn bare<T: Into<RecordedPage>>(
+    c: &mut Ctx,
+    status: StatusCode,
+    template: Format,
+    render: impl FnOnce(&ViewContext) -> askama::Result<T>,
+) -> Result {
     find_template(c, template)?;
     let layout = Layout::load(c).await?;
     let html = layout.render(c, render)?;
-    Ok(c.render(status, template, html))
+    Ok(render_recorded(c, status, template, html.into()))
 }
 
-/// The renderer's default host (`http://example.org`): what [`render_detached_at`] renders URLs
-/// with outside a request, as `ApplicationController.render` does.
-pub const DETACHED_BASE_URL: &str = "http://example.org";
-
-/// The base of the URLs in a [`render_detached_at`] during a request. `SetCurrentRequest`'s
+/// The base of the URLs in a [`DetachedRenderer::render_at`] during a request. `SetCurrentRequest`'s
 /// `default_url_options` only carries `request.host` and `request.protocol`, so the port comes
 /// from the renderer's own env (`example.org:80`) and never shows: a request to
 /// `http://localhost:3999` broadcasts `http://localhost/...` links
@@ -85,52 +94,78 @@ pub fn renderer_base_url(c: &Ctx) -> String {
     format!("{}{}", c.request.protocol(), c.request.host())
 }
 
-/// Renders with the `ViewContext` `ApplicationController.render` has: no request, no
-/// `Current.user`, no CSRF tokens. During a request, URLs get the request's host through
-/// `default_url_options` (`SetCurrentRequest`, see [`renderer_base_url`]); outside one, pass
-/// [`DETACHED_BASE_URL`].
-pub fn render_detached_at<T>(app: &App, account: Option<&Account>, base_url: &str, render: impl FnOnce(&ViewContext) -> T) -> T {
-    let asset_path = |path: &str| campfire_assets::asset_path(path);
-    let stylesheets = crate::controllers::presenters::view_context::stylesheet_tags();
-    let ctx = ViewContext {
-        current_user: None,
-        account: account_summary(account, false),
-        flash_notice: None,
-        flash_alert: None,
-        platform: Platform::default(),
-        vapid_public_key: app.vapid_public_key(),
-        asset_path: &asset_path,
-        importmap_tags: campfire_assets::javascript_importmap_tags(),
-        stylesheet_tags: &stylesheets.html,
-        custom_styles: None,
-        cable_url: "/cable".into(),
-        base_url: base_url.to_string(),
-        request_url: format!("{base_url}/"),
-        referrer: None,
-        last_room_visited_id: None,
-        app_version: app.config.app_version.clone(),
-    };
-    // Renders outside a request (broadcasts from jobs) share the fragment cache too.
-    campfire_views::fragment_cache::with(&app.fragment_cache, || render(&ctx))
+/// The renderer's default host (`http://example.org`): what a [`DetachedRenderer`] renders URLs
+/// with outside a request, as `ApplicationController.render` does.
+pub const DETACHED_BASE_URL: &str = "http://example.org";
+
+/// Request-less rendering with a fragment generation captured before view reads.
+/// Its fragments are isolated from request-host-dependent presentations.
+pub struct DetachedRenderer {
+    fragments: std::sync::Arc<campfire_views::fragment_cache::FragmentCache>,
+}
+
+impl DetachedRenderer {
+    /// Capture before gathering the view: a delayed broadcast may only populate its
+    /// original database generation, even if another connection commits meanwhile.
+    pub fn new(app: &App) -> Self {
+        Self { fragments: app.fragments() }
+    }
+
+    pub fn with_fragments<T>(&self, render: impl FnOnce() -> T) -> T {
+        campfire_views::fragment_cache::with(&self.fragments, render)
+    }
+
+    /// Renders at [`DETACHED_BASE_URL`]; this app's broadcasts all pass a base URL to [`Self::render_at`].
+    #[cfg(test)]
+    pub fn render<T>(&self, app: &App, account: Option<&Account>, render: impl FnOnce(&ViewContext) -> T) -> T {
+        self.render_at(app, account, DETACHED_BASE_URL, render)
+    }
+
+    /// [`Self::render`] during a request: URLs get the request's host through
+    /// `default_url_options` (`SetCurrentRequest`), see [`renderer_base_url`].
+    pub fn render_at<T>(&self, app: &App, account: Option<&Account>, base_url: &str, render: impl FnOnce(&ViewContext) -> T) -> T {
+        let asset_path = |path: &str| campfire_assets::asset_path(path);
+        let stylesheets = crate::controllers::presenters::view_context::stylesheet_tags();
+        let ctx = ViewContext {
+            current_user: None,
+            account: account_summary(account, false),
+            flash_notice: None,
+            flash_alert: None,
+            platform: Platform::default(),
+            vapid_public_key: app.vapid_public_key(),
+            asset_path: &asset_path,
+            importmap_tags: campfire_assets::javascript_importmap_tags(),
+            stylesheet_tags: &stylesheets.html,
+            custom_styles: None,
+            cable_url: "/cable".into(),
+            base_url: base_url.to_string(),
+            request_url: format!("{base_url}/"),
+            referrer: None,
+            last_room_visited_id: None,
+            app_version: app.config.app_version.clone(),
+        };
+        // Renders outside a request (broadcasts from jobs) share the fragment cache too.
+        self.with_fragments(|| render(&ctx))
+    }
 }
 
 /// The broadcast partials, rendered up front by the controller (which has the view models) and
 /// handed to `channels::Broadcasts`.
 #[derive(Default)]
 pub struct Rendered {
-    pub message: Option<String>,
+    pub message: Option<Fragment>,
     pub message_presentation: Option<String>,
-    pub boost: Option<String>,
+    pub boost: Option<Fragment>,
     pub shared_room: Option<String>,
     /// `users/sidebars/rooms/_direct`, per membership id.
-    pub direct_rooms: Vec<(i64, String)>,
+    pub direct_rooms: Vec<(i64, Fragment)>,
     /// `messages/_thread_summary` for a reply's parent.
     pub thread_summary: Option<String>,
 }
 
 impl Partials for Rendered {
     fn message(&self, _: &Message) -> String {
-        self.message.clone().unwrap_or_default()
+        self.message.as_deref().cloned().unwrap_or_default()
     }
 
     fn message_presentation(&self, _: &Message) -> String {
@@ -138,7 +173,7 @@ impl Partials for Rendered {
     }
 
     fn boost(&self, _: &Boost) -> String {
-        self.boost.clone().unwrap_or_default()
+        self.boost.as_deref().cloned().unwrap_or_default()
     }
 
     fn shared_room(&self, _: &Room) -> String {
@@ -146,17 +181,10 @@ impl Partials for Rendered {
     }
 
     fn direct_room(&self, membership: &Membership) -> String {
-        self.direct_rooms.iter().find(|(id, _)| *id == membership.id).map(|(_, html)| html.clone()).unwrap_or_default()
+        self.direct_rooms.iter().find(|(id, _)| *id == membership.id).map(|(_, html)| String::clone(html)).unwrap_or_default()
     }
 
     fn thread_summary(&self, _: &Message) -> String {
         self.thread_summary.clone().unwrap_or_default()
-    }
-}
-
-pub fn db_error(error: campfire_db::Error) -> Error {
-    match error {
-        campfire_db::Error::RecordNotFound(_) => Error::NotFound,
-        other => Error::internal(other),
     }
 }

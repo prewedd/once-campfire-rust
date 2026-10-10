@@ -5,11 +5,11 @@ use askama::Template;
 use jiff::Timestamp;
 use serde::Deserialize;
 
+use crate::ViewContext;
 use crate::helpers as h;
 use crate::layouts::Page;
 use crate::messages::support::epoch_ms;
-use crate::messages::{room_dom_id, MessageItem, RoomKind, UserView};
-use crate::ViewContext;
+use crate::messages::{MessageItem, RoomKind, UserView, room_dom_id};
 
 /// `room_display_name(room, for_user:)`: a direct room is named after its other members
 /// (`room.users.without(for_user).pluck(:name).to_sentence`), falling back to the user's own
@@ -343,8 +343,8 @@ mod filters {
     use askama::{Template, Values};
 
     use super::{FormLayout, FormRoom, RoomKind};
-    use crate::helpers::Html;
     use crate::ViewContext;
+    use crate::helpers::Html;
 
     /// `render layout: "rooms/layouts/form", locals: { room: } do ... end`.
     pub fn room_form(

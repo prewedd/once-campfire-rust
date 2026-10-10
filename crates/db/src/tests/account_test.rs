@@ -16,54 +16,23 @@ fn settings() {
     let mut settings = account.settings();
     settings.set_restrict_room_creation_to_administrators("true");
     assert!(settings.restrict_room_creation_to_administrators());
-    assert_eq!(
-        settings.to_json(),
-        r#"{"restrict_room_creation_to_administrators":true}"#
-    );
+    assert_eq!(settings.to_json(), r#"{"restrict_room_creation_to_administrators":true}"#);
 
     let mut a = account.clone();
-    t.write(move |tx| {
-        a.update(
-            tx,
-            None,
-            None,
-            Some(&[("restrict_room_creation_to_administrators", "true")]),
-        )
-    });
+    t.write(move |tx| a.update(tx, None, None, Some(&[("restrict_room_creation_to_administrators", "true")])));
     account.reload_from(&t);
-    assert!(
-        account
-            .settings()
-            .restrict_room_creation_to_administrators()
-    );
-    assert_eq!(
-        account.settings_json.as_deref(),
-        Some(r#"{"restrict_room_creation_to_administrators":true}"#)
-    );
+    assert!(account.settings().restrict_room_creation_to_administrators());
+    assert_eq!(account.settings_json.as_deref(), Some(r#"{"restrict_room_creation_to_administrators":true}"#));
 
     let mut settings = account.settings();
     settings.set_restrict_room_creation_to_administrators("false");
     assert!(!settings.restrict_room_creation_to_administrators());
-    assert_eq!(
-        settings.to_json(),
-        r#"{"restrict_room_creation_to_administrators":false}"#
-    );
+    assert_eq!(settings.to_json(), r#"{"restrict_room_creation_to_administrators":false}"#);
 
     let mut a = account.clone();
-    t.write(move |tx| {
-        a.update(
-            tx,
-            None,
-            None,
-            Some(&[("restrict_room_creation_to_administrators", "false")]),
-        )
-    });
+    t.write(move |tx| a.update(tx, None, None, Some(&[("restrict_room_creation_to_administrators", "false")])));
     account.reload_from(&t);
-    assert!(
-        !account
-            .settings()
-            .restrict_room_creation_to_administrators()
-    );
+    assert!(!account.settings().restrict_room_creation_to_administrators());
 }
 
 #[test]
@@ -81,10 +50,7 @@ fn updating_other_attributes_leaves_null_settings_alone() {
 fn unknown_settings_are_rejected() {
     let t = TestDb::new();
     let mut account = signal(&t);
-    assert!(
-        t.try_write(move |tx| account.update(tx, None, None, Some(&[("nope", "1")])))
-            .is_err()
-    );
+    assert!(t.try_write(move |tx| account.update(tx, None, None, Some(&[("nope", "1")]))).is_err());
 }
 
 #[test]
@@ -96,15 +62,8 @@ fn new_accounts_get_a_joinable_code() {
     });
     let parts: Vec<&str> = account.join_code.split('-').collect();
     assert_eq!(parts.len(), 3);
-    assert!(
-        parts
-            .iter()
-            .all(|p| p.len() == 4 && p.chars().all(|c| c.is_ascii_alphanumeric()))
-    );
-    assert_eq!(
-        account.settings_json.as_deref(),
-        Some(r#"{"restrict_room_creation_to_administrators":false}"#)
-    );
+    assert!(parts.iter().all(|p| p.len() == 4 && p.chars().all(|c| c.is_ascii_alphanumeric())));
+    assert_eq!(account.settings_json.as_deref(), Some(r#"{"restrict_room_creation_to_administrators":false}"#));
     assert_eq!(account.singleton_guard, 0);
 }
 

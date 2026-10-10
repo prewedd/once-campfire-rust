@@ -2,9 +2,16 @@
 name = "campfire"
 version = "0.1.0"
 edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
+base64.workspace = true
 rails_compat.workspace = true
+ruby_compat.workspace = true
 campfire_kit.workspace = true
 campfire_routes.workspace = true
 campfire_db.workspace = true
@@ -29,6 +36,7 @@ futures-util.workspace = true
 rusqlite = { workspace = true, features = ["backup"] }
 tempfile.workspace = true
 rand.workspace = true
+hex.workspace = true
 percent-encoding.workspace = true
 tracing-subscriber.workspace = true
 # integrations/
@@ -46,7 +54,6 @@ aes-gcm.workspace = true
 sha2.workspace = true
 hmac.workspace = true
 flate2.workspace = true
-base64.workspace = true
 uuid.workspace = true
 thiserror.workspace = true
 
@@ -54,7 +61,6 @@ thiserror.workspace = true
 campfire_db = { workspace = true, features = ["test-support"] }
 tikv-jemalloc-sys.workspace = true
 tower = { workspace = true, features = ["util"] }
+# axum::serve in the channel tests
+axum = { workspace = true, features = ["http1"] }
 tokio-tungstenite.workspace = true
-futures-util.workspace = true
-tempfile.workspace = true
-rusqlite.workspace = true

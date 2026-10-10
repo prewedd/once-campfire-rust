@@ -9,9 +9,9 @@ use std::time::Duration;
 use campfire_richtext::uri::{self, Uri};
 use hyper::Method;
 
+use crate::integrations::net::Network;
 use crate::integrations::net::guard::{self, GuardError};
 use crate::integrations::net::http::{self, Body, Endpoint, HttpError, Timeouts};
-use crate::integrations::net::Network;
 
 pub const ALLOWED_DOCUMENT_CONTENT_TYPE: &str = "text/html";
 pub const MAX_BODY_SIZE: usize = 5 * 1024 * 1024;

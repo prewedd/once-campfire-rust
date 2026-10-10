@@ -22,10 +22,7 @@ pub fn channel_name(class_name: &str) -> String {
 /// `Channel::Broadcasting.broadcasting_for`: the channel name followed by each broadcastable,
 /// joined with `:`. `stream_for @room` in `RoomChannel` streams from `room:<gid param>`.
 pub fn broadcasting_for(class_name: &str, broadcastables: &[&str]) -> String {
-    std::iter::once(channel_name(class_name).as_str())
-        .chain(broadcastables.iter().copied())
-        .collect::<Vec<_>>()
-        .join(":")
+    std::iter::once(channel_name(class_name).as_str()).chain(broadcastables.iter().copied()).collect::<Vec<_>>().join(":")
 }
 
 /// `Turbo::Streams::StreamName#stream_name_from`: `turbo_stream_from @room, :messages` names the
@@ -44,8 +41,7 @@ fn underscore(word: &str) -> String {
             let next = chars.get(i + 1).copied();
             // ([a-z\d])([A-Z]) and ([A-Z\d]+)([A-Z][a-z])
             let lower_before = prev.is_ascii_lowercase() || prev.is_ascii_digit();
-            let acronym_end = (prev.is_ascii_uppercase() || prev.is_ascii_digit())
-                && next.is_some_and(|n| n.is_ascii_lowercase());
+            let acronym_end = (prev.is_ascii_uppercase() || prev.is_ascii_digit()) && next.is_some_and(|n| n.is_ascii_lowercase());
             if lower_before || acronym_end {
                 out.push('_');
             }

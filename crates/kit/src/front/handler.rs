@@ -263,7 +263,8 @@ fn as_proxied_http1(request: &mut Request<Body>) {
     if let Some(path) = request.uri().path_and_query().and_then(|p| p.as_str().parse().ok()) {
         *request.uri_mut() = path;
     }
-    let cookies: Vec<String> = request.headers().get_all(header::COOKIE).iter().filter_map(|v| v.to_str().ok()).map(str::to_string).collect();
+    let cookies: Vec<String> =
+        request.headers().get_all(header::COOKIE).iter().filter_map(|v| v.to_str().ok()).map(str::to_string).collect();
     if cookies.len() > 1
         && let Ok(joined) = HeaderValue::from_str(&cookies.join("; "))
     {
@@ -281,7 +282,8 @@ fn set_forwarded_headers(request: &mut Request<Body>, conn: &ConnInfo, forward_h
     let prior_for = if forward_headers { join("x-forwarded-for") } else { String::new() };
     let incoming_host = headers.get("x-forwarded-host").filter(|v| !v.is_empty()).cloned();
     let incoming_proto = headers.get("x-forwarded-proto").filter(|v| !v.is_empty()).cloned();
-    let host = headers.get(header::HOST).cloned().or_else(|| request.uri().authority().and_then(|a| HeaderValue::from_str(a.as_str()).ok()));
+    let host =
+        headers.get(header::HOST).cloned().or_else(|| request.uri().authority().and_then(|a| HeaderValue::from_str(a.as_str()).ok()));
 
     let client = conn.remote.ip().to_canonical().to_string();
     let forwarded_for = if prior_for.is_empty() { client } else { format!("{prior_for}, {client}") };

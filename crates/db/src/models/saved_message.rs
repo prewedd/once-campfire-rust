@@ -60,7 +60,7 @@ impl SavedMessage {
     pub fn messages(conn: &Connection, user_id: i64) -> Result<Vec<Message>> {
         query_all(
             conn,
-            &format!(r#"SELECT "messages".* FROM "saved_messages" {REACHABLE} WHERE "saved_messages"."user_id" = ? ORDER BY "saved_messages"."created_at" DESC, "saved_messages"."message_id" DESC LIMIT ?"#),
+            &format!(r#"SELECT {} FROM "saved_messages" {REACHABLE} WHERE "saved_messages"."user_id" = ? ORDER BY "saved_messages"."created_at" DESC, "saved_messages"."message_id" DESC LIMIT ?"#, crate::models::message::message_columns!()),
             params![user_id, Self::LIMIT],
             Message::from_row,
         )

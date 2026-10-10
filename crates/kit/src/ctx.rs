@@ -1,6 +1,7 @@
 //! `Ctx`: everything a controller action touches, in place of a Rails controller instance.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use axum::body::Bytes;
 use axum::http::header::{self, HeaderName, HeaderValue};
@@ -12,7 +13,7 @@ use sha2::{Digest, Sha256};
 use crate::app::Kit;
 use crate::clock::{self, SharedClock};
 use crate::cookies::CookieJar;
-use crate::deflater::splice::PageParts;
+use crate::deflater::BodyDigest;
 use crate::format::{self, Format, InvalidMimeType, NegotiationInput};
 use crate::params::{Param, ParamMap};
 use crate::request::Request;
@@ -324,6 +325,18 @@ impl Ctx {
         self.render_as(status, &format!("{}; charset=utf-8", template.string), body)
     }
 
+    /// [`Ctx::render`] for a template that recorded where its cached fragments went: its `text`
+    /// with each of `fragments` spliced in at its byte offset (see [`Body::spliced`]).
+    ///
+    /// # Panics
+    ///
+    /// On offsets [`Body::spliced`] rejects.
+    pub fn render_spliced(&mut self, status: StatusCode, template: Format, text: String, fragments: Vec<(usize, Arc<String>)>) -> Response {
+        let mut response = self.render(status, template, Bytes::new());
+        response.body = Body::spliced(text, fragments);
+        response
+    }
+
     /// `render turbo_stream:` (`text/vnd.turbo-stream.html`).
     pub fn turbo_stream(&mut self, html: impl Into<Bytes>) -> Response {
         self.render_as(StatusCode::OK, response::TURBO_STREAM_UTF8, html)
@@ -371,9 +384,7 @@ impl Ctx {
         if !options.allow_other_host && !self.url_host_allowed(&location) {
             return Err(Error::UnsafeRedirect(format!("Unsafe redirect to {location:?}")));
         }
-        Ok(Response::new(options.status.unwrap_or(StatusCode::FOUND))
-            .content_type(response::HTML_UTF8)
-            .header(header::LOCATION, &location))
+        Ok(Response::new(options.status.unwrap_or(StatusCode::FOUND)).content_type(response::HTML_UTF8).header(header::LOCATION, &location))
     }
 
     /// `redirect_back_or_to fallback`: the referer when it's on this host.
@@ -391,9 +402,7 @@ impl Ctx {
             let bytes = location.as_bytes();
             location.starts_with("//")
                 || (bytes.first().is_some_and(u8::is_ascii_alphabetic)
-                    && location
-                        .find(':')
-                        .is_some_and(|i| location[..i].bytes().all(|b| b.is_ascii_alphanumeric() || b"-+.".contains(&b))))
+                    && location.find(':').is_some_and(|i| location[..i].bytes().all(|b| b.is_ascii_alphanumeric() || b"-+.".contains(&b))))
         };
         let url = if is_absolute {
             location.to_string()
@@ -430,14 +439,12 @@ impl Ctx {
         if options.filename.is_none() {
             options.filename = path.file_name().map(|n| n.to_string_lossy().into_owned());
         }
-        let range = self.request.header("range").map(str::to_string);
-        Ok(response::send(&options, range.as_deref(), SendBody::File(path.to_path_buf(), metadata.len())))
+        Ok(response::send(&options, SendBody::File(path.to_path_buf(), metadata.len())))
     }
 
     /// `send_data data, type:, disposition:, filename:`
     pub fn send_data(&mut self, data: impl Into<Bytes>, options: SendOptions) -> Response {
-        let range = self.request.header("range").map(str::to_string);
-        response::send(&options, range.as_deref(), SendBody::Bytes(data.into()))
+        response::send(&options, SendBody::Bytes(data.into()))
     }
 
     // --- Conditional GET -----------------------------------------------------------------------
@@ -518,10 +525,11 @@ impl Ctx {
         self.cache_control = CacheControl { no_store: true, ..CacheControl::default() };
     }
 
-    /// Set a response header ahead of the response (`response.headers[...] = ...`).
+    /// Set a response header ahead of the response (`response.headers[...] = ...`), as Puma would
+    /// write the value (see `Response::header`).
     pub fn set_header(&mut self, name: impl TryInto<HeaderName>, value: &str) {
         let name = name.try_into().unwrap_or_else(|_| panic!("invalid header name"));
-        self.headers.insert(name, HeaderValue::from_str(value).expect("invalid header value"));
+        crate::response::set_header_value(&mut self.headers, name, value);
     }
 
     /// A controller that includes `ActionController::Live` (`ActiveStorage::Streaming` does):
@@ -565,9 +573,7 @@ impl Ctx {
                 response.headers.insert(name.clone(), value.clone());
             }
         }
-        if !response.headers.contains_key(header::CONTENT_TYPE)
-            && !matches!(response.status.as_u16(), 100..=199 | 204 | 205 | 304)
-        {
+        if !response.headers.contains_key(header::CONTENT_TYPE) && !matches!(response.status.as_u16(), 100..=199 | 204 | 205 | 304) {
             response.headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(response::HTML_UTF8));
         }
         rack_etag(&mut response, !self.live);
@@ -618,8 +624,7 @@ impl Ctx {
             return;
         }
         let mut cache_control = self.cache_control.clone();
-        if cache_control.is_empty()
-            && (response.headers.contains_key(header::ETAG) || response.headers.contains_key(header::LAST_MODIFIED))
+        if cache_control.is_empty() && (response.headers.contains_key(header::ETAG) || response.headers.contains_key(header::LAST_MODIFIED))
         {
             cache_control = CacheControl { max_age: Some(0), must_revalidate: true, ..CacheControl::default() };
         }
@@ -641,12 +646,13 @@ impl Ctx {
         }
     }
 
-    /// What `ShowExceptions` + `PublicExceptions` render for an error raised in the action.
+    /// What `ShowExceptions` + `PublicExceptions` render for an error raised in the action. The
+    /// log line has the error's sources too (`{:#}`: "outer: cause: ...").
     fn error_response(&mut self, error: Error) -> Response {
         if error.status().is_server_error() {
-            tracing::error!(error = %error, path = self.request.path(), "request failed");
+            tracing::error!(error = %format_args!("{error:#}"), path = self.request.path(), "request failed");
         } else {
-            tracing::info!(error = %error, path = self.request.path(), "request rejected");
+            tracing::info!(error = %format_args!("{error:#}"), path = self.request.path(), "request rejected");
         }
         let formats = self.formats().unwrap_or_default();
         crate::exceptions::render(self.kit.error_pages(), error.status(), formats.first().copied(), self.request.is_head())
@@ -675,28 +681,30 @@ fn is_fresh(request: &Request, etag: Option<&str>, last_modified: Option<&str>) 
 fn rack_etag(response: &mut Response, digestible: bool) {
     let mut digested = false;
     let skip = !digestible || response.headers.contains_key(header::ETAG) || response.headers.contains_key(header::LAST_MODIFIED);
-    let digests = matches!(response.status.as_u16(), 200 | 201) && !skip;
-    if let Body::Bytes(bytes) = &response.body {
-        // A page with cached fragments splits at them. Any other page that's digested anyway is one
-        // text part, so the SHA-256 it already needs also keys its stored gzip piece: a page that
-        // renders the same (the sidebar, say) compresses once instead of on every request.
-        let parts = if response.cached_fragments.is_empty() { None } else { PageParts::new(bytes, &response.cached_fragments) };
-        response.page_parts = parts.or_else(|| if digests { PageParts::whole(bytes) } else { None }).map(std::sync::Arc::new);
+    if matches!(response.status.as_u16(), 200 | 201)
+        && !skip
+        && let Some(hex) = body_etag(response)
+    {
+        response.headers.insert(header::ETAG, HeaderValue::from_str(&format!("W/\"{}\"", &hex[..32])).unwrap());
+        digested = true;
     }
-    if digests
-        && let Body::Bytes(bytes) = &response.body
-            && !bytes.is_empty() {
-                // A page of cached fragments hashes its parts' digests rather than the whole body.
-                let hex = match &response.page_parts {
-                    Some(parts) => parts.etag(bytes),
-                    None => hex::encode(Sha256::digest(bytes)),
-                };
-                response.headers.insert(header::ETAG, HeaderValue::from_str(&format!("W/\"{}\"", &hex[..32])).unwrap());
-                digested = true;
-            }
     if !response.headers.contains_key(header::CACHE_CONTROL) {
         let value = if digested { "max-age=0, private, must-revalidate" } else { "no-cache" };
         response.headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(value));
+    }
+}
+
+/// The hex of `Rack::ETag`'s digest of a non-empty body. A page of cached fragments hashes its
+/// parts' digests rather than the whole body; another body keeps its SHA-256 for the gzip cache.
+fn body_etag(response: &mut Response) -> Option<String> {
+    match &response.body {
+        Body::Parts(parts) => Some(parts.etag()),
+        Body::Bytes(bytes) if !bytes.is_empty() => {
+            let digest = BodyDigest(Sha256::digest(bytes).into());
+            response.body_digest = Some(digest);
+            Some(hex::encode(digest.0))
+        }
+        _ => None,
     }
 }
 

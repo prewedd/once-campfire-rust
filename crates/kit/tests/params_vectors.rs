@@ -3,8 +3,7 @@
 
 #[test]
 fn query_strings_parse_like_rails() {
-    let vectors: Vec<serde_json::Value> =
-        serde_json::from_str(include_str!("params_vectors.json")).expect("params_vectors.json");
+    let vectors: Vec<serde_json::Value> = serde_json::from_str(include_str!("params_vectors.json")).expect("params_vectors.json");
     let mut failures = Vec::new();
     for vector in &vectors {
         let input = vector["input"].as_str().unwrap();

@@ -25,8 +25,8 @@ fn added_asset(logical: &str) -> Option<String> {
 
 pub fn golden(name: &str) -> Golden {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden/b").join(format!("{name}.json"));
-    let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path:?}: {e}")))
-        .expect("golden is JSON");
+    let json: Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path:?}: {e}"))).expect("golden is JSON");
     let assets = serde_json::from_value(json["context"]["assets"].clone()).unwrap_or_default();
     Golden { name: name.to_string(), kind: json["kind"].as_str().unwrap().to_string(), json, assets }
 }
@@ -512,10 +512,8 @@ fn start_tag(html: &str, start: usize) -> (String, String, usize) {
     if (name == "input" && named("authenticity_token")) || (name == "meta" && (named("csrf-token") || named("csrf-param"))) {
         return (String::new(), name, i);
     }
-    let rendered: String = attrs
-        .iter()
-        .map(|(k, v)| format!(" {k}=\"{}\"", v.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;")))
-        .collect();
+    let rendered: String =
+        attrs.iter().map(|(k, v)| format!(" {k}=\"{}\"", v.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;"))).collect();
     (format!("<{name}{rendered}>"), name, i)
 }
 
@@ -538,7 +536,9 @@ fn decode(text: &str) -> String {
             "quot" => Some('"'),
             "apos" => Some('\''),
             "nbsp" => Some('\u{a0}'),
-            _ if entity.starts_with("#x") || entity.starts_with("#X") => u32::from_str_radix(&entity[2..], 16).ok().and_then(char::from_u32),
+            _ if entity.starts_with("#x") || entity.starts_with("#X") => {
+                u32::from_str_radix(&entity[2..], 16).ok().and_then(char::from_u32)
+            }
             _ if entity.starts_with('#') => entity[1..].parse().ok().and_then(char::from_u32),
             _ => None,
         };

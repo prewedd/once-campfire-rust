@@ -63,11 +63,29 @@ def mention_attachment_for(user)
   "<action-text-attachment sgid=\"#{user.attachable_sgid}\" content-type=\"application/vnd.campfire.mention\" content=\"#{body.gsub('"', '&quot;')}\"></action-text-attachment>"
 end
 
+def numbered_attributes(range) = range.map { |i| "a#{i}=\"#{i}\"" }.join(" ")
+def numbered_italics(range) = range.map { |i| "<i title=\"#{i}\">" }.join
+
+# Bodies around Gumbo's limits (Nokogiri::Gumbo::DEFAULT_MAX_TREE_DEPTH and
+# DEFAULT_MAX_ATTRIBUTES), too long to write out in inputs.yml
+LONG_BODIES = {
+  "DEEP_400" => "<b>" * 400 + "deep",
+  "DEEP_401" => "<b>" * 401 + "deep",
+  "DEEP_400_VOID" => "<b>" * 400 + "<br>",
+  "DEEP_401_CLOSED" => "<b>" * 401 + "</b>" * 401,
+  "DEEP_CUTS" => ("<b>" + "<span>" * 300 + "<div>" * 10 + "</b>") * 3,
+  "DEEP_BEFORE_CUT" => "<b>" + "<span>" * 390 + "<div>" * 10 + "</b>" + "<div>" * 300,
+  "DEEP_REOPENED" => "<p>#{numbered_italics(1..399)}</p>x",
+  "DEEP_IN_TABLE_TEXT" => "<p>#{numbered_italics(1..399)}</p><div><table>x</table>",
+  "ATTRS_400" => "<p #{numbered_attributes(1..400)}>many</p>",
+  "ATTRS_401" => "<p #{numbered_attributes(1..401)}>many</p>",
+  "ATTRS_400_DUPLICATE" => "<p #{numbered_attributes(1..400)} a1=\"again\">many</p>",
+  "ATTRS_401_END_TAG" => "<p>many</p #{numbered_attributes(1..401)}>",
+  "ATTRS_401_UNFINISHED" => "<p>many</p><p #{numbered_attributes(1..400)} a401"
+}
+
 def expand(body, users:, room:, deleted_sgid:)
-  body = "<b>" * 400 + "deep" if body == "DEEP_400"
-  body = "<b>" * 401 + "deep" if body == "DEEP_401"
-  body = "<p " + (1..401).map { |i| "a#{i}=\"#{i}\"" }.join(" ") + ">many</p>" if body == "ATTRS_401"
-  body
+  LONG_BODIES.fetch(body, body)
     .gsub(/\{\{sgid:(\w+)\}\}/) { users.fetch($1).attachable_sgid }
     .gsub(/\{\{mention:(\w+)\}\}/) { mention_attachment_for(users.fetch($1)) }
     .gsub(/\{\{tampered:(\w+)\}\}/) { tampered(users.fetch($1).attachable_sgid) }

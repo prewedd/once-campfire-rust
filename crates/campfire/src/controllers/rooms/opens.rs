@@ -9,7 +9,7 @@ use campfire_views::rooms::{FormRoom, OpenFormView, OpensEdit, OpensNew};
 use super::{Scope, ensure_can_administer, ensure_permission_to_create_rooms, redirect_to_room, render_shared_room, room_name_param, room_topic_param, set_room};
 use crate::app::AppCtx;
 use crate::concerns::{self, Before, before_actions, require_current_user};
-use crate::controllers::presenters::page::{self, db_error};
+use crate::controllers::presenters::page;
 use crate::controllers::presenters::user_view;
 
 /// `DEFAULT_ROOM_NAME`
@@ -42,14 +42,12 @@ pub async fn create(c: &mut Ctx) -> Result {
     // Rooms::Open.create_for(room_params, users: Current.user)
     let room = c
         .app()
-        .db
         .write(move |tx| {
             let mut room = Room::create_for(tx, RoomType::Open, name.as_deref(), user_id, &[user_id])?;
             room.set_topic(tx, topic.as_deref())?;
             Ok(room)
         })
-        .await
-        .map_err(db_error)?;
+        .await?;
     let partials = render_shared_room(c, &room).await?;
     c.app().broadcasts.open_room_create(&room, &partials);
     redirect_to_room(c, room.id)
@@ -76,7 +74,6 @@ pub async fn update(c: &mut Ctx) -> Result {
     // force_room_type, then `@room.update! room_params` saves the name and the new type.
     let room = c
         .app()
-        .db
         .write(move |tx| {
             let mut room = room;
             room.update(tx, name.as_ref().map(|name| name.as_deref()), Some(RoomType::Open))?;
@@ -85,8 +82,7 @@ pub async fn update(c: &mut Ctx) -> Result {
             }
             Ok(room)
         })
-        .await
-        .map_err(db_error)?;
+        .await?;
     let partials = render_shared_room(c, &room).await?;
     c.app().broadcasts.open_room_update(&room, &partials);
     redirect_to_room(c, room.id)
@@ -95,9 +91,5 @@ pub async fn update(c: &mut Ctx) -> Result {
 /// `User.active.ordered`
 pub(crate) async fn active_users(c: &Ctx) -> Result<Vec<campfire_views::messages::UserView>> {
     let secrets = c.app().secrets.clone();
-    c.app()
-        .db
-        .read(move |conn| Ok(User::active_ordered(conn)?.iter().map(|user| user_view(&secrets, user)).collect()))
-        .await
-        .map_err(db_error)
+    c.app().read_offloaded(move |conn| Ok(User::active_ordered(conn)?.iter().map(|user| user_view(&secrets, user)).collect())).await
 }

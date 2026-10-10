@@ -1,18 +1,8 @@
 //! URL building that `campfire_routes` leaves to the caller: query strings (`Hash#to_query`)
 //! and format extensions (`path(format: :json)`).
 
-/// `CGI.escape`: everything but `A-Za-z0-9_.-~` is percent-encoded, and spaces become `+`.
-pub fn cgi_escape(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for byte in text.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'.' | b'-' | b'~' => out.push(byte as char),
-            b' ' => out.push('+'),
-            _ => out.push_str(&format!("%{byte:02X}")),
-        }
-    }
-    out
-}
+/// `CGI.escape`, for templates too.
+pub use ruby_compat::cgi_escape;
 
 /// A query parameter value: a scalar or an array (`key[]=a&key[]=b`).
 pub enum Param {
@@ -39,10 +29,7 @@ pub fn with_query(path: &str, params: Vec<(&str, Param)>) -> String {
 
 /// `rooms_directs_path(user_ids: [ id ])`.
 pub fn rooms_directs_with_users(user_ids: &[i64]) -> String {
-    with_query(
-        &campfire_routes::rooms_directs(),
-        vec![("user_ids", Param::Many(user_ids.iter().map(ToString::to_string).collect()))],
-    )
+    with_query(&campfire_routes::rooms_directs(), vec![("user_ids", Param::Many(user_ids.iter().map(ToString::to_string).collect()))])
 }
 
 /// `rooms_directs_path(user_ids: [ user.id ])`.
@@ -57,9 +44,6 @@ mod tests {
     #[test]
     fn builds_rails_query_strings() {
         assert_eq!(rooms_directs_with_users(&[5, 6]), "/rooms/directs?user_ids%5B%5D=5&user_ids%5B%5D=6");
-        assert_eq!(
-            with_query("/x", vec![("z", Param::One("a b".into())), ("a", Param::One("1".into()))]),
-            "/x?a=1&z=a+b"
-        );
+        assert_eq!(with_query("/x", vec![("z", Param::One("a b".into())), ("a", Param::One("1".into()))]), "/x?a=1&z=a+b");
     }
 }

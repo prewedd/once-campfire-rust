@@ -22,11 +22,7 @@ pub enum GuardError {
 
 /// `RestrictedHTTP::PrivateNetworkGuard.resolve(hostname)`: the first public address.
 pub async fn resolve(resolver: &dyn Resolver, host: &str) -> Result<IpAddr, GuardError> {
-    resolve_public_ips(resolver, host)
-        .await?
-        .into_iter()
-        .next()
-        .ok_or_else(|| GuardError::Violation(host.to_string()))
+    resolve_public_ips(resolver, host).await?.into_iter().next().ok_or_else(|| GuardError::Violation(host.to_string()))
 }
 
 /// `Surfguard.resolve_public_ips(host)`. Malformed input comes back empty rather than raising.
@@ -40,8 +36,7 @@ pub async fn resolve_public_ips(resolver: &dyn Resolver, host: &str) -> Result<V
         Numeric::Name => resolver.lookup(host).await.map_err(|_| GuardError::Unresolvable)?,
     };
     let addresses = normalize_answers(addresses)?;
-    let (v4, v6): (Vec<IpAddr>, Vec<IpAddr>) =
-        addresses.into_iter().filter(|ip| !blocked_address(*ip)).partition(IpAddr::is_ipv4);
+    let (v4, v6): (Vec<IpAddr>, Vec<IpAddr>) = addresses.into_iter().filter(|ip| !blocked_address(*ip)).partition(IpAddr::is_ipv4);
     Ok(v4.into_iter().chain(v6).collect())
 }
 
@@ -297,8 +292,7 @@ const IANA_ALLOCATED_IPV6_UNICAST: &[V6Range] = &[
 ];
 
 /// `Surfguard::GLOBALLY_REACHABLE_IETF_ASSIGNMENTS`
-const GLOBALLY_REACHABLE_IETF_ASSIGNMENTS: &[V6Range] =
-    &[v6([0x2001, 3, 0, 0, 0, 0, 0, 0], 32), v6([0x2001, 4, 0x112, 0, 0, 0, 0, 0], 48)];
+const GLOBALLY_REACHABLE_IETF_ASSIGNMENTS: &[V6Range] = &[v6([0x2001, 3, 0, 0, 0, 0, 0, 0], 32), v6([0x2001, 4, 0x112, 0, 0, 0, 0, 0], 48)];
 const IETF_PROTOCOL_ASSIGNMENTS: V6Range = v6([0x2001, 0, 0, 0, 0, 0, 0, 0], 23);
 const NAT64_WELL_KNOWN: V6Range = v6([0x64, 0xff9b, 0, 0, 0, 0, 0, 0], 96);
 const NAT64_LOCAL_USE: V6Range = v6([0x64, 0xff9b, 1, 0, 0, 0, 0, 0], 48);
@@ -363,19 +357,29 @@ mod tests {
     #[test]
     fn classifies_addresses_like_surfguard() {
         for ip in [
-            "0.0.0.0", "10.1.2.3", "100.64.0.1", "127.0.0.1", "168.63.129.16", "169.254.169.254", "172.16.0.0",
-            "172.31.255.255", "192.0.0.8", "192.0.2.1", "192.88.99.1", "192.168.1.1", "198.18.0.1", "198.51.100.1",
-            "203.0.113.1", "224.0.0.1", "240.0.0.1", "255.255.255.255", "::", "::1", "::ffff:192.168.1.1",
-            "::ffff:8.8.8.8", "::8.8.8.8", "64:ff9b::a00:1", "64:ff9b:1::1", "::ffff:0:a00:1", "fc00::1", "fd00::1",
-            "fe80::1", "fec0::1", "ff02::1", "2001::1", "2001:db8::1", "2002::1", "3fff::1", "5f00::1", "100::1",
-            "2001:2::1", "4000::1", "2001:10::1",
+            "0.0.0.0", "10.1.2.3", "100.64.0.1", "127.0.0.1", "168.63.129.16", "169.254.169.254", "172.16.0.0", "172.31.255.255",
+            "192.0.0.8", "192.0.2.1", "192.88.99.1", "192.168.1.1", "198.18.0.1", "198.51.100.1", "203.0.113.1", "224.0.0.1", "240.0.0.1",
+            "255.255.255.255", "::", "::1", "::ffff:192.168.1.1", "::ffff:8.8.8.8", "::8.8.8.8", "64:ff9b::a00:1", "64:ff9b:1::1",
+            "::ffff:0:a00:1", "fc00::1", "fd00::1", "fe80::1", "fec0::1", "ff02::1", "2001::1", "2001:db8::1", "2002::1", "3fff::1",
+            "5f00::1", "100::1", "2001:2::1", "4000::1", "2001:10::1",
         ] {
             assert!(blocked(ip), "{ip} should be blocked");
         }
         for ip in [
-            "8.8.8.8", "1.1.1.1", "93.184.216.34", "142.250.185.206", "172.32.0.1", "100.128.0.1", "192.0.1.1",
-            "2606:2800:220:1:248:1893:25c8:1946", "2a00:1450:4001:82a::200e", "2001:3::1", "2001:4:112::1",
-            "64:ff9b::808:808", "::ffff:0:808:808", "2c0f:ffff::1",
+            "8.8.8.8",
+            "1.1.1.1",
+            "93.184.216.34",
+            "142.250.185.206",
+            "172.32.0.1",
+            "100.128.0.1",
+            "192.0.1.1",
+            "2606:2800:220:1:248:1893:25c8:1946",
+            "2a00:1450:4001:82a::200e",
+            "2001:3::1",
+            "2001:4:112::1",
+            "64:ff9b::808:808",
+            "::ffff:0:808:808",
+            "2c0f:ffff::1",
         ] {
             assert!(!blocked(ip), "{ip} should be public");
         }
@@ -411,8 +415,10 @@ mod tests {
         assert_eq!(resolve(&resolver, "nowhere.example").await, Err(GuardError::Unresolvable));
         assert_eq!(resolve(&resolver, "8.8.8.8").await, Ok(ip("8.8.8.8")));
         assert_eq!(resolve(&resolver, "[2606:2800:220:1:248:1893:25c8:1946]").await, Ok(ip("2606:2800:220:1:248:1893:25c8:1946")));
-        for host in ["127.0.0.1", "0x7f.1", "2130706433", "[::1]", "::1", "[fd00::1]", "under_score.example", "", "a..b",
-                     "1.2.3.4.", "01.2.3.4.", "host%eth0", "exämple.com", "-lead.example", "[v1.x]"] {
+        for host in [
+            "127.0.0.1", "0x7f.1", "2130706433", "[::1]", "::1", "[fd00::1]", "under_score.example", "", "a..b", "1.2.3.4.", "01.2.3.4.",
+            "host%eth0", "exämple.com", "-lead.example", "[v1.x]",
+        ] {
             assert!(matches!(resolve(&resolver, host).await, Err(GuardError::Violation(_))), "{host:?}");
         }
         assert_eq!(resolver.lookups(), vec!["www.example.com", "mixed.example", "private.example", "nowhere.example"]);

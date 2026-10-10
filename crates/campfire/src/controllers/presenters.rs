@@ -7,9 +7,9 @@ pub mod attachments;
 pub mod page;
 pub mod pagination;
 pub mod rich_text;
-pub mod view_context;
 #[cfg(test)]
 pub mod test_support;
+pub mod view_context;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -18,17 +18,18 @@ use std::sync::LazyLock;
 use campfire_db::{Boost, Connection, Membership, Message, RichText, Room, RoomType, User};
 use campfire_richtext::Presentation;
 use campfire_storage::{Storage, Variation};
+use campfire_views::fragment_cache;
 use campfire_views::messages::json::{BoostJson, BoostMessageJson, IdJson, MessageBodyJson, MessageJson, UserJson};
+use campfire_views::messages::support::RubyNumber;
 use campfire_views::messages::support::json_time;
 use campfire_views::messages::{
     AttachmentPreview, AttachmentView, BoostView, MessageContent, MessageItem, MessageView, RoomKind, SoundImage, SoundView, ThreadView, UserView,
 };
-use campfire_views::messages::support::RubyNumber;
-use campfire_views::fragment_cache;
 use campfire_views::rooms::{RoomView, room_display_name};
 use rails_compat::Secrets;
 use regex::Regex;
 
+use crate::active_storage::storage_error;
 use crate::app::AppState;
 
 pub use rich_text::DbResolver;
@@ -78,7 +79,7 @@ pub fn user_view(secrets: &Secrets, user: &User) -> UserView {
 
 /// `users/_user.json.jbuilder` (`json.cache! user`).
 fn cached_user_json(secrets: &Secrets, base_url: &str, user: &User) -> UserJson {
-    let key = || jbuilder_key("users/_user", &cache_key_with_version("users", user.id, user.updated_at.jiff()), base_url);
+    let key = |key: &mut String| jbuilder_key(key, "users/_user", ("users", user.id, user.updated_at.jiff()), base_url);
     fragment_cache::try_fetch_value(key, || Ok::<_, std::convert::Infallible>(user_json(secrets, base_url, user)))
         .unwrap_or_else(|never| match never {})
 }
@@ -87,8 +88,17 @@ fn cached_user_json(secrets: &Secrets, base_url: &str, user: &User) -> UserJson 
 /// is the Rust build's (templates can't change while the process runs). The JSON carries absolute
 /// URLs built from the request's `base_url`, which comes from its Host header, so the key does too:
 /// Rails' key doesn't, and one request with a forged Host fed its URLs to every bot.
-fn jbuilder_key(template: &str, record: &str, base_url: &str) -> String {
-    format!("jbuilder/views/{template}:{}/{record}/{base_url}", env!("CARGO_PKG_VERSION"))
+/// `record` is the table, id and `updated_at` of its `cache_key_with_version`.
+fn jbuilder_key(key: &mut String, template: &str, record: (&str, i64, jiff::Timestamp), base_url: &str) {
+    let (table, id, updated_at) = record;
+    key.push_str("jbuilder/views/");
+    key.push_str(template);
+    key.push(':');
+    key.push_str(env!("CARGO_PKG_VERSION"));
+    key.push('/');
+    fragment_cache::push_cache_key_with_version(key, table, id, updated_at);
+    key.push('/');
+    key.push_str(base_url);
 }
 
 /// `users/_user.json.jbuilder`.
@@ -285,7 +295,7 @@ impl<'a> Presenter<'a> {
         // message that isn't UTF-8): then the page fails (verified against the reference).
         match campfire_richtext::to_plain_text(&body, &ctx) {
             Err(campfire_richtext::Error::Unrenderable(error)) => {
-                return Err(campfire_db::Error::Other(format!("message_tag's rescue raised logging {error}")));
+                return Err(campfire_db::Error::other(format!("message_tag's rescue raised logging {error}")));
             }
             Err(_) => return Ok(MessageContent::Unrenderable),
             Ok(_) => {}
@@ -314,7 +324,7 @@ impl<'a> Presenter<'a> {
     fn attachment(&self, message: &Message) -> Result<Option<AttachmentView>> {
         let blob = campfire_storage::Blob::attached(self.conn, "Message", message.id, "attachment").map_err(storage_error)?;
         let Some(blob) = blob else { return Ok(None) };
-        let verifier = &*self.storage.verifier;
+        let verifier = &self.storage.verifier;
         let preview = if blob.is_previewable() || blob.is_variable() {
             if blob.is_video() {
                 // `attachment.preview(format: :webp, resize_to_limit: [...])`
@@ -328,9 +338,7 @@ impl<'a> Presenter<'a> {
                         ]),
                     ),
                 ]);
-                AttachmentPreview::Video {
-                    poster_url: campfire_storage::paths::representation_redirect_path(verifier, &blob, &poster),
-                }
+                AttachmentPreview::Video { poster_url: campfire_storage::paths::representation_redirect_path(verifier, &blob, &poster) }
             } else {
                 AttachmentPreview::Image { thumb_url: self.thumb_path(&blob)? }
             }
@@ -351,7 +359,7 @@ impl<'a> Presenter<'a> {
     fn thumb_path(&self, blob: &campfire_storage::Blob) -> Result<String> {
         let thumb = Variation::resize_to_limit(THUMBNAIL_MAX_WIDTH, THUMBNAIL_MAX_HEIGHT, None);
         let variation = if blob.is_previewable() { thumb } else { self.storage.variation_for(blob, &thumb).map_err(storage_error)? };
-        Ok(campfire_storage::paths::representation_redirect_path(&*self.storage.verifier, blob, &variation))
+        Ok(campfire_storage::paths::representation_redirect_path(&self.storage.verifier, blob, &variation))
     }
 
     /// `message.body.to_s`: the stored rich text rendered inside its layout.
@@ -359,9 +367,7 @@ impl<'a> Presenter<'a> {
         let Some(body) = message.body_html(self.conn)? else { return Ok(String::new()) };
         let resolver = self.resolver();
         let ctx = resolver.render_context(self.request_host.clone());
-        Ok(campfire_richtext::Content::load(&body, &ctx)
-            .and_then(|content| content.to_rendered_html_with_layout(&ctx))
-            .unwrap_or_default())
+        Ok(campfire_richtext::Content::load(&body, &ctx).and_then(|content| content.to_rendered_html_with_layout(&ctx)).unwrap_or_default())
     }
 
     /// `editable_body(message)` as the editor's `value`.
@@ -372,12 +378,13 @@ impl<'a> Presenter<'a> {
         // An `Err` is where the edit page raises in Rails (a missing attachment, say).
         campfire_richtext::editable_value(&body, &ctx)
             .map(Option::unwrap_or_default)
-            .map_err(|error| campfire_db::Error::Other(format!("editable_body raised: {error}")))
+            .map_err(|error| campfire_db::Error::other(format!("editable_body raised: {error}")))
     }
 
     /// `messages/_message.json.jbuilder` (`json.cache! message`).
     pub fn message_json(&self, message: &Message, base_url: &str) -> Result<MessageJson> {
-        let key = || jbuilder_key("messages/_message", &cache_key_with_version("messages", message.id, message.updated_at.jiff()), base_url);
+        let record = ("messages", message.id, message.updated_at.jiff());
+        let key = |key: &mut String| jbuilder_key(key, "messages/_message", record, base_url);
         fragment_cache::try_fetch_value(key, || self.render_message_json(message, base_url))
     }
 
@@ -394,7 +401,8 @@ impl<'a> Presenter<'a> {
 
     /// `messages/boosts/_boost.json.jbuilder` (`json.cache! boost`).
     pub fn boost_json(&self, boost: &Boost, message: &Message, base_url: &str) -> Result<BoostJson> {
-        let key = || jbuilder_key("messages/boosts/_boost", &cache_key_with_version("boosts", boost.id, boost.updated_at.jiff()), base_url);
+        let record = ("boosts", boost.id, boost.updated_at.jiff());
+        let key = |key: &mut String| jbuilder_key(key, "messages/boosts/_boost", record, base_url);
         fragment_cache::try_fetch_value(key, || self.render_boost_json(boost, message, base_url))
     }
 
@@ -481,10 +489,6 @@ fn dimension(blob: &campfire_storage::Blob, name: &str) -> Option<RubyNumber> {
     }
 }
 
-pub fn storage_error(error: campfire_storage::Error) -> campfire_db::Error {
-    campfire_db::Error::Other(error.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -502,5 +506,20 @@ mod tests {
         let time: jiff::Timestamp = "2024-06-01T12:00:00.000123Z".parse().unwrap();
         assert_eq!(cache_key_with_version("messages", 1, time), "messages/1-20240601120000000123");
         assert_eq!(to_fs_number(time), "20240601120000");
+    }
+
+    #[test]
+    fn jbuilder_keys_match_their_formatted_version() {
+        let time: jiff::Timestamp = "2024-06-01T12:00:00.000123456Z".parse().unwrap();
+        let mut key = String::new();
+        jbuilder_key(&mut key, "messages/_message", ("messages", 7, time), "https://example.com");
+        assert_eq!(
+            key,
+            format!(
+                "jbuilder/views/messages/_message:{}/{}/https://example.com",
+                env!("CARGO_PKG_VERSION"),
+                cache_key_with_version("messages", 7, time)
+            )
+        );
     }
 }

@@ -51,7 +51,7 @@ fn mark_read(t: &TestDb, memberships: &[&str]) {
 
 #[test]
 fn replies_stay_out_of_the_room_timeline() {
-    let t = TestDb::new();
+    let t = TestDb::with_mentions();
     let parent = post(
         &t,
         "designers",
@@ -82,7 +82,7 @@ fn replies_stay_out_of_the_room_timeline() {
 
 #[test]
 fn a_thread_is_its_parent_then_its_replies() {
-    let t = TestDb::new();
+    let t = TestDb::with_mentions();
     let parent = post(
         &t,
         "designers",
@@ -121,7 +121,7 @@ fn a_thread_is_its_parent_then_its_replies() {
 
 #[test]
 fn a_reply_touches_its_parent_and_shows_in_its_summary() {
-    let t = TestDb::new();
+    let t = TestDb::with_mentions();
     let parent = post(
         &t,
         "designers",
@@ -142,7 +142,7 @@ fn a_reply_touches_its_parent_and_shows_in_its_summary() {
 
 #[test]
 fn the_summary_shows_the_latest_three_repliers() {
-    let t = TestDb::new();
+    let t = TestDb::with_mentions();
     let parent = post(
         &t,
         "designers",
@@ -163,7 +163,7 @@ fn the_summary_shows_the_latest_three_repliers() {
 
 #[test]
 fn replies_unread_the_room_only_for_the_thread_audience() {
-    let t = TestDb::new();
+    let t = TestDb::with_mentions();
     let parent = post(
         &t,
         "designers",
@@ -200,7 +200,7 @@ fn replies_unread_the_room_only_for_the_thread_audience() {
 
 #[test]
 fn replies_are_pushed_to_the_thread_audience_unless_muted() {
-    let t = TestDb::new();
+    let t = TestDb::with_mentions();
     let parent = post(
         &t,
         "designers",
@@ -220,7 +220,7 @@ fn replies_are_pushed_to_the_thread_audience_unless_muted() {
 
     let pushed_to = |t: &TestDb| {
         let (payload, subscriptions, rest) =
-            t.read(|c| PushSubscription::pushes_for(c, &BasicRichText, &reply, now));
+            t.read(|c| PushSubscription::pushes_for(c, &UnverifiedMentions, &reply, now));
         assert!(rest.is_empty());
         let mut users: Vec<i64> = subscriptions.iter().map(|s| s.user_id).collect();
         users.sort_unstable();
@@ -252,7 +252,7 @@ fn replies_are_pushed_to_the_thread_audience_unless_muted() {
 
 #[test]
 fn a_direct_reply_push_names_its_sender() {
-    let t = TestDb::new();
+    let t = TestDb::with_mentions();
     let parent = post(&t, "david_and_jason", "jason", "Coffee?".into(), None);
     let reply = post(
         &t,
@@ -263,7 +263,7 @@ fn a_direct_reply_push_names_its_sender() {
     );
     let now = t.now();
     let (payload, subscriptions, _) =
-        t.read(|c| PushSubscription::pushes_for(c, &BasicRichText, &reply, now));
+        t.read(|c| PushSubscription::pushes_for(c, &UnverifiedMentions, &reply, now));
     assert_eq!(payload.title, "David in a thread");
     assert_eq!(payload.body, "Sure");
     assert!(subscriptions.iter().all(|s| s.user_id == id("jason")) && !subscriptions.is_empty());
@@ -271,7 +271,7 @@ fn a_direct_reply_push_names_its_sender() {
 
 #[test]
 fn destroying_a_parent_destroys_its_thread() {
-    let t = TestDb::new();
+    let t = TestDb::with_mentions();
     let parent = post(
         &t,
         "designers",
@@ -303,7 +303,7 @@ fn destroying_a_parent_destroys_its_thread() {
 
 #[test]
 fn destroying_a_reply_touches_its_parent() {
-    let t = TestDb::new();
+    let t = TestDb::with_mentions();
     let parent = post(
         &t,
         "designers",
@@ -323,7 +323,7 @@ fn destroying_a_reply_touches_its_parent() {
 
 #[test]
 fn destroying_a_room_with_threads() {
-    let t = TestDb::new();
+    let t = TestDb::with_mentions();
     let parent = post(
         &t,
         "designers",
@@ -339,7 +339,7 @@ fn destroying_a_room_with_threads() {
 
 #[test]
 fn search_finds_replies() {
-    let t = TestDb::new();
+    let t = TestDb::with_mentions();
     let parent = post(
         &t,
         "designers",
@@ -363,7 +363,7 @@ fn search_finds_replies() {
 
 #[test]
 fn webhook_payloads_name_a_replys_thread() {
-    let t = TestDb::new();
+    let t = TestDb::with_mentions();
     let parent = post(&t, "watercooler", "david", "Hey bot".into(), None);
     let reply = post(
         &t,
@@ -375,7 +375,7 @@ fn webhook_payloads_name_a_replys_thread() {
     let payload = |message: &Message| {
         t.read(|c| {
             let webhook = Webhook::find_by_user(c, id("bender"))?.unwrap();
-            webhook.payload(c, &BasicRichText, message, "/bot", "/at")
+            webhook.payload(c, &UnverifiedMentions, message, "/bot", "/at")
         })
     };
     assert!(!payload(&parent).contains("thread_parent_id"));
@@ -391,7 +391,7 @@ fn webhook_payloads_name_a_replys_thread() {
 
 #[test]
 fn the_audience_of_a_top_level_message_is_empty() {
-    let t = TestDb::new();
+    let t = TestDb::with_mentions();
     let parent = post(
         &t,
         "designers",
@@ -400,7 +400,7 @@ fn the_audience_of_a_top_level_message_is_empty() {
         None,
     );
     assert!(
-        t.read(|c| parent.thread_audience_ids(c, &BasicRichText))
+        t.read(|c| parent.thread_audience_ids(c, &UnverifiedMentions))
             .is_empty()
     );
 }

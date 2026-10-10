@@ -49,10 +49,7 @@ impl StreamsChannel {
 
 /// `params[:signed_stream_name]` verified with `verifier`. A missing or `null` name is simply
 /// unverified; any other non-string makes `MessageVerifier#verified` raise.
-pub fn verified_stream_name_from_params(
-    params: &Params,
-    verifier: impl Fn(&str) -> Option<String>,
-) -> ChannelResult<Option<String>> {
+pub fn verified_stream_name_from_params(params: &Params, verifier: impl Fn(&str) -> Option<String>) -> ChannelResult<Option<String>> {
     match params.get("signed_stream_name") {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(signed)) => Ok(verifier(signed)),
@@ -153,24 +150,9 @@ fn push_attribute(tag: &mut String, name: &str, value: &str) {
     tag.push(' ');
     tag.push_str(name);
     tag.push_str("=\"");
-    tag.push_str(&html_escape(value));
+    // `ERB::Util.unwrapped_html_escape`
+    ruby_compat::erb::push_html_escaped(tag, value);
     tag.push('"');
-}
-
-/// `ERB::Util.unwrapped_html_escape`.
-pub fn html_escape(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    for c in value.chars() {
-        match c {
-            '&' => escaped.push_str("&amp;"),
-            '<' => escaped.push_str("&lt;"),
-            '>' => escaped.push_str("&gt;"),
-            '"' => escaped.push_str("&quot;"),
-            '\'' => escaped.push_str("&#39;"),
-            c => escaped.push(c),
-        }
-    }
-    escaped
 }
 
 /// `Turbo::StreamsChannel.broadcast_*_to`. Streamables are the stream name parts (GID params

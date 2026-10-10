@@ -45,7 +45,10 @@ path!(user_profile, "/users/me/profile");
 path!(edit_user_profile, "/users/me/profile/edit");
 path!(user_push_subscriptions, "/users/me/push_subscriptions");
 path!(user_push_subscription(id), "/users/me/push_subscriptions/{id}");
-path!(user_push_subscription_test_notifications(push_subscription_id), "/users/me/push_subscriptions/{push_subscription_id}/test_notifications");
+path!(
+    user_push_subscription_test_notifications(push_subscription_id),
+    "/users/me/push_subscriptions/{push_subscription_id}/test_notifications"
+);
 
 path!(autocompletable_users, "/autocompletable/users");
 
@@ -106,8 +109,12 @@ pub fn fresh_user_avatar(avatar_token: impl Display, updated_at_number: impl Dis
 /// `direct :fresh_account_logo` — `v` is the account's `updated_at.to_fs(:number)`, when present.
 pub fn fresh_account_logo(v: Option<&str>, size: Option<&str>) -> String {
     let mut query = Vec::new();
-    if let Some(size) = size { query.push(format!("size={size}")); }
-    if let Some(v) = v { query.push(format!("v={v}")); }
+    if let Some(size) = size {
+        query.push(format!("size={size}"));
+    }
+    if let Some(v) = v {
+        query.push(format!("v={v}"));
+    }
     if query.is_empty() { account_logo() } else { format!("{}?{}", account_logo(), query.join("&")) }
 }
 

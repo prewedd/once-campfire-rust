@@ -1,6 +1,7 @@
 //! Huddles (plans/huddles.md): joining a room's call, and LiveKit's webhooks about who's in it.
 
 use campfire_db::{Message, NewMessage, Room};
+use ruby_compat::integer_cast;
 use campfire_kit::{Ctx, Error, Result, StatusCode, format};
 use serde_json::json;
 
@@ -67,7 +68,7 @@ pub async fn ring(c: &mut Ctx) -> Result {
     before_actions(c, Before::default()).await?;
     let (_, room) = concerns::set_room(c).await?;
     let caller = require_current_user(c)?.clone();
-    let Some(user_id) = c.param_str("user_id").and_then(concerns::cast_integer) else { return Err(Error::NotFound) };
+    let Some(user_id) = c.param_str("user_id").and_then(integer_cast) else { return Err(Error::NotFound) };
     let (app, room_id) = (c.app().clone(), room.id);
     let avatar_url = avatar_path(&c.app().secrets, &caller);
     let rung = c

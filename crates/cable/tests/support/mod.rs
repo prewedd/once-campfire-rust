@@ -120,9 +120,7 @@ trait TestVerifier {
 /// Signed names in tests are `signed(<name>)`.
 impl TestVerifier for StreamsChannel {
     fn with_test_verifier() -> Self {
-        StreamsChannel::with_verifier(|signed| {
-            signed.strip_prefix("signed(").and_then(|s| s.strip_suffix(')')).map(str::to_string)
-        })
+        StreamsChannel::with_verifier(|signed| signed.strip_prefix("signed(").and_then(|s| s.strip_suffix(')')).map(str::to_string))
     }
 }
 

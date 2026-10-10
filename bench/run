@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
 # Benchmark the reference (Rails) app against the Rust port on the same seed and CPUs.
 #
-#   bench/run [--apps reference,rust[,rust-identity]] [--reps 3] [--out DIR]
+#   bench/run [--apps reference,rust[,rust-identity]] [--reps 3] [--out DIR] [--user-agent UA]
 #   bench/report DIR            # median + spread table from a results dir
 #
 # Each rep, for each app in turn (never two at once; the order alternates between reps): a fresh
 # copy of parity/.seed/default, a fresh container pinned to SERVER_CPUS, then cold start, idle
 # memory, the HTTP suite, the Action Cable fan-out suite and the upload suite, with container
 # memory sampled throughout and each process's memory, by role, during the fan-out
-# (bench/lib/procmem.py). The load generator (bench/loadgen) runs pinned to LOADGEN_CPUS. Before
+# (bench/lib/procmem.py). The shared verification load generator runs pinned to LOADGEN_CPUS. Before
 # each app's run it waits (up to LOAD_WAIT_SECS) for the 1-minute load average to drop below
 # LOAD_MAX, and records it.
 #
 # `rust-identity` is the Rust image again, running only the HTTP suite with
 # `Accept-Encoding: identity`: the app's cost without gzip.
+#
+# The load generator sends no User-Agent unless given one with --user-agent, which it then sends on
+# every request; a desktop Chrome, say:
+#   --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
 #
 # Images (unmodified production images, not the parity ones: no libfaketime, no pinned cable pool,
 # the reference's own resque-pool.yml):
@@ -30,6 +34,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 BENCH=$ROOT/bench
+VERIFICATION_ROOT=${VERIFICATION_ROOT:-$(dirname "$ROOT")/once-campfire-verification}
 SEED=$ROOT/parity/.seed/default
 LABELS=$SEED/labels.json
 ENV_FILE=$ROOT/parity/.env.reference
@@ -56,25 +61,34 @@ suite() { [[ " $SUITES " = *" $1 "* ]]; }
 # 1c22a94 fixed; the app now runs as configured.
 RUST_EXTRA_ENV=${RUST_EXTRA_ENV-}
 BASE=http://127.0.0.1:$PORT
-LOADGEN=$ROOT/target/bench/release/loadgen
+LOADGEN=${LOADGEN:-$VERIFICATION_ROOT/loadgen/target/release/loadgen}
 
-APPS=reference,rust REPS=3 OUT=""
+APPS=reference,rust REPS=3 OUT="" USER_AGENT_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --apps) APPS=$2; shift 2 ;;
     --reps) REPS=$2; shift 2 ;;
     --out)  OUT=$2; shift 2 ;;
+    --user-agent) USER_AGENT_ARGS=(--user-agent "$2"); shift 2 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
-OUT=${OUT:-$BENCH/results/$(date +%Y%m%d-%H%M%S)}
+OUT=${OUT:-$ROOT/tmp/bench/results/$(date +%Y%m%d-%H%M%S)}
 mkdir -p "$OUT"
 WORK=$BENCH/.work
 CONTAINER=bench-campfire-$PORT
 
 log() { echo "[$(date +%T)] $*" >&2; }
 label() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$LABELS" "$1"; }
-lg() { taskset -c "$LOADGEN_CPUS" "$LOADGEN" "$@"; }
+lg() {
+  if [ "$1" = http ]; then
+    taskset -c "$LOADGEN_CPUS" "$LOADGEN" "$@" "${USER_AGENT_ARGS[@]}" | ruby "$BENCH/check_sample.rb"
+  elif [ "$1" = cable ]; then
+    taskset -c "$LOADGEN_CPUS" "$LOADGEN" "$@" "${USER_AGENT_ARGS[@]}" | ruby "$BENCH/check_sample.rb" cable
+  else
+    taskset -c "$LOADGEN_CPUS" "$LOADGEN" "$@" "${USER_AGENT_ARGS[@]}"
+  fi
+}
 
 teardown() {
   [ -n "${SAMPLER:-}" ] && kill "$SAMPLER" 2>/dev/null || true
@@ -83,7 +97,10 @@ teardown() {
 }
 trap teardown EXIT INT TERM
 
-(cd "$BENCH/loadgen" && CARGO_TARGET_DIR=$ROOT/target/bench cargo build --release -q)
+if [ "$LOADGEN" = "$VERIFICATION_ROOT/loadgen/target/release/loadgen" ]; then
+  cargo build --release --locked --manifest-path "$VERIFICATION_ROOT/loadgen/Cargo.toml" \
+    --target-dir "$VERIFICATION_ROOT/loadgen/target"
+fi
 
 ROOM=$(label rooms.watercooler)        # the busy room (131 messages)
 WRITE_ROOM=$(label rooms.hq)           # writes and uploads go here, so the busy room stays put
@@ -192,6 +209,9 @@ run_rep() {
   streams=$(python3 -c 'import json,sys; print(",".join(json.loads(sys.argv[1])["streams"]))' "$scrape")
   css=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["css"])' "$scrape")
 
+  local contract_dir=$WORK/$app/contracts
+  ruby "$BENCH/contracts.rb" "$BASE" "$cookie" "$WORK/$app/db/production.sqlite3" "$LABELS" "$css" "$contract_dir" >/dev/null
+
   local routes=(
     "room_show|/rooms/$ROOM"
     "messages_page|/rooms/$ROOM/messages?before=$BEFORE"
@@ -202,20 +222,34 @@ run_rep() {
     "up|/up"
     "post_message|POST"
   )
-  local http_json="[]" r name path args enc=()
+  local http_json="[]" r name path args enc=() acknowledged=0 audits=()
   [ "$app" = rust-identity ] && enc=(--gzip 0)
   suite http || routes=()
   for r in "${routes[@]}"; do
     name=${r%%|*}; path=${r#*|}
     if [ "$path" = POST ]; then args=(--post-room "$WRITE_ROOM" --csrf "$csrf"); else args=(--path "$path"); fi
-    args+=("${enc[@]}")
-    lg http --base "$BASE" --cookie "$cookie" "${args[@]}" --conc 4 --duration 2 >/dev/null # warm up
+    args+=("${enc[@]}" --validate "$contract_dir/$name.json")
+    local warm_audit=()
+    if [ "$path" = POST ]; then
+      audits+=("$contract_dir/post-warmup.jsonl")
+      warm_audit=(--audit-writes "$contract_dir/post-warmup.jsonl")
+    fi
+    local warmup; warmup=$(lg http --base "$BASE" --cookie "$cookie" "${args[@]}" "${warm_audit[@]}" --conc 4 --duration 2)
+    if [ "$path" = POST ]; then acknowledged=$((acknowledged + $(ruby -rjson -e 'puts JSON.parse(ARGV[0]).fetch("ok")' "$warmup"))); fi
     for c in $HTTP_CONCS; do
-      local res; res=$(lg http --base "$BASE" --cookie "$cookie" "${args[@]}" --conc "$c" --duration "$HTTP_SECS")
+      local timed_audit=()
+      if [ "$path" = POST ]; then
+        audits+=("$contract_dir/post-$c.jsonl")
+        timed_audit=(--audit-writes "$contract_dir/post-$c.jsonl")
+      fi
+      local res; res=$(lg http --base "$BASE" --cookie "$cookie" "${args[@]}" "${timed_audit[@]}" --conc "$c" --duration "$HTTP_SECS")
+      if [ "$path" = POST ]; then acknowledged=$((acknowledged + $(ruby -rjson -e 'puts JSON.parse(ARGV[0]).fetch("ok")' "$res"))); fi
       http_json=$(python3 -c 'import json,sys; a=json.loads(sys.argv[1]); r=json.loads(sys.argv[2]); r["route"]=sys.argv[3]; a.append(r); print(json.dumps(a))' "$http_json" "$res" "$name")
       log "$app rep $rep: $name c=$c $(python3 -c 'import json,sys; r=json.loads(sys.argv[1]); print(r["rps"], "rps p50", r["latency"].get("p50_ms"), "p99", r["latency"].get("p99_ms"), r["statuses"], "err", r["errors"])' "$res")"
     done
   done
+
+  ruby "$BENCH/validate_acks.rb" "$WORK/$app/db/production.sqlite3" "$WRITE_ROOM" "$acknowledged" "${audits[@]}" > "$OUT/$app-$rep-write-audit.json"
 
   local cable_json="[]" n upload_json='{}'
   if [ "$app" = rust-identity ] || ! suite cable; then CABLE_CLIENTS_RUN=""; else CABLE_CLIENTS_RUN=$CABLE_CLIENTS; fi
@@ -258,10 +292,13 @@ PY
 
 {
   echo "date: $(date -Is)"
+  echo "shared verification source: $(git -C "$VERIFICATION_ROOT" rev-parse HEAD) (dirty: $(git -C "$VERIFICATION_ROOT" status --porcelain -- bench loadgen browser | wc -l) files)"
+  echo "shared response gates sha256: $(sha256sum "$VERIFICATION_ROOT/bench/contracts.rb" "$VERIFICATION_ROOT/bench/check_sample.rb" "$VERIFICATION_ROOT/bench/validate_acks.rb" | sha256sum)"
   echo "host: $(uname -r), $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs), $(nproc) threads, $(free -g | awk '/Mem:/{print $2}')GB"
   echo "server cpus: $SERVER_CPUS (nproc $(taskset -c "$SERVER_CPUS" nproc)); loadgen cpus: $LOADGEN_CPUS; network: $NETWORK"
   echo "env: $(env_args | grep -E 'WEB_CONC|JOB_CONC|MAX_THREADS' | tr '\n' ' ')"
   echo "rust extra env: $RUST_EXTRA_ENV"
+  echo "user agent: ${USER_AGENT_ARGS[1]:-(none)}"
   for app in ${APPS//,/ }; do echo "$app image: $(image_for "$app") $(docker image inspect -f '{{.Id}} {{.Created}}' "$(image_for "$app")")"; done
   echo "rust HEAD: $(git -C "$ROOT" rev-parse --short HEAD) (dirty: $(git -C "$ROOT" status --porcelain -- crates Cargo.toml Cargo.lock | wc -l) files)"
 } > "$OUT/env.txt"

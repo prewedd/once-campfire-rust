@@ -1,11 +1,12 @@
 //! Saved for later (plans/redesign.md), this app's own: save a message from its "⋯" menu
 //! (lib/workspace/saved.js), see them all at `/saved`.
 use campfire_db::SavedMessage;
+use ruby_compat::integer_cast;
 use campfire_kit::{Ctx, Error, Result, StatusCode, format};
 use campfire_views::searches::Saved;
 
 use crate::app::AppCtx;
-use crate::concerns::{Before, before_actions, cast_integer, require_current_user};
+use crate::concerns::{Before, before_actions, require_current_user};
 use crate::controllers::messages::present;
 use crate::controllers::presenters::page::{self, db_error};
 
@@ -15,8 +16,7 @@ pub async fn index(c: &mut Ctx) -> Result {
     let messages = c.app().db.read(move |conn| SavedMessage::messages(conn, user_id)).await.map_err(db_error)?;
     let messages = present(c, move |presenter| presenter.messages(&messages)).await?;
     let response = page::framed_page!(c, StatusCode::OK, |ctx| Saved { ctx, messages: &messages }).await?;
-    let fragments = campfire_views::messages::MessageItem::cached_fragments(&c.app().fragment_cache, &messages);
-    Ok(response.with_cached_fragments(fragments))
+    Ok(response)
 }
 
 /// `GET /saved/ids`: the ids of yours, for the "⋯" menu's "Save for later" / "Remove from saved".
@@ -56,7 +56,7 @@ pub async fn unread(c: &mut Ctx) -> Result {
         .db
         .write(move |tx| {
             let message = campfire_db::Message::find(tx.conn(), message_id)?;
-            Ok(campfire_db::Membership::mark_unread_from(tx, user_id, &message)?.then(|| message.room_id))
+            Ok(campfire_db::Membership::mark_unread_from(tx, user_id, &message)?.then_some(message.room_id))
         })
         .await
         .map_err(|_| Error::NotFound)?
@@ -67,7 +67,7 @@ pub async fn unread(c: &mut Ctx) -> Result {
 }
 
 fn message_id(c: &Ctx) -> Result<i64> {
-    c.param_str("message_id").and_then(cast_integer).ok_or(Error::NotFound)
+    c.param_str("message_id").and_then(integer_cast).ok_or(Error::NotFound)
 }
 
 #[cfg(test)]
@@ -85,7 +85,7 @@ mod tests {
             .read(|conn| Ok(campfire_db::Message::last_page(conn, ALL_TALK)?.last().unwrap().id))
             .await
             .unwrap();
-        assert_eq!(david.get("/saved").await.text().contains("Nothing saved yet"), true);
+        assert!(david.get("/saved").await.text().contains("Nothing saved yet"));
 
         let saved = david.write(Req::new(Method::POST, &format!("/messages/{message_id}/save"))).await;
         assert_eq!(saved.status, StatusCode::NO_CONTENT, "{}", saved.text());

@@ -316,9 +316,8 @@ pub fn meta_encoding(metas: &[Element]) -> Option<String> {
     if let Some(meta) = metas.iter().find(|m| m.has_attr("charset")) {
         return meta.attr("charset").map(str::to_string);
     }
-    let meta = metas
-        .iter()
-        .find(|m| m.has_attr("content") && m.attr("http-equiv").is_some_and(|v| v.eq_ignore_ascii_case("content-type")))?;
+    let meta =
+        metas.iter().find(|m| m.has_attr("content") && m.attr("http-equiv").is_some_and(|v| v.eq_ignore_ascii_case("content-type")))?;
     charset_in(meta.attr("content")?)
 }
 
@@ -378,7 +377,10 @@ mod tests {
     #[test]
     fn tokenizes_like_libxml2() {
         let cases: &[(&str, Option<&str>)] = &[
-            ("<script><meta property=\"og:title\" content=\"in script\"></script><meta property=\"og:title\" content=\"after\">", Some("after")),
+            (
+                "<script><meta property=\"og:title\" content=\"in script\"></script><meta property=\"og:title\" content=\"after\">",
+                Some("after"),
+            ),
             ("<style><meta property=\"og:title\" content=\"in style\"></style>", None),
             ("<textarea><meta property=\"og:title\" content=\"in textarea\"></textarea>", Some("in textarea")),
             ("<title><meta property=\"og:title\" content=\"in title\"></title>", Some("in title")),
@@ -427,7 +429,12 @@ mod tests {
         assert_eq!(encoding("<meta charset=\"iso-8859-1\">"), Some("iso-8859-1".into()));
         assert_eq!(encoding("<meta charset=\"\">"), Some("".into()));
         assert_eq!(encoding("<meta http-equiv=\"content-type\" content=\"text/html; charset=iso-8859-1\">"), Some("iso-8859-1".into()));
-        assert_eq!(encoding("<meta http-equiv=\"Content-Type\" content=\"text/html\"><meta http-equiv=\"Content-Type\" content=\"charset=utf-8\">"), None);
+        assert_eq!(
+            encoding(
+                "<meta http-equiv=\"Content-Type\" content=\"text/html\"><meta http-equiv=\"Content-Type\" content=\"charset=utf-8\">"
+            ),
+            None
+        );
         assert_eq!(encoding("<meta http-equiv=\"refresh\" content=\"charset=utf-8\">"), None);
         assert_eq!(encoding("<meta property=\"og:title\" content=\"x\">"), None);
     }

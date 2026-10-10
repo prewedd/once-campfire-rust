@@ -196,10 +196,24 @@ fn test_app() -> (Router, Arc<AtomicUsize>) {
                     .unwrap()
             }),
         )
-        .route("/page", get(|| async { Response::builder().header("content-type", "text/html; charset=utf-8").body(Body::from("<p>campfire</p>".repeat(200))).unwrap() }))
+        .route(
+            "/page",
+            get(|| async {
+                Response::builder()
+                    .header("content-type", "text/html; charset=utf-8")
+                    .body(Body::from("<p>campfire</p>".repeat(200)))
+                    .unwrap()
+            }),
+        )
         .route("/headers", get(echo_headers).post(echo_headers))
         .route("/upload", post(|body: axum::body::Bytes| async move { format!("{} bytes", body.len()) }))
-        .route("/slow", get(|| async { tokio::time::sleep(Duration::from_secs(3)).await; "late" }))
+        .route(
+            "/slow",
+            get(|| async {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                "late"
+            }),
+        )
         .route(
             "/cable",
             any(|ws: WebSocketUpgrade| async move {
@@ -331,7 +345,11 @@ async fn compresses_what_the_app_left_unencoded() {
 async fn forwards_client_addresses() {
     let (app, _) = test_app();
     let server = Server::start(&[], app).await;
-    let reply = exchange(server.http, &get_request("/headers", "X-Forwarded-For: 203.0.113.9\r\nX-Forwarded-Proto: https\r\nForwarded: for=1.2.3.4\r\n")).await;
+    let reply = exchange(
+        server.http,
+        &get_request("/headers", "X-Forwarded-For: 203.0.113.9\r\nX-Forwarded-Proto: https\r\nForwarded: for=1.2.3.4\r\n"),
+    )
+    .await;
     assert_eq!(
         String::from_utf8(reply.body).unwrap(),
         "for=203.0.113.9, 127.0.0.1 host=chat.test proto=https forwarded=- start=true peer=127.0.0.1"
@@ -365,7 +383,8 @@ async fn the_target_port_is_loopback_only_and_limited() {
         assert!(TcpStream::connect((address, server.target)).await.is_err(), "reachable on {address}");
     }
 
-    let large = exchange(server.target, "POST /upload HTTP/1.1\r\nHost: x\r\nConnection: close\r\nContent-Length: 11\r\n\r\nhello world").await;
+    let large =
+        exchange(server.target, "POST /upload HTTP/1.1\r\nHost: x\r\nConnection: close\r\nContent-Length: 11\r\n\r\nhello world").await;
     assert_eq!(large.status, 413);
 
     let mut stream = TcpStream::connect(("127.0.0.1", server.target)).await.unwrap();
@@ -389,9 +408,11 @@ async fn limits_request_bodies() {
     let server = Server::start(&[("MAX_REQUEST_BODY", "10")], app).await;
     let small = exchange(server.http, "POST /upload HTTP/1.1\r\nHost: x\r\nConnection: close\r\nContent-Length: 5\r\n\r\nhello").await;
     assert_eq!((small.status, small.body.as_slice()), (200, b"5 bytes".as_slice()));
-    let large = exchange(server.http, "POST /upload HTTP/1.1\r\nHost: x\r\nConnection: close\r\nContent-Length: 11\r\n\r\nhello world").await;
+    let large =
+        exchange(server.http, "POST /upload HTTP/1.1\r\nHost: x\r\nConnection: close\r\nContent-Length: 11\r\n\r\nhello world").await;
     assert_eq!(large.status, 413);
-    let chunked = "POST /upload HTTP/1.1\r\nHost: x\r\nConnection: close\r\nTransfer-Encoding: chunked\r\n\r\n6\r\nhello \r\n5\r\nworld\r\n0\r\n\r\n";
+    let chunked =
+        "POST /upload HTTP/1.1\r\nHost: x\r\nConnection: close\r\nTransfer-Encoding: chunked\r\n\r\n6\r\nhello \r\n5\r\nworld\r\n0\r\n\r\n";
     assert_eq!(exchange(server.http, chunked).await.status, 413);
     server.stop().await;
 }
@@ -399,9 +420,10 @@ async fn limits_request_bodies() {
 #[tokio::test]
 async fn closes_idle_and_slow_connections() {
     let (app, _) = test_app();
-    let server = Server::start(&[("HTTP_IDLE_TIMEOUT", "1"), ("HTTP_READ_TIMEOUT", "1"), ("HTTP_WRITE_TIMEOUT", "2")], app).await;
+    let server = Server::start(&[("HTTP_IDLE_TIMEOUT", "3"), ("HTTP_READ_TIMEOUT", "1"), ("HTTP_WRITE_TIMEOUT", "2")], app).await;
 
-    // Idle keep-alive connection.
+    // Idle keep-alive connection: over HTTP/1 it closes after the read timeout, the shorter of the
+    // two (see "The front server is stricter than Thruster" in README.md).
     let mut stream = TcpStream::connect(("127.0.0.1", server.http)).await.unwrap();
     stream.write_all(b"GET /private HTTP/1.1\r\nHost: x\r\n\r\n").await.unwrap();
     let mut buffer = vec![0; 4096];
@@ -410,7 +432,8 @@ async fn closes_idle_and_slow_connections() {
     let started = std::time::Instant::now();
     let n = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buffer)).await.unwrap().unwrap_or(0);
     assert_eq!(n, 0, "closed");
-    assert!(started.elapsed() >= Duration::from_millis(800));
+    let idle = started.elapsed();
+    assert!(idle >= Duration::from_millis(800) && idle < Duration::from_millis(2500), "closed after {idle:?}");
 
     // A request that never finishes its headers.
     let mut stream = TcpStream::connect(("127.0.0.1", server.http)).await.unwrap();
@@ -423,6 +446,24 @@ async fn closes_idle_and_slow_connections() {
     stream.write_all(b"GET /slow HTTP/1.1\r\nHost: x\r\n\r\n").await.unwrap();
     let n = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buffer)).await.unwrap().unwrap_or(0);
     assert_eq!(n, 0, "dropped without a response");
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn http2_connections_close_after_the_idle_timeout() {
+    let (app, _) = test_app();
+    let server = Server::start(&[("H2C_ENABLED", "true"), ("HTTP_IDLE_TIMEOUT", "2"), ("HTTP_READ_TIMEOUT", "1")], app).await;
+    let stream = TcpStream::connect(("127.0.0.1", server.http)).await.unwrap();
+    let (mut sender, connection) =
+        hyper::client::conn::http2::handshake(hyper_util::rt::TokioExecutor::new(), hyper_util::rt::TokioIo::new(stream)).await.unwrap();
+    let connection = tokio::spawn(connection);
+    let request = axum::http::Request::get(format!("http://127.0.0.1:{}/private", server.http)).body(Body::empty()).unwrap();
+    let reply = sender.send_request(request).await.unwrap();
+    http_body_util::BodyExt::collect(reply.into_body()).await.unwrap();
+    let started = std::time::Instant::now();
+    tokio::time::timeout(Duration::from_secs(5), connection).await.unwrap().unwrap().unwrap();
+    let idle = started.elapsed();
+    assert!(idle >= Duration::from_millis(1800) && idle < Duration::from_millis(3500), "closed after {idle:?}");
     server.stop().await;
 }
 
@@ -452,7 +493,10 @@ async fn speaks_h2c_only_when_enabled() {
     // The app gets it as Thruster's HTTP/1.1 request: a Host, an origin-form path, one Cookie.
     let reply = h2_get(server.http, "/headers?h2").await.unwrap();
     let body = http_body_util::BodyExt::collect(reply.into_body()).await.unwrap().to_bytes();
-    assert_eq!(std::str::from_utf8(&body).unwrap(), format!("host=127.0.0.1:{} cookie=a=1; b=2 version=HTTP/1.1 uri=/headers?h2", server.http));
+    assert_eq!(
+        std::str::from_utf8(&body).unwrap(),
+        format!("host=127.0.0.1:{} cookie=a=1; b=2 version=HTTP/1.1 uri=/headers?h2", server.http)
+    );
     server.stop().await;
 
     let (app, _) = test_app();
@@ -466,7 +510,11 @@ async fn h2_get(port: u16, path: &str) -> Result<Response<hyper::body::Incoming>
     let (mut sender, connection) =
         hyper::client::conn::http2::handshake(hyper_util::rt::TokioExecutor::new(), hyper_util::rt::TokioIo::new(stream)).await?;
     tokio::spawn(connection);
-    let request = axum::http::Request::get(format!("http://127.0.0.1:{port}{path}")).header("cookie", "a=1").header("cookie", "b=2").body(Body::empty()).unwrap();
+    let request = axum::http::Request::get(format!("http://127.0.0.1:{port}{path}"))
+        .header("cookie", "a=1")
+        .header("cookie", "b=2")
+        .body(Body::empty())
+        .unwrap();
     sender.send_request(request).await
 }
 

@@ -30,13 +30,8 @@ pub trait Partials: Send + Sync {
     }
 }
 
-/// `dom_id(record, prefix)`.
-pub fn dom_id(param_key: &str, key: impl std::fmt::Display, prefix: Option<&str>) -> String {
-    match prefix {
-        Some(prefix) => format!("{prefix}_{param_key}_{key}"),
-        None => format!("{param_key}_{key}"),
-    }
-}
+/// `dom_id(record, prefix)`: the views' own, so a broadcast's target is the id a template renders.
+pub use campfire_views::helpers::dom_id;
 
 /// `Room.model_name.param_key` for the room's STI class: `Rooms::Open` is `rooms_open`.
 pub fn room_param_key(room: &Room) -> String {

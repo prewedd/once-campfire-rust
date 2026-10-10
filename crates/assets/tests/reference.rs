@@ -7,11 +7,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 fn fixture(name: &str) -> String {
-    std::fs::read_to_string(format!(
-        "{}/tests/reference/{name}",
-        env!("CARGO_MANIFEST_DIR")
-    ))
-    .unwrap()
+    std::fs::read_to_string(format!("{}/tests/reference/{name}", env!("CARGO_MANIFEST_DIR"))).unwrap()
 }
 
 fn json_fixture(name: &str) -> Value {
@@ -19,10 +15,7 @@ fn json_fixture(name: &str) -> Value {
 }
 
 fn sha256(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// The logical paths in `overrides/`.
@@ -71,12 +64,8 @@ fn as_reference(text: &str) -> String {
 }
 
 fn get(path: &str) -> campfire_assets::StaticResponse {
-    campfire_assets::serve(&campfire_assets::StaticRequest {
-        method: "GET",
-        path,
-        ..Default::default()
-    })
-    .unwrap_or_else(|| panic!("{path} isn't served"))
+    campfire_assets::serve(&campfire_assets::StaticRequest { method: "GET", path, ..Default::default() })
+        .unwrap_or_else(|| panic!("{path} isn't served"))
 }
 
 #[test]
@@ -85,12 +74,7 @@ fn manifest_matches_the_reference_precompile() {
         .as_object()
         .unwrap()
         .iter()
-        .map(|(logical, entry)| {
-            (
-                logical.clone(),
-                entry["digested_path"].as_str().unwrap().to_string(),
-            )
-        })
+        .map(|(logical, entry)| (logical.clone(), entry["digested_path"].as_str().unwrap().to_string()))
         .collect();
     let added = added();
     let ours: BTreeMap<String, String> = campfire_assets::manifest()
@@ -99,18 +83,9 @@ fn manifest_matches_the_reference_precompile() {
         .map(|(l, d)| (l.to_string(), as_reference(d)))
         .collect();
 
-    let missing: Vec<_> = reference
-        .iter()
-        .filter(|(l, d)| ours.get(*l) != Some(d))
-        .collect();
-    let extra: Vec<_> = ours
-        .keys()
-        .filter(|l| !reference.contains_key(*l))
-        .collect();
-    assert!(
-        missing.is_empty() && extra.is_empty(),
-        "differs from reference: {missing:?}, extra: {extra:?}"
-    );
+    let missing: Vec<_> = reference.iter().filter(|(l, d)| ours.get(*l) != Some(d)).collect();
+    let extra: Vec<_> = ours.keys().filter(|l| !reference.contains_key(*l)).collect();
+    assert!(missing.is_empty() && extra.is_empty(), "differs from reference: {missing:?}, extra: {extra:?}");
 
     let served: Value = serde_json::from_str(&as_reference(campfire_assets::manifest_json())).unwrap();
     let mut served = served.as_object().unwrap().clone();
@@ -140,14 +115,8 @@ fn compiled_files_are_byte_identical_to_the_reference_precompile() {
             mismatched.push(digested_path.clone());
         }
     }
-    assert!(
-        mismatched.is_empty(),
-        "compiled output differs for {mismatched:?}"
-    );
-    assert_eq!(
-        reference.as_object().unwrap().len() + added().len(),
-        campfire_assets::manifest().len()
-    );
+    assert!(mismatched.is_empty(), "compiled output differs for {mismatched:?}");
+    assert_eq!(reference.as_object().unwrap().len() + added().len(), campfire_assets::manifest().len());
 }
 
 /// The reference's stylesheets, as it links them, plus the ones the overrides add (threads.css,
@@ -213,15 +182,11 @@ fn public_files_are_served_like_action_dispatch_static() {
 
         // The probe's fallthrough app answers 404 with x-cascade: pass.
         if expected_status == 404 && expected_headers.get("x-cascade").is_some() {
-            assert!(
-                campfire_assets::serve(&request).is_none(),
-                "{label} should fall through"
-            );
+            assert!(campfire_assets::serve(&request).is_none(), "{label} should fall through");
             continue;
         }
 
-        let response =
-            campfire_assets::serve(&request).unwrap_or_else(|| panic!("{label} not served"));
+        let response = campfire_assets::serve(&request).unwrap_or_else(|| panic!("{label} not served"));
         assert_eq!(response.status as u64, expected_status, "{label}");
 
         let ours: BTreeMap<String, String> = response
@@ -230,10 +195,8 @@ fn public_files_are_served_like_action_dispatch_static() {
             .filter(|(name, _)| *name != "last-modified")
             .map(|(name, value)| (name.to_string(), value.clone()))
             .collect();
-        let theirs: BTreeMap<String, String> = expected_headers
-            .iter()
-            .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_string()))
-            .collect();
+        let theirs: BTreeMap<String, String> =
+            expected_headers.iter().map(|(name, value)| (name.clone(), value.as_str().unwrap().to_string())).collect();
 
         // Our manifest lists the same entries in load-path order rather than the build
         // machine's readdir order, so its length and bytes can't match; an overridden file's
@@ -253,11 +216,7 @@ fn public_files_are_served_like_action_dispatch_static() {
 
         assert_eq!(ours, theirs, "{label}");
         if request.method == "GET" {
-            assert_eq!(
-                sha256(&response.body),
-                case["body_sha256"].as_str().unwrap(),
-                "{label}"
-            );
+            assert_eq!(sha256(&response.body), case["body_sha256"].as_str().unwrap(), "{label}");
         }
     }
 }
@@ -279,12 +238,8 @@ fn last_modified_round_trips_to_a_304() {
 
 #[test]
 fn head_requests_have_no_body() {
-    let response = campfire_assets::serve(&campfire_assets::StaticRequest {
-        method: "HEAD",
-        path: "/robots.txt",
-        ..Default::default()
-    })
-    .unwrap();
+    let response =
+        campfire_assets::serve(&campfire_assets::StaticRequest { method: "HEAD", path: "/robots.txt", ..Default::default() }).unwrap();
     assert_eq!(response.status, 200);
     assert!(response.body.is_empty());
     assert_eq!(response.header("content-length"), Some("99"));
@@ -304,8 +259,6 @@ fn multiple_ranges_are_multipart() {
     // Rack sets multipart/byteranges, then Static overwrites it with the file's type.
     assert_eq!(response.header("content-type"), Some("audio/mpeg"));
     let body = String::from_utf8_lossy(&response.body);
-    assert!(
-        body.starts_with("\r\n--AaB03x\r\ncontent-type: audio/mpeg\r\ncontent-range: bytes 0-1/")
-    );
+    assert!(body.starts_with("\r\n--AaB03x\r\ncontent-type: audio/mpeg\r\ncontent-range: bytes 0-1/"));
     assert!(body.ends_with("\r\n--AaB03x--\r\n"));
 }

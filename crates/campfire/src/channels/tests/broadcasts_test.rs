@@ -28,7 +28,7 @@ async fn turbo(app: &TestApp, client: &mut Client, streamables: &[&str]) -> Stri
 async fn message_broadcasts() {
     let app = start().await;
     let mut kevin = app.connect("kevin").await;
-    room_messages(&app, &mut kevin, "designers").await;
+    let messages = room_messages(&app, &mut kevin, "designers").await;
     let unreads = identifier(json!({ "channel": "UnreadRoomsChannel" }));
     kevin.confirm(&unreads).await;
 
@@ -37,14 +37,21 @@ async fn message_broadcasts() {
 
     let (broadcasts, room, m) = (app.broadcasts.clone(), designers.clone(), message.clone());
     app.db.read(move |conn| broadcasts.message_create(conn, &room, &m, &FakePartials)).await.unwrap();
-    assert_eq!(
-        turbo_stream(&kevin.next_text().await),
-        format!(
-            r#"<turbo-stream action="append" target="messages_rooms_closed_{}"><template><div id="message_0002">message {}</div></template></turbo-stream>"#,
-            designers.id, message.id
-        )
-    );
-    assert_eq!(kevin.next_text().await, delivery(&unreads, &format!(r#"{{"roomId":{}}}"#, designers.id)));
+    // Independent subscriptions are polled in no set order.
+    let mut received = vec![kevin.next_text().await, kevin.next_text().await];
+    received.sort();
+    let mut expected = vec![
+        delivery(
+            &messages,
+            &html_json(&format!(
+                r#"<turbo-stream action="append" target="messages_rooms_closed_{}"><template><div id="message_0002">message {}</div></template></turbo-stream>"#,
+                designers.id, message.id
+            )),
+        ),
+        delivery(&unreads, &format!(r#"{{"roomId":{}}}"#, designers.id)),
+    ];
+    expected.sort();
+    assert_eq!(received, expected);
 
     app.broadcasts.message_replace(&designers, &message, &FakePartials);
     assert_eq!(
@@ -117,7 +124,10 @@ async fn boost_broadcasts() {
     );
 
     app.broadcasts.boost_remove(&designers, &boost);
-    assert_eq!(turbo_stream(&kevin.next_text().await), format!(r#"<turbo-stream action="remove" target="boost_{}"></turbo-stream>"#, boost.id));
+    assert_eq!(
+        turbo_stream(&kevin.next_text().await),
+        format!(r#"<turbo-stream action="remove" target="boost_{}"></turbo-stream>"#, boost.id)
+    );
 }
 
 #[tokio::test]
@@ -138,11 +148,17 @@ async fn room_list_broadcasts() {
     app.broadcasts.open_room_update(&hq, &FakePartials);
     assert_eq!(
         turbo_stream(&jz.next_text().await),
-        format!(r#"<turbo-stream action="replace" target="list_rooms_open_{0}"><template><li>shared {0}</li></template></turbo-stream>"#, hq.id)
+        format!(
+            r#"<turbo-stream action="replace" target="list_rooms_open_{0}"><template><li>shared {0}</li></template></turbo-stream>"#,
+            hq.id
+        )
     );
 
     app.broadcasts.room_remove(&hq);
-    assert_eq!(turbo_stream(&jz.next_text().await), format!(r#"<turbo-stream action="remove" target="list_rooms_open_{}"></turbo-stream>"#, hq.id));
+    assert_eq!(
+        turbo_stream(&jz.next_text().await),
+        format!(r#"<turbo-stream action="remove" target="list_rooms_open_{}"></turbo-stream>"#, hq.id)
+    );
 
     // Closed rooms go to each member's own stream: jz is in designers, not the watercooler.
     let designers = app.room("designers").await;
@@ -159,11 +175,17 @@ async fn room_list_broadcasts() {
         .unwrap();
     assert_eq!(
         turbo_stream(&jz.next_text().await),
-        format!(r#"<turbo-stream action="prepend" target="shared_rooms"><template><li>shared {}</li></template></turbo-stream>"#, designers.id)
+        format!(
+            r#"<turbo-stream action="prepend" target="shared_rooms"><template><li>shared {}</li></template></turbo-stream>"#,
+            designers.id
+        )
     );
     assert_eq!(
         turbo_stream(&jz.next_text().await),
-        format!(r#"<turbo-stream action="replace" target="list_rooms_closed_{0}"><template><li>shared {0}</li></template></turbo-stream>"#, designers.id)
+        format!(
+            r#"<turbo-stream action="replace" target="list_rooms_closed_{0}"><template><li>shared {0}</li></template></turbo-stream>"#,
+            designers.id
+        )
     );
     jz.assert_silent().await;
 }
@@ -182,7 +204,10 @@ async fn direct_room_and_involvement_broadcasts() {
     let membership = app.membership("bender_and_kevin", "kevin").await.unwrap();
     assert_eq!(
         turbo_stream(&kevin.next_text().await),
-        format!(r#"<turbo-stream action="prepend" target="direct_rooms"><template><li>direct {}</li></template></turbo-stream>"#, membership.id)
+        format!(
+            r#"<turbo-stream action="prepend" target="direct_rooms"><template><li>direct {}</li></template></turbo-stream>"#,
+            membership.id
+        )
     );
     kevin.assert_silent().await;
 
@@ -205,7 +230,10 @@ async fn direct_room_and_involvement_broadcasts() {
     app.broadcasts.involvement_change(&designers, &membership, Some(Invisible), &FakePartials).unwrap();
     assert_eq!(
         turbo_stream(&kevin.next_text().await),
-        format!(r#"<turbo-stream action="prepend" target="shared_rooms"><template><li>shared {}</li></template></turbo-stream>"#, designers.id)
+        format!(
+            r#"<turbo-stream action="prepend" target="shared_rooms"><template><li>shared {}</li></template></turbo-stream>"#,
+            designers.id
+        )
     );
 
     app.broadcasts.involvement_change(&designers, &membership, Some(Mentions), &FakePartials).unwrap();

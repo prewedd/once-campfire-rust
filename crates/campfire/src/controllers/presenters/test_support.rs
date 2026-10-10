@@ -3,14 +3,16 @@
 //! (`vectors/campfire_sessions.json`), with a tiny cookie jar and CSRF token handling.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use axum::body::Body;
 use axum::http::{HeaderMap, Method, Request, StatusCode, header};
+use futures_util::StreamExt;
 use tower::ServiceExt;
 
 use crate::app::{Booted, boot};
 use crate::config::Config;
+use crate::test_support::seed_dir;
 
 const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
@@ -30,11 +32,6 @@ pub const DIRECT_DAVID_JASON: i64 = 186869642;
 /// Kevin and Bender's direct room: David isn't in it.
 pub const DIRECT_KEVIN_BENDER: i64 = 340026324;
 
-fn seed_dir() -> Option<PathBuf> {
-    let dir = Path::new(ROOT).join("parity/.seed/default");
-    dir.join("db/production.sqlite3").exists().then_some(dir)
-}
-
 fn parity_env(name: &str) -> Option<String> {
     let env = std::fs::read_to_string(Path::new(ROOT).join("parity/.env.reference")).ok()?;
     env.lines().find_map(|line| line.strip_prefix(&format!("{name}=")).map(str::to_string))
@@ -44,12 +41,7 @@ fn parity_env(name: &str) -> Option<String> {
 pub fn david_cookie() -> String {
     let vectors: serde_json::Value =
         serde_json::from_str(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../vectors/campfire_sessions.json"))).unwrap();
-    vectors["sessions"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|s| s["user_name"] == "David")
-        .unwrap()["cookie_header"]
+    vectors["sessions"].as_array().unwrap().iter().find(|s| s["user_name"] == "David").unwrap()["cookie_header"]
         .as_str()
         .unwrap()
         .to_string()
@@ -63,10 +55,7 @@ pub struct TestApp {
 impl TestApp {
     /// `None` (and a note) when the seed hasn't been built.
     pub async fn boot() -> Option<TestApp> {
-        let Some(seed) = seed_dir() else {
-            eprintln!("skipping: parity/.seed/default isn't built (parity/bin/seed build default)");
-            return None;
-        };
+        let seed = seed_dir("default")?;
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("db")).unwrap();
         std::fs::copy(seed.join("db/production.sqlite3"), dir.path().join("db/production.sqlite3")).unwrap();
@@ -117,6 +106,8 @@ pub struct Reply {
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub body: Vec<u8>,
+    /// How many data frames the body came in.
+    pub frames: usize,
 }
 
 impl Reply {
@@ -165,10 +156,7 @@ impl Req {
     }
 
     pub fn form(mut self, pairs: &[(&str, &str)]) -> Self {
-        let body: Vec<String> = pairs
-            .iter()
-            .map(|(k, v)| format!("{}={}", encode(k), encode(v)))
-            .collect();
+        let body: Vec<String> = pairs.iter().map(|(k, v)| format!("{}={}", encode(k), encode(v))).collect();
         self.body = body.join("&").into_bytes();
         self.header("content-type", "application/x-www-form-urlencoded")
     }
@@ -183,7 +171,9 @@ impl Req {
         let boundary = "----campfiretestboundary";
         let mut body = Vec::new();
         for (name, value) in fields {
-            body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n").as_bytes());
+            body.extend_from_slice(
+                format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n").as_bytes(),
+            );
         }
         let (name, filename, content_type, data) = file;
         body.extend_from_slice(
@@ -202,6 +192,11 @@ pub fn encode(value: &str) -> String {
 }
 
 impl Browser<'_> {
+    /// Sets a cookie as a response would have (the value as it goes in the header).
+    pub fn set_cookie(&mut self, name: &str, value: &str) {
+        self.cookies.insert(name.to_string(), value.to_string());
+    }
+
     fn absorb_cookie_header(&mut self, header: &str) {
         for pair in header.split(';') {
             if let Some((name, value)) = pair.trim().split_once('=') {
@@ -241,9 +236,11 @@ impl Browser<'_> {
         let response = self.app.booted.router.clone().oneshot(request).await.unwrap();
         let status = response.status();
         let headers = response.headers().clone();
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap().to_vec();
+        let chunks: Vec<_> = response.into_body().into_data_stream().collect().await;
+        let frames = chunks.len();
+        let body = chunks.into_iter().flat_map(|chunk| chunk.unwrap()).collect();
         self.absorb_set_cookies(&headers);
-        Reply { status, headers, body }
+        Reply { status, headers, body, frames }
     }
 
     pub async fn get(&mut self, path: &str) -> Reply {

@@ -2,6 +2,7 @@
 
 mod account_test;
 mod callbacks_test;
+mod columns_test;
 mod differential_test;
 mod first_run_test;
 mod fixtures_test;
@@ -19,61 +20,54 @@ mod user_status_test;
 
 use std::sync::Arc;
 
+use rails_compat::clock::{Clock, TestClock};
+
 use crate::fixtures::{self, identify};
-use crate::rich_text::BasicRichText;
-use crate::{Config, Connection, Database, Env, Event, RecordingSink, Result, TestClock, Tx};
+use crate::testing::{BasicRichText, RecordingSink, UnverifiedMentions};
+use crate::{Config, Connection, Database, Env, Event, Result, Timestamp, Tx};
 
 /// A database loaded with the fixtures, a recording event sink and a controllable clock
 /// (`fixtures :all` plus `ActiveSupport::Testing::TimeHelpers`).
 pub struct TestDb {
     pub db: Database,
     pub sink: RecordingSink,
-    pub clock: TestClock,
+    pub clock: Arc<TestClock>,
     _dir: tempfile::TempDir,
 }
 
 impl TestDb {
     pub fn new() -> Self {
+        Self::with_rich_text(Arc::new(BasicRichText))
+    }
+
+    /// With mentions read from unverified SGIDs ([`UnverifiedMentions`]), for tests about who a
+    /// message reaches (threads, Mentions).
+    pub fn with_mentions() -> Self {
+        Self::with_rich_text(Arc::new(UnverifiedMentions))
+    }
+
+    fn with_rich_text(rich_text: Arc<dyn crate::RichText>) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let sink = RecordingSink::new();
-        let clock = TestClock::new();
-        let env = Env {
-            clock: Arc::new(clock.clone()),
-            sink: Arc::new(sink.clone()),
-            rich_text: Arc::new(BasicRichText),
-            bcrypt_cost: 4,
-        };
+        let clock = Arc::new(TestClock::new());
+        let env = Env { clock: clock.clone(), sink: Arc::new(sink.clone()), rich_text, bcrypt_cost: 4 };
         let mut config = Config::new(dir.path().join("test.sqlite3"));
         config.readers = 2;
         config.environment = "test".into();
         let db = Database::open(config, env).unwrap();
         db.write_blocking(|tx| {
-            let options = fixtures::Options {
-                now: tx.now(),
-                bcrypt_cost: 4,
-            };
+            let options = fixtures::Options { now: tx.now(), bcrypt_cost: 4 };
             fixtures::load(tx.conn(), &fixtures::reference_dir(), &options)
         })
         .unwrap();
-        Self {
-            db,
-            sink,
-            clock,
-            _dir: dir,
-        }
+        Self { db, sink, clock, _dir: dir }
     }
 
-    pub fn write<T: Send + 'static>(
-        &self,
-        f: impl FnOnce(&mut Tx<'_>) -> Result<T> + Send + 'static,
-    ) -> T {
+    pub fn write<T: Send + 'static>(&self, f: impl FnOnce(&mut Tx<'_>) -> Result<T> + Send + 'static) -> T {
         self.db.write_blocking(f).unwrap()
     }
 
-    pub fn try_write<T: Send + 'static>(
-        &self,
-        f: impl FnOnce(&mut Tx<'_>) -> Result<T> + Send + 'static,
-    ) -> Result<T> {
+    pub fn try_write<T: Send + 'static>(&self, f: impl FnOnce(&mut Tx<'_>) -> Result<T> + Send + 'static) -> Result<T> {
         self.db.write_blocking(f)
     }
 
@@ -81,8 +75,8 @@ impl TestDb {
         self.db.read_blocking(f).unwrap()
     }
 
-    pub fn now(&self) -> crate::Timestamp {
-        crate::Clock::now(&self.clock)
+    pub fn now(&self) -> Timestamp {
+        Timestamp::from_jiff(self.clock.now())
     }
 
     pub fn events(&self) -> Vec<Event> {

@@ -6,8 +6,9 @@ use rusqlite::{Connection, Row, params};
 
 use crate::database::Tx;
 use crate::error::{OptionalExt, Result};
+use crate::models::room::room_columns;
 use crate::models::{Room, User};
-use crate::sql::{self, CachedStatements, query_all, query_one};
+use crate::sql::{self, CachedStatements, columns, query_all, query_one};
 use crate::time::Timestamp;
 
 /// `enum :involvement, %w[ invisible nothing mentions everything ].index_by(&:itself)`
@@ -49,8 +50,7 @@ impl ToSql for Involvement {
 impl FromSql for Involvement {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         let name = value.as_str()?;
-        Involvement::from_name(name)
-            .ok_or_else(|| FromSqlError::Other(format!("unknown involvement {name:?}").into()))
+        Involvement::from_name(name).ok_or_else(|| FromSqlError::Other(format!("unknown involvement {name:?}").into()))
     }
 }
 
@@ -71,25 +71,25 @@ pub struct Membership {
     pub updated_at: Timestamp,
 }
 
-impl Membership {
-    pub(crate) fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
-        Ok(Self {
-            id: row.get("id")?,
-            room_id: row.get("room_id")?,
-            user_id: row.get("user_id")?,
-            involvement: row.get("involvement")?,
-            unread_at: row.get("unread_at")?,
-            connected_at: row.get("connected_at")?,
-            connections: row.get("connections")?,
-            created_at: row.get("created_at")?,
-            updated_at: row.get("updated_at")?,
-        })
+columns! {
+    Membership, "memberships", membership_columns {
+        id: "id",
+        room_id: "room_id",
+        user_id: "user_id",
+        involvement: "involvement",
+        unread_at: "unread_at",
+        connected_at: "connected_at",
+        connections: "connections",
+        created_at: "created_at",
+        updated_at: "updated_at",
     }
+}
 
+impl Membership {
     pub fn find(conn: &Connection, id: i64) -> Result<Self> {
         query_one(
             conn,
-            r#"SELECT * FROM "memberships" WHERE "memberships"."id" = ? LIMIT 1"#,
+            concat!("SELECT ", membership_columns!(), r#" FROM "memberships" WHERE "memberships"."id" = ? LIMIT 1"#),
             [id],
             Self::from_row,
         )?
@@ -103,7 +103,7 @@ impl Membership {
     pub fn for_user(conn: &Connection, user_id: i64) -> Result<Vec<Self>> {
         query_all(
             conn,
-            r#"SELECT * FROM "memberships" WHERE "memberships"."user_id" = ?"#,
+            concat!("SELECT ", membership_columns!(), r#" FROM "memberships" WHERE "memberships"."user_id" = ?"#),
             [user_id],
             Self::from_row,
         )
@@ -112,21 +112,21 @@ impl Membership {
     pub fn for_room(conn: &Connection, room_id: i64) -> Result<Vec<Self>> {
         query_all(
             conn,
-            r#"SELECT * FROM "memberships" WHERE "memberships"."room_id" = ?"#,
+            concat!("SELECT ", membership_columns!(), r#" FROM "memberships" WHERE "memberships"."room_id" = ?"#),
             [room_id],
             Self::from_row,
         )
     }
 
     /// `room.memberships.find_by(user:)` / `user.memberships.find_by(room_id:)`
-    pub fn find_by_room_and_user(
-        conn: &Connection,
-        room_id: i64,
-        user_id: i64,
-    ) -> Result<Option<Self>> {
+    pub fn find_by_room_and_user(conn: &Connection, room_id: i64, user_id: i64) -> Result<Option<Self>> {
         query_one(
             conn,
-            r#"SELECT * FROM "memberships" WHERE "memberships"."room_id" = ? AND "memberships"."user_id" = ? LIMIT 1"#,
+            concat!(
+                "SELECT ",
+                membership_columns!(),
+                r#" FROM "memberships" WHERE "memberships"."room_id" = ? AND "memberships"."user_id" = ? LIMIT 1"#
+            ),
             [room_id, user_id],
             Self::from_row,
         )
@@ -136,9 +136,15 @@ impl Membership {
     pub fn visible_with_ordered_room(conn: &Connection, user_id: i64) -> Result<Vec<(Self, Room)>> {
         query_all(
             conn,
-            r#"SELECT "memberships".*, "rooms"."id" AS r_id, "rooms"."created_at" AS r_created_at, "rooms"."creator_id" AS r_creator_id, "rooms"."name" AS r_name, "rooms"."type" AS r_type, "rooms"."updated_at" AS r_updated_at FROM "memberships" INNER JOIN "rooms" ON "rooms"."id" = "memberships"."room_id" WHERE "memberships"."user_id" = ? AND "memberships"."involvement" != 'invisible' ORDER BY LOWER(rooms.name)"#,
+            concat!(
+                "SELECT ",
+                membership_columns!(),
+                ", ",
+                room_columns!(),
+                r#" FROM "memberships" INNER JOIN "rooms" ON "rooms"."id" = "memberships"."room_id" WHERE "memberships"."user_id" = ? AND "memberships"."involvement" != 'invisible' ORDER BY LOWER(rooms.name)"#
+            ),
             [user_id],
-            |row| Ok((Self::from_row(row)?, room_from_prefixed_row(row)?)),
+            with_room,
         )
     }
 
@@ -146,9 +152,15 @@ impl Membership {
     pub fn with_ordered_room(conn: &Connection, user_id: i64) -> Result<Vec<(Self, Room)>> {
         query_all(
             conn,
-            r#"SELECT "memberships".*, "rooms"."id" AS r_id, "rooms"."created_at" AS r_created_at, "rooms"."creator_id" AS r_creator_id, "rooms"."name" AS r_name, "rooms"."type" AS r_type, "rooms"."updated_at" AS r_updated_at FROM "memberships" INNER JOIN "rooms" ON "rooms"."id" = "memberships"."room_id" WHERE "memberships"."user_id" = ? ORDER BY LOWER(rooms.name)"#,
+            concat!(
+                "SELECT ",
+                membership_columns!(),
+                ", ",
+                room_columns!(),
+                r#" FROM "memberships" INNER JOIN "rooms" ON "rooms"."id" = "memberships"."room_id" WHERE "memberships"."user_id" = ? ORDER BY LOWER(rooms.name)"#
+            ),
             [user_id],
-            |row| Ok((Self::from_row(row)?, room_from_prefixed_row(row)?)),
+            with_room,
         )
     }
 
@@ -260,10 +272,7 @@ impl Membership {
     /// `destroy`: the user's sockets reconnect after commit, so their subscriptions to this
     /// room are dropped.
     pub fn destroy(&self, tx: &mut Tx<'_>) -> Result<()> {
-        tx.conn().execute_cached(
-            r#"DELETE FROM "memberships" WHERE "memberships"."id" = ?"#,
-            [self.id],
-        )?;
+        tx.conn().execute_cached(r#"DELETE FROM "memberships" WHERE "memberships"."id" = ?"#, [self.id])?;
         let user_id = self.user_id;
         tx.after_commit(move |tx| {
             User::find(tx.conn(), user_id)?.reset_remote_connections(tx);
@@ -350,17 +359,12 @@ impl Membership {
 
     /// `connected?`
     pub fn is_connected(&self, now: Timestamp) -> bool {
-        self.connected_at
-            .is_some_and(|at| at >= Self::connection_cutoff(now))
+        self.connected_at.is_some_and(|at| at >= Self::connection_cutoff(now))
     }
 
     /// `present`
     pub fn present(&mut self, tx: &mut Tx<'_>) -> Result<()> {
-        let connections = if self.is_connected(tx.now()) {
-            self.connections + 1
-        } else {
-            1
-        };
+        let connections = if self.is_connected(tx.now()) { self.connections + 1 } else { 1 };
         Self::connect(tx, self.id, connections)
     }
 
@@ -394,19 +398,11 @@ impl Membership {
     }
 
     fn increment_connections(&mut self, tx: &mut Tx<'_>) -> Result<()> {
-        if self.is_connected(tx.now()) {
-            self.update_counter(tx, 1)
-        } else {
-            self.update_connections(tx, 1)
-        }
+        if self.is_connected(tx.now()) { self.update_counter(tx, 1) } else { self.update_connections(tx, 1) }
     }
 
     fn decrement_connections(&mut self, tx: &mut Tx<'_>) -> Result<()> {
-        if self.is_connected(tx.now()) {
-            self.update_counter(tx, -1)
-        } else {
-            self.update_connections(tx, 0)
-        }
+        if self.is_connected(tx.now()) { self.update_counter(tx, -1) } else { self.update_connections(tx, 0) }
     }
 
     /// `increment!(:connections, touch: true)` / `decrement!`
@@ -457,14 +453,7 @@ impl Membership {
     }
 }
 
-fn room_from_prefixed_row(row: &Row<'_>) -> rusqlite::Result<Room> {
-    Ok(Room {
-        id: row.get("r_id")?,
-        name: row.get("r_name")?,
-        room_type: row.get("r_type")?,
-        creator_id: row.get("r_creator_id")?,
-        created_at: row.get("r_created_at")?,
-        updated_at: row.get("r_updated_at")?,
-        topic: row.get("r_topic").ok().flatten(),
-    })
+/// A membership and its room, from `membership_columns!()` followed by `room_columns!()`.
+fn with_room(row: &Row<'_>) -> rusqlite::Result<(Membership, Room)> {
+    Ok((Membership::from_row(row)?, Room::from_row_at(row, Membership::COLUMNS.len())?))
 }

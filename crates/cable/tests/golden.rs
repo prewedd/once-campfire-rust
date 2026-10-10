@@ -17,7 +17,9 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use campfire_cable::turbo::StreamsChannel;
-use campfire_cable::{Authenticate, Channel, ChannelResult, Config, ConnectRequest, EmptyChannel, Identified, Params, Server, Subscription};
+use campfire_cable::{
+    Authenticate, Channel, ChannelResult, Config, ConnectRequest, EmptyChannel, Identified, Params, Server, Subscription,
+};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -25,6 +27,8 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 const GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/golden/reference.json");
+/// How long a replay waits for a frame the recording says is coming.
+const EXPECTED_FRAME_WAIT: Duration = Duration::from_secs(10);
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct Recording {
@@ -40,7 +44,10 @@ struct Exchange {
 
 /// One scripted step: what the client does, then what it collects.
 enum Step {
-    Connect { cookie: bool, origin_ok: bool },
+    Connect {
+        cookie: bool,
+        origin_ok: bool,
+    },
     HttpGet,
     Send(String),
     AwaitPing,
@@ -77,33 +84,39 @@ fn script(tokens: &BTreeMap<String, String>) -> Vec<(&'static str, Vec<(String, 
 
     let step = |name: &str, step: Step| (name.to_string(), step);
     vec![
-        ("authenticated", vec![
-            step("connect", Step::Connect { cookie: true, origin_ok: true }),
-            step("subscribe heartbeat", Step::Send(subscribe(&heartbeat))),
-            step("subscribe heartbeat again", Step::Send(subscribe(&heartbeat))),
-            step("subscribe member room", Step::Send(subscribe(&room))),
-            step("subscribe non-member room", Step::Send(subscribe(&closed_room))),
-            step("subscribe unknown channel", Step::Send(subscribe(&identifier(json!({ "channel": "NopeChannel" }))))),
-            step("subscribe base channel", Step::Send(subscribe(&identifier(json!({ "channel": "ApplicationCable::Channel" }))))),
-            step("subscribe turbo rooms", Step::Send(subscribe(&turbo(json!(t("ROOMS_SIGNED")))))),
-            step("subscribe turbo forged", Step::Send(subscribe(&turbo(json!("InJvb21zIg==--0000"))))),
-            step("subscribe turbo unsigned", Step::Send(subscribe(&identifier(json!({ "channel": "Turbo::StreamsChannel" }))))),
-            step("subscribe turbo guarded room messages", Step::Send(subscribe(&turbo(json!(t("ROOM_MESSAGES_SIGNED")))))),
-            step("subscribe typing", Step::Send(subscribe(&typing))),
-            step("perform typing start", Step::Send(perform(&typing, json!({ "action": "start" })))),
-            step("perform unknown action", Step::Send(perform(&typing, json!({ "action": "dance" })))),
-            step("perform default receive", Step::Send(perform(&typing, json!({ "text": "hi" })))),
-            step("unsubscribe typing", Step::Send(unsubscribe(&typing))),
-            step("perform after unsubscribe", Step::Send(perform(&typing, json!({ "action": "start" })))),
-            step("unknown command", Step::Send(json!({ "command": "dance" }).to_string())),
-            step("invalid json", Step::Send("not json".to_string())),
-            step("ping", Step::AwaitPing),
-        ]),
-        ("remote disconnect", vec![
-            step("connect", Step::Connect { cookie: true, origin_ok: true }),
-            step("subscribe member room", Step::Send(subscribe(&room))),
-            step("sign out", Step::RemoteDisconnect),
-        ]),
+        (
+            "authenticated",
+            vec![
+                step("connect", Step::Connect { cookie: true, origin_ok: true }),
+                step("subscribe heartbeat", Step::Send(subscribe(&heartbeat))),
+                step("subscribe heartbeat again", Step::Send(subscribe(&heartbeat))),
+                step("subscribe member room", Step::Send(subscribe(&room))),
+                step("subscribe non-member room", Step::Send(subscribe(&closed_room))),
+                step("subscribe unknown channel", Step::Send(subscribe(&identifier(json!({ "channel": "NopeChannel" }))))),
+                step("subscribe base channel", Step::Send(subscribe(&identifier(json!({ "channel": "ApplicationCable::Channel" }))))),
+                step("subscribe turbo rooms", Step::Send(subscribe(&turbo(json!(t("ROOMS_SIGNED")))))),
+                step("subscribe turbo forged", Step::Send(subscribe(&turbo(json!("InJvb21zIg==--0000"))))),
+                step("subscribe turbo unsigned", Step::Send(subscribe(&identifier(json!({ "channel": "Turbo::StreamsChannel" }))))),
+                step("subscribe turbo guarded room messages", Step::Send(subscribe(&turbo(json!(t("ROOM_MESSAGES_SIGNED")))))),
+                step("subscribe typing", Step::Send(subscribe(&typing))),
+                step("perform typing start", Step::Send(perform(&typing, json!({ "action": "start" })))),
+                step("perform unknown action", Step::Send(perform(&typing, json!({ "action": "dance" })))),
+                step("perform default receive", Step::Send(perform(&typing, json!({ "text": "hi" })))),
+                step("unsubscribe typing", Step::Send(unsubscribe(&typing))),
+                step("perform after unsubscribe", Step::Send(perform(&typing, json!({ "action": "start" })))),
+                step("unknown command", Step::Send(json!({ "command": "dance" }).to_string())),
+                step("invalid json", Step::Send("not json".to_string())),
+                step("ping", Step::AwaitPing),
+            ],
+        ),
+        (
+            "remote disconnect",
+            vec![
+                step("connect", Step::Connect { cookie: true, origin_ok: true }),
+                step("subscribe member room", Step::Send(subscribe(&room))),
+                step("sign out", Step::RemoteDisconnect),
+            ],
+        ),
         ("unauthenticated", vec![step("connect", Step::Connect { cookie: false, origin_ok: true })]),
         ("cross origin", vec![step("connect", Step::Connect { cookie: true, origin_ok: false })]),
         ("plain http", vec![step("get", Step::HttpGet)]),
@@ -118,12 +131,20 @@ struct Target {
     server: Option<Server<User>>,
 }
 
-async fn run_script(target: &Target, tokens: &BTreeMap<String, String>) -> BTreeMap<String, Vec<Exchange>> {
+/// Runs the script against `target`. A replay passes the recording as `expected`, so each step
+/// waits for as many frames as the reference sent rather than for a fixed quiet moment.
+async fn run_script(
+    target: &Target,
+    tokens: &BTreeMap<String, String>,
+    expected: Option<&BTreeMap<String, Vec<Exchange>>>,
+) -> BTreeMap<String, Vec<Exchange>> {
     let mut sessions = BTreeMap::new();
     for (session, steps) in script(tokens) {
         let mut socket = None;
         let mut exchanges = Vec::new();
-        for (name, step) in steps {
+        for (index, (name, step)) in steps.into_iter().enumerate() {
+            let at_least =
+                expected.and_then(|sessions| sessions.get(session)).and_then(|steps| steps.get(index)).map_or(0, |step| step.frames.len());
             let frames = match step {
                 Step::Connect { cookie, origin_ok } => {
                     let mut request = target.url.as_str().into_client_request().unwrap();
@@ -137,9 +158,10 @@ async fn run_script(target: &Target, tokens: &BTreeMap<String, String>) -> BTree
                     match tokio_tungstenite::connect_async(request).await {
                         Ok((ws, response)) => {
                             let protocol = response.headers().get("sec-websocket-protocol").map(|v| v.to_str().unwrap().to_string());
-                            let mut frames = vec![format!("upgrade {} protocol={}", response.status().as_u16(), protocol.unwrap_or_default())];
+                            let mut frames =
+                                vec![format!("upgrade {} protocol={}", response.status().as_u16(), protocol.unwrap_or_default())];
                             socket = Some(ws);
-                            frames.extend(collect(socket.as_mut().unwrap(), false).await);
+                            frames.extend(collect(socket.as_mut().unwrap(), false, at_least.saturating_sub(1)).await);
                             frames
                         }
                         Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
@@ -153,9 +175,9 @@ async fn run_script(target: &Target, tokens: &BTreeMap<String, String>) -> BTree
                 Step::Send(text) => {
                     let ws = socket.as_mut().unwrap();
                     ws.send(Message::Text(text.into())).await.unwrap();
-                    collect(ws, false).await
+                    collect(ws, false, at_least).await
                 }
-                Step::AwaitPing => collect(socket.as_mut().unwrap(), true).await,
+                Step::AwaitPing => collect(socket.as_mut().unwrap(), true, 0).await,
                 Step::RemoteDisconnect => {
                     match &target.server {
                         Some(server) => {
@@ -163,7 +185,7 @@ async fn run_script(target: &Target, tokens: &BTreeMap<String, String>) -> BTree
                         }
                         None => sign_out(target, &tokens["ROOM_ID"]).await,
                     }
-                    collect(socket.as_mut().unwrap(), false).await
+                    collect(socket.as_mut().unwrap(), false, at_least).await
                 }
             };
             exchanges.push(Exchange { step: name, frames });
@@ -173,12 +195,27 @@ async fn run_script(target: &Target, tokens: &BTreeMap<String, String>) -> BTree
     sessions
 }
 
-/// Frames until the socket has been quiet for a moment (or, when awaiting a ping, the first
-/// ping). Pings are dropped otherwise, since when they land is timing, not protocol.
-async fn collect(ws: &mut tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, await_ping: bool) -> Vec<String> {
+/// Frames until the socket has sent `at_least` of them and then been quiet for a moment (or, when
+/// awaiting a ping, the first ping). Pings are dropped otherwise, since when they land is timing,
+/// not protocol. Waiting only for a fixed quiet moment let a slow runner deliver a confirmation
+/// after it, into the next step's frames (the campfire crate's replay had the same flake).
+async fn collect(
+    ws: &mut tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+    await_ping: bool,
+    at_least: usize,
+) -> Vec<String> {
     let mut frames = Vec::new();
     let quiet = if await_ping { Duration::from_secs(4) } else { Duration::from_millis(400) };
-    while let Ok(message) = tokio::time::timeout(quiet, ws.next()).await {
+    // One deadline for the expected frames: the pings dropped below arrive every 3 s and would
+    // otherwise restart the wait forever.
+    let expected_by = tokio::time::Instant::now() + EXPECTED_FRAME_WAIT;
+    loop {
+        let next = if frames.len() < at_least {
+            tokio::time::timeout_at(expected_by, ws.next()).await
+        } else {
+            tokio::time::timeout(quiet, ws.next()).await
+        };
+        let Ok(message) = next else { break };
         match message {
             Some(Ok(Message::Text(text))) => {
                 let text = text.to_string();
@@ -229,11 +266,19 @@ async fn http_get(url: &str) -> String {
 async fn sign_out(target: &Target, room_id: &str) {
     let base = target.origin.clone();
     let host = base.strip_prefix("http://").unwrap().to_string();
-    let page = raw_http(&host, &format!("GET /rooms/{room_id} HTTP/1.1\r\nHost: {host}\r\nCookie: {}\r\nConnection: close\r\n\r\n", target.cookie)).await;
+    let page = raw_http(
+        &host,
+        &format!("GET /rooms/{room_id} HTTP/1.1\r\nHost: {host}\r\nCookie: {}\r\nConnection: close\r\n\r\n", target.cookie),
+    )
+    .await;
     let token = page.split(r#"<meta name="csrf-token" content=""#).nth(1).unwrap().split('"').next().unwrap().to_string();
     let session_cookie = page
         .lines()
-        .find_map(|l| l.to_ascii_lowercase().starts_with("set-cookie: _campfire_session=").then(|| l["set-cookie: _campfire_session=".len()..].to_string()))
+        .find_map(|l| {
+            l.to_ascii_lowercase()
+                .starts_with("set-cookie: _campfire_session=")
+                .then(|| l["set-cookie: _campfire_session=".len()..].to_string())
+        })
         .map(|v| v.split(';').next().unwrap().to_string())
         .unwrap();
     let body = format!("_method=delete&authenticity_token={}", token.replace('+', "%2B").replace('/', "%2F").replace('=', "%3D"));
@@ -241,7 +286,11 @@ async fn sign_out(target: &Target, room_id: &str) {
         "POST /session HTTP/1.1\r\nHost: {host}\r\nOrigin: {base}\r\nCookie: {}; _campfire_session={session_cookie}\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         target.cookie, body.len()
     )).await;
-    assert!(response.starts_with("HTTP/1.1 302") || response.starts_with("HTTP/1.1 303"), "sign out failed: {}", &response[..200.min(response.len())]);
+    assert!(
+        response.starts_with("HTTP/1.1 302") || response.starts_with("HTTP/1.1 303"),
+        "sign out failed: {}",
+        &response[..200.min(response.len())]
+    );
 }
 
 async fn raw_http(host: &str, request: &str) -> String {
@@ -271,12 +320,14 @@ fn dechunk(body: &str) -> String {
 #[ignore = "needs a running reference app; see the module docs"]
 async fn record_reference() {
     let url = std::env::var("CABLE_REFERENCE_URL").expect("CABLE_REFERENCE_URL");
-    let fixtures: Value =
-        serde_json::from_str(&std::fs::read_to_string(std::env::var("CABLE_REFERENCE_FIXTURES").expect("CABLE_REFERENCE_FIXTURES")).unwrap()).unwrap();
+    let fixtures: Value = serde_json::from_str(
+        &std::fs::read_to_string(std::env::var("CABLE_REFERENCE_FIXTURES").expect("CABLE_REFERENCE_FIXTURES")).unwrap(),
+    )
+    .unwrap();
     let tokens: BTreeMap<String, String> = serde_json::from_value(fixtures["tokens"].clone()).unwrap();
     let origin = url.replace("ws://", "http://").trim_end_matches("/cable").to_string();
     let target = Target { url, origin, cookie: fixtures["cookie"].as_str().unwrap().to_string(), server: None };
-    let sessions = run_script(&target, &tokens).await;
+    let sessions = run_script(&target, &tokens, None).await;
     let recording = Recording { tokens, sessions };
     std::fs::write(GOLDEN, serde_json::to_string_pretty(&recording).unwrap() + "\n").unwrap();
 }
@@ -285,7 +336,7 @@ async fn record_reference() {
 async fn replays_reference_frames() {
     let golden: Recording = serde_json::from_str(&std::fs::read_to_string(GOLDEN).unwrap()).unwrap();
     let target = start_campfire_like_server(&golden.tokens).await;
-    let sessions = run_script(&target, &golden.tokens).await;
+    let sessions = run_script(&target, &golden.tokens, Some(&golden.sessions)).await;
     for (session, expected) in &golden.sessions {
         for (expected, actual) in expected.iter().zip(&sessions[session]) {
             assert_eq!(actual, expected, "session {session:?}, step {:?}", expected.step);
@@ -385,13 +436,14 @@ async fn start_campfire_like_server(tokens: &BTreeMap<String, String>) -> Target
     let turbo = StreamsChannel::with_verifier(move |name| signed.get(name).cloned())
         .guarded_by(|name| name.split_once(':').map(|(_, suffix)| suffix) == Some("messages"));
 
-    let server = Server::builder(Config { assume_ssl: false, ..Config::default() }, FixtureAuth { cookie: cookie.clone(), tokens: tokens.clone() })
-        .channel("ApplicationCable::Channel", || EmptyChannel)
-        .channel("HeartbeatChannel", || EmptyChannel)
-        .channel("RoomChannel", || RoomChannel)
-        .channel("TypingNotificationsChannel", TypingNotificationsChannel::default)
-        .channel("Turbo::StreamsChannel", move || turbo.clone())
-        .build();
+    let server =
+        Server::builder(Config { assume_ssl: false, ..Config::default() }, FixtureAuth { cookie: cookie.clone(), tokens: tokens.clone() })
+            .channel("ApplicationCable::Channel", || EmptyChannel)
+            .channel("HeartbeatChannel", || EmptyChannel)
+            .channel("RoomChannel", || RoomChannel)
+            .channel("TypingNotificationsChannel", TypingNotificationsChannel::default)
+            .channel("Turbo::StreamsChannel", move || turbo.clone())
+            .build();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

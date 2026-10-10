@@ -9,13 +9,13 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::dom::{Dom, NodeId, ParseError};
+use crate::dom::{Attr, Dom, NodeId, ParseError};
 
 /// `Rails::HTML::Concern::Scrubber::SafeList::DEFAULT_ALLOWED_TAGS`
 pub const DEFAULT_ALLOWED_TAGS: &[&str] = &[
-    "a", "abbr", "acronym", "address", "b", "big", "blockquote", "br", "cite", "code", "dd", "del", "dfn", "div",
-    "dl", "dt", "em", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i", "img", "ins", "kbd", "li", "mark", "ol", "p",
-    "pre", "samp", "small", "span", "strong", "sub", "sup", "time", "tt", "ul", "var",
+    "a", "abbr", "acronym", "address", "b", "big", "blockquote", "br", "cite", "code", "dd", "del", "dfn", "div", "dl", "dt", "em", "h1",
+    "h2", "h3", "h4", "h5", "h6", "hr", "i", "img", "ins", "kbd", "li", "mark", "ol", "p", "pre", "samp", "small", "span", "strong", "sub",
+    "sup", "time", "tt", "ul", "var",
 ];
 
 /// `Rails::HTML::Concern::Scrubber::SafeList::DEFAULT_ALLOWED_ATTRIBUTES` without `name`, which let
@@ -32,8 +32,7 @@ pub const EDITOR_FORMATTING_ATTRIBUTES: &[&str] = &["data-language"];
 
 /// `ActionText::Attachment::ATTRIBUTES`
 pub const ATTACHMENT_ATTRIBUTES: &[&str] = &[
-    "sgid", "content-type", "url", "href", "filename", "filesize", "width", "height", "previewable", "presentation",
-    "caption", "content",
+    "sgid", "content-type", "url", "href", "filename", "filesize", "width", "height", "previewable", "presentation", "caption", "content",
 ];
 
 /// A tag and attribute allowlist, as passed to `sanitize(html, tags:, attributes:)`.
@@ -53,66 +52,80 @@ impl SafeList {
     }
 
     /// Action View's `sanitize(html)` with no options: the sanitizer's class-level defaults.
-    pub fn defaults() -> Self {
-        SafeList { tags: DEFAULT_ALLOWED_TAGS.to_vec(), attributes: DEFAULT_ALLOWED_ATTRIBUTES.to_vec() }
+    pub fn defaults() -> &'static Self {
+        static LIST: LazyLock<SafeList> =
+            LazyLock::new(|| SafeList { tags: DEFAULT_ALLOWED_TAGS.to_vec(), attributes: DEFAULT_ALLOWED_ATTRIBUTES.to_vec() });
+        &LIST
     }
 
     /// `ActionText::ContentHelper.allowed_tags`/`allowed_attributes` as configured at boot: Action
     /// Text's defaults, then Lexxy's additions (lexxy/engine.rb, "lexxy.sanitization"), then
     /// Campfire's (reference/lib/rails_ext/action_text_allowed_tags.rb).
-    pub fn action_text() -> Self {
-        let mut tags = DEFAULT_ALLOWED_TAGS.to_vec();
-        tags.extend(["action-text-attachment", "figure", "figcaption"]);
-        tags.extend(["video", "audio", "source", "embed", "table", "tbody", "tr", "th", "td"]);
-        for tag in EDITOR_FORMATTING_TAGS {
-            if !tags.contains(tag) {
-                tags.push(tag);
+    pub fn action_text() -> &'static Self {
+        static LIST: LazyLock<SafeList> = LazyLock::new(|| {
+            let mut tags = DEFAULT_ALLOWED_TAGS.to_vec();
+            tags.extend(["action-text-attachment", "figure", "figcaption"]);
+            tags.extend(["video", "audio", "source", "embed", "table", "tbody", "tr", "th", "td"]);
+            for tag in EDITOR_FORMATTING_TAGS {
+                if !tags.contains(tag) {
+                    tags.push(tag);
+                }
             }
-        }
-        let mut attributes = DEFAULT_ALLOWED_ATTRIBUTES.to_vec();
-        attributes.extend(ATTACHMENT_ATTRIBUTES);
-        attributes.extend(["controls", "poster", "data-language", "style", "value", "start"]);
-        for attribute in EDITOR_FORMATTING_ATTRIBUTES {
-            if !attributes.contains(attribute) {
-                attributes.push(attribute);
+            let mut attributes = DEFAULT_ALLOWED_ATTRIBUTES.to_vec();
+            attributes.extend(ATTACHMENT_ATTRIBUTES);
+            attributes.extend(["controls", "poster", "data-language", "style", "value", "start"]);
+            for attribute in EDITOR_FORMATTING_ATTRIBUTES {
+                if !attributes.contains(attribute) {
+                    attributes.push(attribute);
+                }
             }
-        }
-        SafeList { tags, attributes }
+            SafeList { tags, attributes }
+        });
+        &LIST
     }
 
     /// `ContentFilters::SanitizeAttributes`: SanitizeTags' tags, Action Text's attributes plus `class`.
-    pub fn content_filter() -> Self {
-        let mut attributes = Self::action_text().attributes;
-        if !attributes.contains(&"class") {
-            attributes.push("class");
-        }
-        SafeList { tags: sanitize_tags_allowed_tags(), attributes }
+    pub fn content_filter() -> &'static Self {
+        static LIST: LazyLock<SafeList> = LazyLock::new(|| {
+            let mut attributes = SafeList::action_text().attributes.clone();
+            if !attributes.contains(&"class") {
+                attributes.push("class");
+            }
+            SafeList { tags: sanitize_tags_allowed_tags().to_vec(), attributes }
+        });
+        &LIST
     }
 
     /// `MessagesHelper::AUTO_LINK_ALLOWED_TAGS`/`AUTO_LINK_ALLOWED_ATTRIBUTES`.
-    pub fn auto_link() -> Self {
-        let mut tags = DEFAULT_ALLOWED_TAGS.to_vec();
-        for tag in EDITOR_FORMATTING_TAGS {
-            if !tags.contains(tag) {
-                tags.push(tag);
+    pub fn auto_link() -> &'static Self {
+        static LIST: LazyLock<SafeList> = LazyLock::new(|| {
+            let mut tags = DEFAULT_ALLOWED_TAGS.to_vec();
+            for tag in EDITOR_FORMATTING_TAGS {
+                if !tags.contains(tag) {
+                    tags.push(tag);
+                }
             }
-        }
-        let mut attributes = DEFAULT_ALLOWED_ATTRIBUTES.to_vec();
-        attributes.extend(EDITOR_FORMATTING_ATTRIBUTES);
-        SafeList { tags, attributes }
+            let mut attributes = DEFAULT_ALLOWED_ATTRIBUTES.to_vec();
+            attributes.extend(EDITOR_FORMATTING_ATTRIBUTES);
+            SafeList { tags, attributes }
+        });
+        &LIST
     }
 }
 
 /// `ContentFilters::SanitizeTags::ALLOWED_TAGS`
-pub fn sanitize_tags_allowed_tags() -> Vec<&'static str> {
-    let mut tags = vec![
-        "a", "abbr", "acronym", "address", "b", "big", "blockquote", "br", "cite", "code", "dd", "del", "dfn", "div",
-        "dl", "dt", "em", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i", "ins", "kbd", "li", "ol", "p", "pre", "samp",
-        "small", "span", "strong", "sub", "sup", "time", "tt", "ul", "var",
-    ];
-    tags.extend(EDITOR_FORMATTING_TAGS);
-    tags.extend(["action-text-attachment", "figure", "figcaption"]);
-    tags
+pub fn sanitize_tags_allowed_tags() -> &'static [&'static str] {
+    static TAGS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
+        let mut tags = vec![
+            "a", "abbr", "acronym", "address", "b", "big", "blockquote", "br", "cite", "code", "dd", "del", "dfn", "div", "dl", "dt", "em",
+            "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i", "ins", "kbd", "li", "ol", "p", "pre", "samp", "small", "span", "strong", "sub",
+            "sup", "time", "tt", "ul", "var",
+        ];
+        tags.extend(EDITOR_FORMATTING_TAGS);
+        tags.extend(["action-text-attachment", "figure", "figcaption"]);
+        tags
+    });
+    &TAGS
 }
 
 /// `SafeListSanitizer#sanitize(html, tags:, attributes:)`.
@@ -178,21 +191,26 @@ fn scrub(dom: &mut Dom, node: NodeId, list: &SafeList) {
 /// and each allowed one re-escapes every URL attribute on the node as it goes, so a later URL is
 /// checked in its re-escaped form (" javascript:" has become "%20javascript:" and passes).
 fn scrub_attributes(dom: &mut Dom, node: NodeId, list: &SafeList) {
-    let names: Vec<String> = dom.attrs(node).into_iter().map(|(name, _)| name).collect();
-    for name in names {
-        let Some(value) = dom.attr(node, &name).map(str::to_string) else { continue };
-        if !list.allows_attribute(&name) {
-            dom.remove_attr(node, &name);
+    let Some(element) = dom.element_mut(node) else { return };
+    let is_a = &*element.name.local == "a";
+    let mut i = 0;
+    while let Some(attr) = element.attrs.get(i) {
+        let (scrubbed, blank_src) = {
+            let name = attr.qualified_name();
+            let scrubbed = !list.allows_attribute(&name) || (ATTR_VAL_IS_URI.contains(&&*name) && !allowed_uri(&attr.value));
+            (scrubbed, name == "src" && attr.value.chars().all(char::is_whitespace))
+        };
+        if scrubbed {
+            element.attrs.remove(i);
             continue;
         }
-        if ATTR_VAL_IS_URI.contains(&name.as_str()) && !allowed_uri(&value) {
-            dom.remove_attr(node, &name);
-            continue;
+        // A blank src goes, but the escaping still runs for the attributes after it
+        if blank_src {
+            element.attrs.remove(i);
+        } else {
+            i += 1;
         }
-        if name == "src" && value.chars().all(char::is_whitespace) {
-            dom.remove_attr(node, &name);
-        }
-        force_correct_attribute_escaping(dom, node);
+        force_correct_attribute_escaping(&mut element.attrs, is_a);
     }
     scrub_style(dom, node);
 }
@@ -242,31 +260,41 @@ const ATTR_VAL_IS_URI: &[&str] = &["action", "cite", "href", "longdesc", "poster
 /// spaces and double quotes in `href`, `action`, `src` and an `a`'s `name` become `%20` and `%22`.
 /// The value is written back through `Nokogiri::XML::Attr#value=`, where libxml2 drops the C0
 /// controls XML 1.0 doesn't allow.
-fn force_correct_attribute_escaping(dom: &mut Dom, node: NodeId) {
-    let is_a = dom.local_name(node) == Some("a");
-    for (name, value) in dom.attrs(node) {
-        let qualifies = matches!(name.as_str(), "href" | "action" | "src") || (name == "name" && is_a);
-        if qualifies {
-            let mut escaped = String::with_capacity(value.len());
-            for c in value.chars() {
-                match c {
-                    ' ' => escaped.push_str("%20"),
-                    '"' => escaped.push_str("%22"),
-                    '\t' | '\n' | '\r' => escaped.push(c),
-                    c if c < ' ' => {}
-                    c => escaped.push(c),
-                }
-            }
-            if escaped != value {
-                dom.set_attr(node, &name, &escaped);
-            }
+fn force_correct_attribute_escaping(attrs: &mut [Attr], is_a: bool) {
+    for attr in attrs {
+        let qualifies = {
+            let name = attr.qualified_name();
+            matches!(&*name, "href" | "action" | "src") || (name == "name" && is_a)
+        };
+        if qualifies && attr.value.chars().any(is_escaped) {
+            attr.value = escape_attribute_value(&attr.value);
         }
     }
 }
 
+/// What `force_correct_attribute_escaping` changes: spaces, double quotes, and the C0 controls
+/// other than tab, newline and carriage return.
+fn is_escaped(c: char) -> bool {
+    c == ' ' || c == '"' || (c < ' ' && !matches!(c, '\t' | '\n' | '\r'))
+}
+
+fn escape_attribute_value(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            ' ' => escaped.push_str("%20"),
+            '"' => escaped.push_str("%22"),
+            '\t' | '\n' | '\r' => escaped.push(c),
+            c if c < ' ' => {}
+            c => escaped.push(c),
+        }
+    }
+    escaped
+}
+
 const ALLOWED_PROTOCOLS: &[&str] = &[
-    "afs", "aim", "callto", "data", "ed2k", "fax", "ftp", "gopher", "http", "https", "irc", "line", "mailto", "modem",
-    "news", "nntp", "rsync", "rtsp", "sftp", "sms", "ssh", "tag", "tel", "telnet", "urn", "webcal", "xmpp",
+    "afs", "aim", "callto", "data", "ed2k", "fax", "ftp", "gopher", "http", "https", "irc", "line", "mailto", "modem", "news", "nntp",
+    "rsync", "rtsp", "sftp", "sms", "ssh", "tag", "tel", "telnet", "urn", "webcal", "xmpp",
 ];
 
 const ALLOWED_URI_DATA_MEDIATYPES: &[&str] = &["image/gif", "image/jpeg", "image/png", "text/css", "text/plain"];
@@ -302,7 +330,8 @@ fn protocol_before_separator(s: &str) -> Option<&str> {
         return None;
     }
     let mut end = 1;
-    while end < bytes.len() && (bytes[end].is_ascii_lowercase() || bytes[end].is_ascii_digit() || matches!(bytes[end], b'+' | b'-' | b'.')) {
+    while end < bytes.len() && (bytes[end].is_ascii_lowercase() || bytes[end].is_ascii_digit() || matches!(bytes[end], b'+' | b'-' | b'.'))
+    {
         end += 1;
     }
     // The class can't contain the start of a separator, so the scheme is the longest run.
@@ -340,7 +369,8 @@ fn data_uri_mediatype(s: &str) -> Option<String> {
     let rest = s.strip_prefix("data:").unwrap_or(s);
     let (metadata, _) = rest.split_once(',')?;
     let metadata = metadata.strip_suffix(";base64").unwrap_or(metadata);
-    let mediatype = metadata.split(';').next().unwrap_or("").trim_matches(|c: char| matches!(c, ' ' | '\t' | '\n' | '\u{0b}' | '\u{0c}' | '\r' | '\0'));
+    let mediatype =
+        metadata.split(';').next().unwrap_or("").trim_matches(|c: char| matches!(c, ' ' | '\t' | '\n' | '\u{0b}' | '\u{0c}' | '\r' | '\0'));
     let tchar = |c: char| c.is_ascii_alphanumeric() || "!#$%&'*+-.^_`|~".contains(c);
     let valid = mediatype
         .split_once('/')
@@ -380,9 +410,9 @@ fn unescape_one(s: &str) -> (Option<String>, usize) {
     let Some(end) = s.find(';') else { return (None, 0) };
     let body = &s[1..end];
     let code = if let Some(hex) = body.strip_prefix("#x").or_else(|| body.strip_prefix("#X")) {
-        (!hex.is_empty() && hex.len() <= 8 && hex.bytes().all(|b| b.is_ascii_hexdigit())).then(|| u32::from_str_radix(hex, 16).ok()).flatten()
+        numeric_reference(hex, 16)
     } else if let Some(dec) = body.strip_prefix('#') {
-        (!dec.is_empty() && dec.len() <= 10 && dec.bytes().all(|b| b.is_ascii_digit())).then(|| dec.parse::<u32>().ok()).flatten()
+        numeric_reference(dec, 10)
     } else {
         None
     };
@@ -390,6 +420,21 @@ fn unescape_one(s: &str) -> (Option<String>, usize) {
         Some(c) => (Some(c.to_string()), end + 1),
         None => (None, 0),
     }
+}
+
+/// The code point of a numeric reference's digits, when `CGI.unescapeHTML` decodes it: any number
+/// of leading zeros, and below U+10FFFF (cgi's `escape.c` skips `cc >= charlimit`, 0x10ffff for
+/// UTF-8). Surrogates are left alone too, as a Rust string can't hold them.
+fn numeric_reference(digits: &str, radix: u32) -> Option<u32> {
+    if digits.is_empty() || !digits.chars().all(|c| c.is_digit(radix)) {
+        return None;
+    }
+    let significant = digits.trim_start_matches('0');
+    // Past 7 decimal or 6 hex digits, it's past U+10FFFF anyway (and `u32` stays in range).
+    if significant.len() > if radix == 16 { 6 } else { 7 } {
+        return None;
+    }
+    u32::from_str_radix(if significant.is_empty() { "0" } else { significant }, radix).ok().filter(|&code| code < 0x10ffff)
 }
 
 /// `Loofah::HTML5::Scrub.decode_numeric_character_references`: `&#(x[0-9a-f]+|[0-9]+);?` (case
@@ -440,24 +485,38 @@ mod tests {
     #[test]
     fn scrubs_like_rails() {
         let list = SafeList::content_filter();
-        assert_eq!(sanitize("<div><a href=\"javascript:alert(1)\">x</a></div>", &list).unwrap(), "<div><a>x</a></div>");
-        assert_eq!(sanitize("<a href=\"/x\" onmouseover=\"alert(1)\">x</a>", &list).unwrap(), "<a href=\"/x\">x</a>");
-        assert_eq!(sanitize("<a href=\"data:text/html,pwned\">x</a>", &list).unwrap(), "<a>x</a>");
-        assert_eq!(sanitize("<a href=\"a b\">x</a><!-- c -->", &list).unwrap(), "<a href=\"a%20b\">x</a>");
-        assert_eq!(sanitize("<svg><a>x</a></svg>y<script>z</script>", &list).unwrap(), "yz");
+        assert_eq!(sanitize("<div><a href=\"javascript:alert(1)\">x</a></div>", list).unwrap(), "<div><a>x</a></div>");
+        assert_eq!(sanitize("<a href=\"/x\" onmouseover=\"alert(1)\">x</a>", list).unwrap(), "<a href=\"/x\">x</a>");
+        assert_eq!(sanitize("<a href=\"data:text/html,pwned\">x</a>", list).unwrap(), "<a>x</a>");
+        assert_eq!(sanitize("<a href=\"a b\">x</a><!-- c -->", list).unwrap(), "<a href=\"a%20b\">x</a>");
+        assert_eq!(sanitize("<svg><a>x</a></svg>y<script>z</script>", list).unwrap(), "yz");
+    }
+
+    /// The outputs are rails-html-sanitizer's, from the reference image.
+    #[test]
+    fn re_escapes_url_attributes_as_each_attribute_is_scrubbed() {
+        let list = &SafeList { tags: vec!["img", "a"], attributes: vec!["src", "href", "name", "title", "alt"] };
+        // The blank src is removed, and the escaping it still triggers lets the href through
+        assert_eq!(sanitize("<img src=\" \" href=\" javascript:alert(1)\">", list).unwrap(), "<img href=\"%20javascript:alert(1)\">");
+        assert_eq!(sanitize("<img href=\" javascript:alert(1)\">", list).unwrap(), "<img>");
+        assert_eq!(
+            sanitize("<a href=\"a b\" name=\"c d\" title=\"x y\">t</a>", list).unwrap(),
+            "<a href=\"a%20b\" name=\"c%20d\" title=\"x y\">t</a>"
+        );
+        assert_eq!(sanitize("<img src=\"a b\" alt=\"q\">", list).unwrap(), "<img src=\"a%20b\" alt=\"q\">");
     }
 
     #[test]
     fn keeps_only_lexxys_highlight_colors_in_style() {
         let list = SafeList::action_text();
         let highlight = "<mark style=\"color: var(--highlight-1);background-color: var(--highlight-bg-2);\">x</mark>";
-        assert_eq!(sanitize(highlight, &list).unwrap(), highlight);
+        assert_eq!(sanitize(highlight, list).unwrap(), highlight);
         assert_eq!(
-            sanitize("<span style=\"color: #f00; position: fixed; top: 0\">x</span>", &list).unwrap(),
+            sanitize("<span style=\"color: #f00; position: fixed; top: 0\">x</span>", list).unwrap(),
             "<span style=\"color: #f00;\">x</span>"
         );
         let rgb = "<span style=\"COLOR: rgb(1 2 3 / 50%)\">x</span>";
-        assert_eq!(sanitize(rgb, &list).unwrap(), rgb);
+        assert_eq!(sanitize(rgb, list).unwrap(), rgb);
         for hostile in [
             "background-color: url(https://evil.test/beacon)",
             "color: expression(alert(1))",
@@ -467,10 +526,13 @@ mod tests {
             "width: 100000px",
             "",
         ] {
-            let html = sanitize(&format!("<span style=\"{hostile}\">x</span>"), &list).unwrap();
-            assert!(!html.contains("url") && !html.contains("expression") && !html.contains('\\') && !html.contains("width"), "{hostile}: {html}");
+            let html = sanitize(&format!("<span style=\"{hostile}\">x</span>"), list).unwrap();
+            assert!(
+                !html.contains("url") && !html.contains("expression") && !html.contains('\\') && !html.contains("width"),
+                "{hostile}: {html}"
+            );
         }
-        assert_eq!(sanitize("<span style=\"position: fixed\">x</span>", &list).unwrap(), "<span>x</span>");
+        assert_eq!(sanitize("<span style=\"position: fixed\">x</span>", list).unwrap(), "<span>x</span>");
     }
 
     #[test]
@@ -484,5 +546,39 @@ mod tests {
         assert!(allowed_uri("https://example.com"));
         assert!(allowed_uri("data:image/png;base64,xx"));
         assert!(!allowed_uri("data:text/html,xx"));
+        // Rails' SafeListSanitizer drops this href: CGI.unescapeHTML turns the zero-padded `&` into
+        // `&#106;`, which Loofah then decodes.
+        let list = SafeList::content_filter();
+        assert_eq!(sanitize("<a href=\"&amp;#0000000000038;#106;avascript:alert(1)\">x</a>", list).unwrap(), "<a>x</a>");
+    }
+
+    #[test]
+    fn unescapes_html_like_cgi() {
+        // `CGI.unescapeHTML(s)` in the reference.
+        for (escaped, unescaped) in [
+            ("&#65;", "A"),
+            ("&#X41;", "A"),
+            ("&#00000000065;", "A"),
+            ("&#0000000000000000000000065;", "A"),
+            ("&#x000000041;", "A"),
+            ("&#x0000000000000000000041;", "A"),
+            ("&#00000000000000000000000000000000106;avascript", "javascript"),
+            ("&#0;", "\0"),
+            ("&#65535;", "\u{ffff}"),
+            ("&#1114110;", "\u{10fffe}"),
+            ("&#1114111;", "&#1114111;"),
+            ("&#x10FFFF;", "&#x10FFFF;"),
+            ("&#x110000;", "&#x110000;"),
+            ("&#99999999999999999999;", "&#99999999999999999999;"),
+            ("&#18446744073709551615;", "&#18446744073709551615;"),
+            ("&#x10000000000000041;", "&#x10000000000000041;"),
+            ("&#;", "&#;"),
+            ("&#x;", "&#x;"),
+            ("&#65", "&#65"),
+            ("&#0x41;", "&#0x41;"),
+            ("&amp;#65;", "&#65;"),
+        ] {
+            assert_eq!(cgi_unescape_html(escaped), unescaped, "{escaped}");
+        }
     }
 }

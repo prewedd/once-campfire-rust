@@ -55,9 +55,8 @@ fn room_from(conn: &Connection, gid_param: &str) -> Result<Option<Room>, Channel
 }
 
 /// Constants a GID could name that aren't rooms (`only: Room` turns them away without raising).
-const KNOWN_MODELS: &[&str] = &[
-    "Account", "Ban", "Boost", "Current", "Membership", "Message", "Push::Subscription", "Search", "Session", "User", "Webhook",
-];
+const KNOWN_MODELS: &[&str] =
+    &["Account", "Ban", "Boost", "Current", "Membership", "Message", "Push::Subscription", "Search", "Session", "User", "Webhook"];
 
 pub struct RoomMessagesChannel {
     db: Database,

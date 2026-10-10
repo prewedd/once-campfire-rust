@@ -3,8 +3,8 @@
 
 use std::time::{Duration, Instant};
 
-use campfire_richtext::dom::Dom;
-use campfire_richtext::{AttachableResolver, GidLookup, RenderContext, SignedLookup, editable_value, message_presentation};
+use campfire_richtext::dom::{Dom, MAX_ATTRIBUTES};
+use campfire_richtext::{AttachableResolver, GidLookup, RenderContext, SignedLookup, editable_value, message_presentation, to_plain_text};
 
 struct NoRecords;
 
@@ -121,6 +121,78 @@ fn deeply_nested_content_attachments_render_quickly() {
     let started = Instant::now();
     presentation(&body);
     assert_quick(started, "rendering 200 nested content attachments");
+}
+
+/// Both the page and the search index (which is written inside the database transaction) have to
+/// refuse `body`.
+fn assert_refused_quickly(body: &str, what: &str) {
+    let started = Instant::now();
+    assert!(message_presentation(body, &ctx()).is_err(), "{what} rendered");
+    assert!(to_plain_text(body, &ctx()).is_err(), "{what} was indexed");
+    assert_quick(started, what);
+}
+
+#[test]
+fn deeply_nested_elements_are_refused_quickly() {
+    // Gumbo's depth limit is enforced as the tree is built. Checked on the finished tree, 400 KB
+    // of nested <div>s took 16 seconds, since html5ever's scope checks walk every open element.
+    assert_refused_quickly(&"<div>".repeat(80_000), "400 KB of nested <div>s");
+    assert_refused_quickly(&"<a><b>".repeat(80_000), "480 KB of <a><b>");
+    assert_refused_quickly(&"<a><div><div>".repeat(30_000), "390 KB of <a><div><div>");
+}
+
+#[test]
+fn the_rest_of_a_body_is_not_read_once_it_is_too_deep() {
+    // Gumbo stops there. Tokenizing the rest of a 16 MB body (kit's request body limit) only to
+    // throw it away took 200 ms a parse, and a message is parsed several times. Stopping once the
+    // next token has been read isn't enough, as it can be all the rest: a comment took 130 ms.
+    let too_deep = "<div>".repeat(401);
+    let rest = "x".repeat(16 * 1024 * 1024);
+    for (what, body) in [
+        ("tags", format!("{too_deep}{}", "<a><b>".repeat(rest.len() / 6))),
+        ("a comment", format!("{too_deep}<!--{rest}")),
+        ("a tag name", format!("{too_deep}<{rest}")),
+    ] {
+        let started = Instant::now();
+        assert!(message_presentation(&body, &ctx()).is_err() && to_plain_text(&body, &ctx()).is_err());
+        // Copying the body to parse it is all that's left
+        let bound = if cfg!(debug_assertions) { Duration::from_secs(1) } else { Duration::from_millis(100) };
+        assert!(started.elapsed() < bound, "refusing 16 MB of {what} took {:?}", started.elapsed());
+    }
+}
+
+#[test]
+fn a_tag_with_too_many_attributes_is_refused_quickly() {
+    // Each attribute is checked against the tag's others for a duplicate, up to Gumbo's limit
+    let attributes: Vec<String> = (1..=64_000).map(|i| format!("a{i}=1")).collect();
+    assert_refused_quickly(&format!("<b {}>x</b>", attributes.join(" ")), "a tag with 64,000 attributes");
+}
+
+#[test]
+fn html_tags_in_the_body_parse_in_linear_time() {
+    // Each one's attributes go to the fragment's root <html> element, unless it has them already.
+    // Checking every one against all the root had collected made 800 KB of them take 1.5 seconds.
+    let body: String = (0..200)
+        .map(|tag| {
+            let names: Vec<String> = (1..=MAX_ATTRIBUTES).map(|i| format!("a{}", tag * MAX_ATTRIBUTES + i)).collect();
+            format!("<html {}>", names.join(" "))
+        })
+        .collect();
+    assert!(body.len() > 500_000);
+    let started = Instant::now();
+    assert_eq!(to_plain_text(&body, &ctx()).unwrap(), "");
+    assert_eq!(presentation(&body), presentation(""));
+    assert_quick(started, "550 KB of <html> tags, each with 400 new attributes");
+}
+
+#[test]
+fn elements_misplaced_in_a_table_parse_in_linear_time() {
+    // Foster parenting inserts each of them before the table. Finding the table from the front of
+    // its parent's children made that quadratic: 480 KB of them took 1.5 seconds.
+    let body = format!("<table>{}", "<br>".repeat(200_000));
+    let started = Instant::now();
+    assert!(to_plain_text(&body, &ctx()).is_ok());
+    assert_quick(started, "800 KB of <br>s in a table");
 }
 
 /// Every SGID names a user who has since been deleted.

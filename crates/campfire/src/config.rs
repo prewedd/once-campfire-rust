@@ -12,7 +12,8 @@
 //! - `DISABLE_SSL`: `config/environments/production.rb` (`assume_ssl`/`force_ssl` unless present).
 //! - `APP_VERSION`, `GIT_REVISION`: `config/initializers/version.rb` (`X-Version`, `X-Rev`).
 //! - `RAILS_ENV`: names the database file (`storage/db/<env>.sqlite3`, `config/database.yml`).
-//! - `RAILS_MAX_THREADS`: `config/database.yml` pool size, used for the reader pool.
+//! - `RAILS_MAX_THREADS`: `config/database.yml` pool size, used for the number of reader threads,
+//!   each with a reader connection of its own (`campfire_db::Database`).
 //! - `JOB_CONCURRENCY`: Resque worker count (`config/puma.rb`), used for job concurrency.
 //! - `RAILS_LOG_LEVEL`: `config/environments/production.rb` log level.
 //! - Thruster's (`TLS_DOMAIN`, `HTTP_PORT`, `HTTP_*_TIMEOUT`, `TARGET_PORT`, ...): read by
@@ -24,6 +25,9 @@
 //!   reference caches fragments in Redis (`redis_cache_store`) with no `maxmemory`; this store is
 //!   in the process, so it's bounded like Rails' `MemoryStore` (default `size` 32 MB), evicting the
 //!   least recently used fragments. See `campfire_views::fragment_cache`.
+//!
+//! - `CAMPFIRE_RESPONSE_CACHE_MB`: completed authenticated room, messages, sidebar and search
+//!   responses, bounded to 64 MB by default; zero disables this store.
 //!
 //! Storage paths mirror `Rails.root.join("storage")`: the database under `db/`, blobs under
 //! `files/` (`config/storage.yml`), backups under `backups/` (`script/admin/prepare-backup`).
@@ -52,6 +56,8 @@ pub struct Config {
     pub log_level: String,
     /// The fragment store's limit in bytes (`CAMPFIRE_FRAGMENT_CACHE_MB`).
     pub fragment_cache_bytes: usize,
+    /// Private completed-response store (`CAMPFIRE_RESPONSE_CACHE_MB`; zero disables it).
+    pub response_cache_bytes: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -67,11 +73,7 @@ pub struct StoragePaths {
 impl StoragePaths {
     pub fn new(root: impl Into<PathBuf>, environment: &str) -> Self {
         let root = root.into();
-        Self {
-            database: root.join("db").join(format!("{environment}.sqlite3")),
-            files: root.join("files"),
-            backups: root.join("backups"),
-        }
+        Self { database: root.join("db").join(format!("{environment}.sqlite3")), files: root.join("files"), backups: root.join("backups") }
     }
 
     /// `config/initializers/storage_paths.rb`: `storage/{db,files}` exist after boot.
@@ -138,6 +140,7 @@ impl Config {
             log_level: present("RAILS_LOG_LEVEL").unwrap_or_else(|| "info".into()),
             fragment_cache_bytes: number("CAMPFIRE_FRAGMENT_CACHE_MB", campfire_views::fragment_cache::DEFAULT_MAX_BYTES >> 20)?
                 .saturating_mul(1 << 20),
+            response_cache_bytes: number("CAMPFIRE_RESPONSE_CACHE_MB", 64)?.saturating_mul(1 << 20),
         })
     }
 }
@@ -152,9 +155,7 @@ fn default_vapid_subject(tls_domains: Option<String>) -> String {
 }
 
 fn dummy_secret() -> String {
-    use rand::Rng;
-    let bytes: [u8; 64] = rand::rng().random();
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    hex::encode(rand::random::<[u8; 64]>())
 }
 
 #[cfg(test)]
@@ -183,6 +184,7 @@ mod tests {
         assert_eq!(config.storage.files, PathBuf::from("storage/files"));
         assert_eq!(config.storage.backup_file(), PathBuf::from("storage/backups/production.sqlite3"));
         assert_eq!(config.fragment_cache_bytes, 32 * 1024 * 1024);
+        assert_eq!(config.response_cache_bytes, 64 * 1024 * 1024);
     }
 
     #[test]
@@ -190,6 +192,16 @@ mod tests {
         let bytes = config(&[("SECRET_KEY_BASE", "abc"), ("CAMPFIRE_FRAGMENT_CACHE_MB", "64")]).unwrap().fragment_cache_bytes;
         assert_eq!(bytes, 64 * 1024 * 1024);
         assert!(config(&[("SECRET_KEY_BASE", "abc"), ("CAMPFIRE_FRAGMENT_CACHE_MB", "lots")]).is_err());
+    }
+
+    #[test]
+    fn response_cache_limit_and_off_switch() {
+        assert_eq!(config(&[("SECRET_KEY_BASE", "abc"), ("CAMPFIRE_RESPONSE_CACHE_MB", "0")]).unwrap().response_cache_bytes, 0);
+        assert_eq!(
+            config(&[("SECRET_KEY_BASE", "abc"), ("CAMPFIRE_RESPONSE_CACHE_MB", "8")]).unwrap().response_cache_bytes,
+            8 * 1024 * 1024
+        );
+        assert!(config(&[("SECRET_KEY_BASE", "abc"), ("CAMPFIRE_RESPONSE_CACHE_MB", "-1")]).is_err());
     }
 
     #[test]
@@ -221,12 +233,9 @@ mod tests {
 
     #[test]
     fn storage_overrides() {
-        let config = config(&[
-            ("SECRET_KEY_BASE", "abc"),
-            ("CAMPFIRE_STORAGE_PATH", "/rails/storage"),
-            ("CAMPFIRE_FILES_PATH", "/seed/storage"),
-        ])
-        .unwrap();
+        let config =
+            config(&[("SECRET_KEY_BASE", "abc"), ("CAMPFIRE_STORAGE_PATH", "/rails/storage"), ("CAMPFIRE_FILES_PATH", "/seed/storage")])
+                .unwrap();
         assert_eq!(config.storage.database, PathBuf::from("/rails/storage/db/production.sqlite3"));
         assert_eq!(config.storage.files, PathBuf::from("/seed/storage"));
     }

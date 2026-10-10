@@ -1,14 +1,14 @@
 //! `reference/app/models/message.rb` and `message/*.rb` (Attachment, Mentionee, Pagination,
 //! Searchable; Broadcasts belong to the app).
 
-use rusqlite::{Connection, Row, params};
+use rusqlite::{Connection, params};
 
 use crate::database::Tx;
 use crate::error::{OptionalExt, Result};
 use crate::events::Event;
 use crate::models::{Attachment, Blob, Boost, RichTextRecord, Room, Sound, User};
 use crate::rich_text::RichText;
-use crate::sql::{self, CachedStatements, placeholders, query_all, query_one};
+use crate::sql::{self, CachedStatements, columns, placeholders, query_all, query_one};
 use crate::time::Timestamp;
 
 /// `Message::Pagination::PAGE_SIZE`
@@ -26,6 +26,18 @@ pub struct Message {
     pub updated_at: Timestamp,
     /// The top-level message whose thread this is a reply in (plans/threads.md).
     pub thread_parent_id: Option<i64>,
+}
+
+columns! {
+    Message, "messages", message_columns {
+        id: "id",
+        room_id: "room_id",
+        creator_id: "creator_id",
+        client_message_id: "client_message_id",
+        created_at: "created_at",
+        updated_at: "updated_at",
+        thread_parent_id: "thread_parent_id",
+    }
 }
 
 /// Attributes for `room.messages.create!` / `create_with_attachment!`.
@@ -63,11 +75,12 @@ pub enum Timeline {
 }
 
 impl Timeline {
-    /// The timeline's messages. Its id is `?1`, so plain `?`s after it are `?2` onwards.
+    /// The timeline's messages. Its id is `?1`, so plain `?`s after it are `?2` onwards. A room's
+    /// `+` keeps SQLite on its room indexes: the thread index would walk every room's top level.
     fn select(self) -> &'static str {
         match self {
-            Timeline::Room(_) => r#"SELECT "messages".* FROM "messages" WHERE "messages"."room_id" = ?1 AND "messages"."thread_parent_id" IS NULL"#,
-            Timeline::Thread(_) => r#"SELECT "messages".* FROM "messages" WHERE ("messages"."id" = ?1 OR "messages"."thread_parent_id" = ?1)"#,
+            Timeline::Room(_) => concat!("SELECT ", message_columns!(), r#" FROM "messages" WHERE "messages"."room_id" = ?1 AND +"messages"."thread_parent_id" IS NULL"#),
+            Timeline::Thread(_) => concat!("SELECT ", message_columns!(), r#" FROM "messages" WHERE ("messages"."id" = ?1 OR "messages"."thread_parent_id" = ?1)"#),
         }
     }
 
@@ -107,20 +120,19 @@ impl Timeline {
     }
 
     /// Messages updated since `time`, other than `excluding`.
+    /// The newest page of them, in creation order. `+` keeps SQLite on the `updated_at` index
+    /// (`index_messages_on_room_id_and_updated_at`) rather than walking the room by `created_at`.
     pub fn page_updated_since(self, conn: &Connection, time: Timestamp, excluding: &[i64]) -> Result<Vec<Message>> {
-        let without = if excluding.is_empty() {
-            String::new()
-        } else {
-            format!(r#" AND "messages"."id" NOT IN ({})"#, placeholders(excluding.len()))
-        };
-        let sql = format!(
-            r#"{}{without} AND (updated_at > ?) ORDER BY "messages"."created_at" DESC LIMIT {PAGE_SIZE}"#,
-            self.select()
-        );
+        let sql = self.page_updated_since_sql(excluding.len());
         let mut values: Vec<rusqlite::types::Value> = vec![self.id().into()];
         values.extend(excluding.iter().map(|id| rusqlite::types::Value::from(*id)));
         values.push(time.to_db().into());
         Ok(reversed(query_all(conn, &sql, rusqlite::params_from_iter(values), Message::from_row)?))
+    }
+
+    fn page_updated_since_sql(self, excluding: usize) -> String {
+        let without = if excluding == 0 { String::new() } else { format!(r#" AND "messages"."id" NOT IN ({})"#, placeholders(excluding)) };
+        format!(r#"{}{without} AND (updated_at > ?) ORDER BY +"messages"."created_at" DESC LIMIT {PAGE_SIZE}"#, self.select())
     }
 
     pub fn exists_before(self, conn: &Connection, message: &Message) -> Result<bool> {
@@ -162,24 +174,15 @@ impl ContentType {
     }
 }
 
-const SELECT_IN_ROOM: &str =
-    r#"SELECT "messages".* FROM "messages" WHERE "messages"."room_id" = ?"#;
+const SELECT_IN_ROOM: &str = concat!("SELECT ", message_columns!(), r#" FROM "messages" WHERE "messages"."room_id" = ?"#);
 
-const SELECT_REACHABLE: &str = r#"SELECT "messages".* FROM "messages" INNER JOIN "rooms" ON "messages"."room_id" = "rooms"."id" INNER JOIN "memberships" ON "rooms"."id" = "memberships"."room_id""#;
+const SELECT_REACHABLE: &str = concat!(
+    "SELECT ",
+    message_columns!(),
+    r#" FROM "messages" INNER JOIN "rooms" ON "messages"."room_id" = "rooms"."id" INNER JOIN "memberships" ON "rooms"."id" = "memberships"."room_id""#
+);
 
 impl Message {
-    pub(crate) fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
-        Ok(Self {
-            id: row.get("id")?,
-            room_id: row.get("room_id")?,
-            creator_id: row.get("creator_id")?,
-            client_message_id: row.get("client_message_id")?,
-            created_at: row.get("created_at")?,
-            updated_at: row.get("updated_at")?,
-            thread_parent_id: row.get("thread_parent_id")?,
-        })
-    }
-
     pub fn find(conn: &Connection, id: i64) -> Result<Self> {
         Self::find_by_id(conn, id)?.or_not_found("Message")
     }
@@ -187,7 +190,7 @@ impl Message {
     pub fn find_by_id(conn: &Connection, id: i64) -> Result<Option<Self>> {
         query_one(
             conn,
-            r#"SELECT * FROM "messages" WHERE "messages"."id" = ? LIMIT 1"#,
+            concat!("SELECT ", message_columns!(), r#" FROM "messages" WHERE "messages"."id" = ? LIMIT 1"#),
             [id],
             Self::from_row,
         )
@@ -197,7 +200,7 @@ impl Message {
     pub fn last(conn: &Connection) -> Result<Option<Self>> {
         query_one(
             conn,
-            r#"SELECT * FROM "messages" ORDER BY "messages"."id" DESC LIMIT 1"#,
+            concat!("SELECT ", message_columns!(), r#" FROM "messages" ORDER BY "messages"."id" DESC LIMIT 1"#),
             [],
             Self::from_row,
         )
@@ -211,7 +214,7 @@ impl Message {
     pub fn by_creator(conn: &Connection, creator_id: i64) -> Result<Vec<Self>> {
         query_all(
             conn,
-            r#"SELECT "messages".* FROM "messages" WHERE "messages"."creator_id" = ?"#,
+            concat!("SELECT ", message_columns!(), r#" FROM "messages" WHERE "messages"."creator_id" = ?"#),
             [creator_id],
             Self::from_row,
         )
@@ -235,9 +238,7 @@ impl Message {
 
     /// `Current.user.reachable_messages.find(id)`
     pub fn find_reachable(conn: &Connection, user_id: i64, id: i64) -> Result<Self> {
-        let sql = format!(
-            r#"{SELECT_REACHABLE} WHERE "memberships"."user_id" = ? AND "messages"."id" = ? LIMIT 1"#
-        );
+        let sql = format!(r#"{SELECT_REACHABLE} WHERE "memberships"."user_id" = ? AND "messages"."id" = ? LIMIT 1"#);
         query_one(conn, &sql, [user_id, id], Self::from_row)?.or_not_found("Message")
     }
 
@@ -310,7 +311,7 @@ impl Message {
     pub fn replies(conn: &Connection, parent_id: i64) -> Result<Vec<Self>> {
         query_all(
             conn,
-            r#"SELECT "messages".* FROM "messages" WHERE "messages"."thread_parent_id" = ? ORDER BY "messages"."created_at" ASC"#,
+            concat!("SELECT ", message_columns!(), r#" FROM "messages" WHERE "messages"."thread_parent_id" = ? ORDER BY "messages"."created_at" ASC"#),
             [parent_id],
             Self::from_row,
         )
@@ -389,7 +390,11 @@ impl Message {
         }
         query_all(
             conn,
-            r#"SELECT "messages".* FROM "messages" join message_search_index idx on messages.id = idx.rowid WHERE "messages"."room_id" = ? AND (idx.body match ?) ORDER BY "messages"."created_at" ASC"#,
+            concat!(
+                "SELECT ",
+                message_columns!(),
+                r#" FROM "messages" join message_search_index idx on messages.id = idx.rowid WHERE "messages"."room_id" = ? AND (idx.body match ?) ORDER BY "messages"."created_at" ASC"#
+            ),
             params![room_id, query],
             Self::from_row,
         )
@@ -401,15 +406,15 @@ impl Message {
         if query.is_empty() {
             return Ok(Vec::new());
         }
+        if let Some(messages) = search_index_page(conn, user_id, &query)? {
+            return Ok(messages);
+        }
+        // A sparse membership set can miss most global matches. Let SQLite choose the
+        // room-first plan instead of scanning the remaining inaccessible history.
         let sql = format!(
-            r#"{SELECT_REACHABLE} join message_search_index idx on messages.id = idx.rowid WHERE "memberships"."user_id" = ? AND (idx.body match ?) ORDER BY "messages"."created_at" DESC LIMIT 100"#
+            r#"{SELECT_REACHABLE} join message_search_index idx on messages.id = idx.rowid WHERE "memberships"."user_id" = ? AND (idx.body match ?) ORDER BY "messages"."id" DESC LIMIT 100"#
         );
-        Ok(reversed(query_all(
-            conn,
-            &sql,
-            params![user_id, query],
-            Self::from_row,
-        )?))
+        Ok(reversed(query_all(conn, &sql, params![user_id, query], Self::from_row)?))
     }
 
     // Creating, updating, destroying
@@ -498,10 +503,7 @@ impl Message {
 
     fn touch_row(tx: &Tx<'_>, id: i64) -> Result<Timestamp> {
         let now = tx.now();
-        tx.conn().execute_cached(
-            r#"UPDATE "messages" SET "updated_at" = ? WHERE "messages"."id" = ?"#,
-            params![now, id],
-        )?;
+        tx.conn().execute_cached(r#"UPDATE "messages" SET "updated_at" = ? WHERE "messages"."id" = ?"#, params![now, id])?;
         Ok(now)
     }
 
@@ -509,13 +511,9 @@ impl Message {
     /// one is destroyed (its blob purged after commit, `dependent: :purge_later`) and each
     /// attachment change touches the message (`belongs_to :record, touch: true`), and so its room.
     pub fn replace_attachment(&mut self, tx: &mut Tx<'_>, blob_id: Option<i64>) -> Result<()> {
-        if let Some(attachment) =
-            Attachment::find_for(tx.conn(), RECORD_TYPE, self.id, "attachment")?
-        {
+        if let Some(attachment) = Attachment::find_for(tx.conn(), RECORD_TYPE, self.id, "attachment")? {
             attachment.delete(tx)?;
-            tx.emit_after_commit(Event::PurgeBlob {
-                blob_id: attachment.blob_id,
-            });
+            tx.emit_after_commit(Event::PurgeBlob { blob_id: attachment.blob_id });
             self.touch(tx)?;
         }
         if let Some(blob_id) = blob_id {
@@ -547,9 +545,7 @@ impl Message {
             Attachment::find_for(tx.conn(), RECORD_TYPE, self.id, "attachment")?
         {
             attachment.delete(tx)?;
-            tx.emit_after_commit(Event::PurgeBlob {
-                blob_id: attachment.blob_id,
-            });
+            tx.emit_after_commit(Event::PurgeBlob { blob_id: attachment.blob_id });
         }
         for boost in Boost::for_message(tx.conn(), self.id)? {
             boost.delete_row(tx)?;
@@ -557,10 +553,7 @@ impl Message {
         if let Some(body) = RichTextRecord::find_for(tx.conn(), RECORD_TYPE, self.id, "body")? {
             body.delete(tx)?;
         }
-        tx.conn().execute_cached(
-            r#"DELETE FROM "messages" WHERE "messages"."id" = ?"#,
-            [self.id],
-        )?;
+        tx.conn().execute_cached(r#"DELETE FROM "messages" WHERE "messages"."id" = ?"#, [self.id])?;
         Room::touch(tx, self.room_id)?;
         let id = self.id;
         tx.after_commit(move |tx| remove_from_index(tx, id));
@@ -569,19 +562,13 @@ impl Message {
 
     fn create_in_index(&self, tx: &Tx<'_>) -> Result<()> {
         let body = self.plain_text_body(tx.conn(), tx.rich_text())?;
-        tx.conn().execute_cached(
-            "insert into message_search_index(rowid, body) values (?, ?)",
-            params![self.id, body],
-        )?;
+        tx.conn().execute_cached("insert into message_search_index(rowid, body) values (?, ?)", params![self.id, body])?;
         Ok(())
     }
 
     fn update_in_index(&self, tx: &Tx<'_>) -> Result<()> {
         let body = self.plain_text_body(tx.conn(), tx.rich_text())?;
-        tx.conn().execute_cached(
-            "update message_search_index set body = ? where rowid = ?",
-            params![body, self.id],
-        )?;
+        tx.conn().execute_cached("update message_search_index set body = ? where rowid = ?", params![body, self.id])?;
         Ok(())
     }
 
@@ -622,17 +609,12 @@ impl Message {
     /// `plain_text_body`: `body.to_plain_text.presence || attachment&.filename&.to_s || ""`
     pub fn plain_text_body(&self, conn: &Connection, rich_text: &dyn RichText) -> Result<String> {
         if let Some(html) = self.body_html(conn)? {
-            let text = rich_text.to_plain_text(conn, &html, &|id| {
-                User::find_by_id(conn, id).ok().flatten().map(|u| u.name)
-            });
+            let text = rich_text.to_plain_text(conn, &html);
             if !text.trim().is_empty() {
                 return Ok(text);
             }
         }
-        Ok(self
-            .attachment(conn)?
-            .map(|(_, blob)| blob.filename)
-            .unwrap_or_default())
+        Ok(self.attachment(conn)?.map(|(_, blob)| blob.filename).unwrap_or_default())
     }
 
     /// `content_type`
@@ -647,11 +629,7 @@ impl Message {
     }
 
     /// `sound`: a body of exactly `/play <name>` naming a built-in sound.
-    pub fn sound(
-        &self,
-        conn: &Connection,
-        rich_text: &dyn RichText,
-    ) -> Result<Option<&'static Sound>> {
+    pub fn sound(&self, conn: &Connection, rich_text: &dyn RichText) -> Result<Option<&'static Sound>> {
         Ok(sound_in(&self.plain_text_body(conn, rich_text)?))
     }
 
@@ -661,11 +639,15 @@ impl Message {
     pub fn mentioning(conn: &Connection, rich_text: &dyn RichText, user_id: i64, limit: usize) -> Result<Vec<Self>> {
         let candidates = query_all(
             conn,
-            r#"SELECT "messages".*, "action_text_rich_texts"."body" AS "mention_body" FROM "messages"
+            concat!(
+                "SELECT ",
+                message_columns!(),
+                r#", "action_text_rich_texts"."body" AS "mention_body" FROM "messages"
                INNER JOIN "memberships" ON "memberships"."room_id" = "messages"."room_id" AND "memberships"."user_id" = ?
                INNER JOIN "action_text_rich_texts" ON "action_text_rich_texts"."record_type" = 'Message' AND "action_text_rich_texts"."record_id" = "messages"."id" AND "action_text_rich_texts"."name" = 'body'
                WHERE "messages"."creator_id" != ? AND "action_text_rich_texts"."body" LIKE '%vnd.campfire.mention%'
-               ORDER BY "messages"."created_at" DESC LIMIT 500"#,
+               ORDER BY "messages"."created_at" DESC LIMIT 500"#
+            ),
             params![user_id, user_id],
             |row| Ok((Self::from_row(row)?, row.get::<_, Option<String>>("mention_body")?)),
         )?;
@@ -698,18 +680,12 @@ pub fn mentionees_in_room(conn: &Connection, room_id: i64, user_ids: &[i64]) -> 
         return Ok(Vec::new());
     }
     let sql = format!(
-        r#"SELECT "users".* FROM "users" INNER JOIN "memberships" ON "users"."id" = "memberships"."user_id" WHERE "memberships"."room_id" = ? AND "users"."id" IN ({})"#,
+        r#"{} INNER JOIN "memberships" ON "users"."id" = "memberships"."user_id" WHERE "memberships"."room_id" = ? AND "users"."id" IN ({})"#,
+        User::SELECT,
         placeholders(user_ids.len())
     );
-    let values: Vec<i64> = std::iter::once(room_id)
-        .chain(user_ids.iter().copied())
-        .collect();
-    query_all(
-        conn,
-        &sql,
-        rusqlite::params_from_iter(values),
-        User::from_row,
-    )
+    let values: Vec<i64> = std::iter::once(room_id).chain(user_ids.iter().copied()).collect();
+    query_all(conn, &sql, rusqlite::params_from_iter(values), User::from_row)
 }
 
 /// `plain_text_body.match(/\A\/play (?<name>\w+)\z/)` then `Sound.find_by_name`.
@@ -723,9 +699,50 @@ pub fn sound_in(plain_text: &str) -> Option<&'static Sound> {
 }
 
 fn remove_from_index(tx: &Tx<'_>, id: i64) -> Result<()> {
-    tx.conn()
-        .execute_cached("delete from message_search_index where rowid = ?", [id])?;
+    tx.conn().execute_cached("delete from message_search_index where rowid = ?", [id])?;
     Ok(())
+}
+
+/// [`Message::search_reachable`]'s query: the user's id, then the `MATCH` terms. Ordered by the
+/// index's rowid, which is the message id, so SQLite walks the matches newest first and stops at
+/// the page; ordering by `created_at` collected and sorted every match first. Ids follow
+/// `created_at`: messages are only inserted by [`Message::create`], on the one writer thread,
+/// stamped inside their transaction.
+const SEARCH_PROBE_LIMIT: usize = 1000;
+
+pub(crate) fn search_reachable_sql() -> String {
+    format!(
+        "SELECT {}, memberships.user_id IS NOT NULL AS reachable FROM messages INNER JOIN rooms ON messages.room_id = rooms.id LEFT JOIN memberships ON rooms.id = memberships.room_id AND memberships.user_id = ? JOIN message_search_index idx ON messages.id = idx.rowid WHERE idx.body MATCH ? ORDER BY idx.rowid DESC LIMIT {SEARCH_PROBE_LIMIT}",
+        message_columns!()
+    )
+}
+
+fn search_index_page(conn: &Connection, user_id: i64, query: &str) -> Result<Option<Vec<Message>>> {
+    let mut stmt = conn.prepare_cached(&search_reachable_sql())?;
+    let mut rows = stmt.query(params![user_id, query])?;
+    let mut messages = Vec::new();
+    let mut examined = 0;
+    while let Some(row) = rows.next()? {
+        examined += 1;
+        if row.get::<_, bool>("reachable")? {
+            messages.push(Message::from_row(row)?);
+            if messages.len() == 100 {
+                return Ok(Some(reversed(messages)));
+            }
+        }
+    }
+    // Exhausting the global matches also proves that a short page is complete.
+    Ok((examined < SEARCH_PROBE_LIMIT).then(|| reversed(messages)))
+}
+
+/// [`Message::page_updated_since`]'s query, leaving out `excluding` ids: the room's id, those ids,
+/// then the time. Sorting on `+created_at`, which no index covers, has SQLite find the messages
+/// updated since through `(room_id, updated_at)` and sort just those, instead of walking the whole
+/// room by `(room_id, created_at)` looking for them.
+/// A room's [`Timeline::page_updated_since`] query, for the schema's index tests.
+#[cfg(test)]
+pub(crate) fn page_updated_since_sql(excluding: usize) -> String {
+    Timeline::Room(0).page_updated_since_sql(excluding)
 }
 
 fn reversed<T>(mut rows: Vec<T>) -> Vec<T> {

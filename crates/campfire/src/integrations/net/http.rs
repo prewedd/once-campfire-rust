@@ -82,11 +82,7 @@ pub struct Endpoint {
 impl Endpoint {
     /// `Net::HTTP#addr_port`: the `Host` header when the request doesn't carry one.
     pub fn host_header(&self) -> String {
-        let host = if self.host.contains(':') && !self.host.starts_with('[') {
-            format!("[{}]", self.host)
-        } else {
-            self.host.clone()
-        };
+        let host = if self.host.contains(':') && !self.host.starts_with('[') { format!("[{}]", self.host) } else { self.host.clone() };
         let default_port = if self.https { 443 } else { 80 };
         if self.port == default_port { host } else { format!("{host}:{}", self.port) }
     }
@@ -187,7 +183,14 @@ pub async fn exchange(net: &Network, endpoint: &Endpoint, request: Request, time
     let reason = response.extensions().get::<hyper::ext::ReasonPhrase>().map(|r| String::from_utf8_lossy(r.as_bytes()).into_owned());
     let (parts, body) = response.into_parts();
     let reason = reason.unwrap_or_else(|| parts.status.canonical_reason().unwrap_or("").to_string());
-    Ok(Response { status: parts.status.as_u16(), reason, headers: parts.headers, body, read_timeout: timeouts.read, decode_content: request.decode_content })
+    Ok(Response {
+        status: parts.status.as_u16(),
+        reason,
+        headers: parts.headers,
+        body,
+        read_timeout: timeouts.read,
+        decode_content: request.decode_content,
+    })
 }
 
 async fn connect(net: &Network, endpoint: &Endpoint) -> Result<Box<dyn Io>, HttpError> {
@@ -243,8 +246,7 @@ pub enum Body {
 impl Response {
     /// `response[name]`: every value of the header, joined with ", ".
     pub fn header(&self, name: &str) -> Option<String> {
-        let values: Vec<String> =
-            self.headers.get_all(name).iter().map(|v| String::from_utf8_lossy(v.as_bytes()).into_owned()).collect();
+        let values: Vec<String> = self.headers.get_all(name).iter().map(|v| String::from_utf8_lossy(v.as_bytes()).into_owned()).collect();
         if values.is_empty() { None } else { Some(values.join(", ")) }
     }
 
@@ -254,9 +256,9 @@ impl Response {
         let header = self.header("content-type")?;
         let media = header.split(';').next().unwrap_or("");
         let mut parts = media.split('/');
-        let main = parts.next().unwrap_or("").trim_matches(ruby_strip_char);
+        let main = ruby_compat::strip(parts.next().unwrap_or(""));
         match parts.next() {
-            Some(sub) => Some(format!("{main}/{}", sub.trim_matches(ruby_strip_char))),
+            Some(sub) => Some(format!("{main}/{}", ruby_compat::strip(sub))),
             None => Some(main.to_string()),
         }
     }
@@ -310,11 +312,6 @@ impl Response {
             _ => None,
         }
     }
-}
-
-/// Ruby's `String#strip`: whitespace and NUL.
-fn ruby_strip_char(c: char) -> bool {
-    matches!(c, ' ' | '\t' | '\n' | '\x0b' | '\x0c' | '\r' | '\0')
 }
 
 /// `Zlib::Inflate.new(32 + Zlib::MAX_WBITS)`: gzip or zlib, detected from the header.

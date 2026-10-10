@@ -107,7 +107,7 @@ fn unfurled_tweet_with_an_avatar_image_in_a_lexxy_body_gets_the_twitter_avatar_t
     let content = "<actiontext-opengraph-embed><div class=\"og-embed gap\"><div class=\"og-embed__content\"><div class=\"og-embed__title\"><a href=\"https://twitter.com/x/status/1\">Tweet</a></div><div class=\"og-embed__description\">desc</div></div><div class=\"og-embed__image\"><img src=\"https://pbs.twimg.com/profile_images/x.jpg\" class=\"image center\" alt=\"\" /></div></div></actiontext-opengraph-embed>";
     let body = format!(
         "<p><a href=\"https://twitter.com/x/status/1\">https://twitter.com/x/status/1</a></p><action-text-attachment content-type=\"application/vnd.actiontext.opengraph-embed\" content=\"{}\"></action-text-attachment>",
-        campfire_richtext::ruby::html_escape(content)
+        ruby_compat::erb::html_escape(content)
     );
     assert!(presentation(&body).contains("og-embed--twitter-avatar"));
 }
@@ -167,7 +167,9 @@ fn message_with_a_data_uri_link() {
 
 #[test]
 fn message_with_a_safe_link_and_formatting_is_preserved() {
-    let result = filtered("<div><a href=\"https://example.com\">example</a> <strong>bold</strong> <code>code</code><ul><li>one</li><li>two</li></ul></div>");
+    let result = filtered(
+        "<div><a href=\"https://example.com\">example</a> <strong>bold</strong> <code>code</code><ul><li>one</li><li>two</li></ul></div>",
+    );
     assert!(result.contains("<a href=\"https://example.com\">example</a>"));
     assert!(result.contains("<strong>bold</strong>"));
     assert!(result.contains("<code>code</code>"));
@@ -209,9 +211,11 @@ fn message_with_a_table_keeps_the_table() {
 #[test]
 fn message_with_a_mention_attachment() {
     let result = filtered(&format!("<div>Hey {}</div>", mention_attachment_for_david()));
-    assert!(result.contains(&format!(
-        "<action-text-attachment sgid=\"{DAVID_SGID}\" content-type=\"application/vnd.campfire.mention\" content=\""
-    )));
+    assert!(
+        result.contains(&format!(
+            "<action-text-attachment sgid=\"{DAVID_SGID}\" content-type=\"application/vnd.campfire.mention\" content=\""
+        ))
+    );
 }
 
 // --- test/helpers/messages_helper_test.rb -------------------------------------------------------
@@ -249,7 +253,9 @@ fn editable_attachment(body: &str) -> (String, String) {
 
 #[test]
 fn editable_body_renders_legacy_opengraph_embeds_into_the_content_attribute() {
-    let (_, content) = editable_attachment("<div>https://example.com/ <action-text-attachment content-type=\"application/vnd.actiontext.opengraph-embed\" url=\"https://example.com/image.png\" href=\"https://example.com/\" filename=\"Example title\" caption=\"Example description\"></action-text-attachment></div>");
+    let (_, content) = editable_attachment(
+        "<div>https://example.com/ <action-text-attachment content-type=\"application/vnd.actiontext.opengraph-embed\" url=\"https://example.com/image.png\" href=\"https://example.com/\" filename=\"Example title\" caption=\"Example description\"></action-text-attachment></div>",
+    );
     // A Trix-era embed has a url, so Lexxy leaves the content as the rendered partial
     assert!(content.contains("<a rel=\"noreferrer\" target=\"_blank\" href=\"https://example.com/\">Example title</a>"));
     assert!(content.contains("<div class=\"og-embed__description\">Example description</div>"));
@@ -261,7 +267,7 @@ fn editable_body_rebuilds_a_hand_written_embed_from_its_validated_details() {
     let content = "<actiontext-opengraph-embed data-controller=\"pwn\" data-action=\"click->pwn#run\"> <div class=\"og-embed\"><div class=\"og-embed__title\"><a href=\"/rooms/1\">Free cookies</a></div> <div class=\"og-embed__image\"><img src=\"/rooms/1/avatar\" data-action=\"load->pwn#run\"></div></div> </actiontext-opengraph-embed>";
     let body = format!(
         "<p><action-text-attachment content-type=\"application/vnd.actiontext.opengraph-embed\" url=\"https://example.com/image.png\" content=\"{}\"></action-text-attachment></p>",
-        campfire_richtext::ruby::html_escape(content)
+        ruby_compat::erb::html_escape(content)
     );
     let (_, rebuilt) = editable_attachment(&body);
     assert!(rebuilt.contains("Free cookies"));
@@ -352,8 +358,12 @@ fn drops_a_link_and_an_image_that_arent_web_urls() {
 #[test]
 fn drops_a_link_and_an_image_on_this_campfires_own_host_however_it_is_spelled() {
     for value in [
-        "https://once.campfire.test/rooms/1", "http://once.campfire.test/rooms/1", "https://ONCE.Campfire.Test/rooms/1",
-        "https://once.campfire.test./rooms/1", "https://%6fnce.campfire.test/rooms/1", "https://%77ww.example.com/x.png",
+        "https://once.campfire.test/rooms/1",
+        "http://once.campfire.test/rooms/1",
+        "https://ONCE.Campfire.Test/rooms/1",
+        "https://once.campfire.test./rooms/1",
+        "https://%6fnce.campfire.test/rooms/1",
+        "https://%77ww.example.com/x.png",
     ] {
         assert_eq!(web_url(Some(value), "once.campfire.test").unwrap(), None, "{value:?}");
     }
@@ -363,8 +373,14 @@ fn drops_a_link_and_an_image_on_this_campfires_own_host_however_it_is_spelled() 
 #[test]
 fn drops_a_link_and_an_image_on_a_bare_address_rather_than_a_domain_name() {
     for value in [
-        "http://127.0.0.1/rooms/1", "http://2130706433/rooms/1", "http://0177.0.0.1/rooms/1", "http://0x7f.0.0.1/rooms/1",
-        "http://1.2.3.0xff/rooms/1", "http://[::1]/rooms/1", "http://localhost/rooms/1", "https://203.0.113.10/image.png",
+        "http://127.0.0.1/rooms/1",
+        "http://2130706433/rooms/1",
+        "http://0177.0.0.1/rooms/1",
+        "http://0x7f.0.0.1/rooms/1",
+        "http://1.2.3.0xff/rooms/1",
+        "http://[::1]/rooms/1",
+        "http://localhost/rooms/1",
+        "https://203.0.113.10/image.png",
     ] {
         assert_eq!(web_url(Some(value), "").unwrap(), None, "{value:?}");
     }
@@ -377,7 +393,9 @@ fn keeps_an_internationalized_domain_written_in_punycode() {
 
 #[test]
 fn renders_the_title_and_the_description_as_text() {
-    let html = presentation("<action-text-attachment content-type=\"application/vnd.actiontext.opengraph-embed\" href=\"https://example.com/page\" url=\"https://example.com/image.png\" filename=\"&lt;b&gt;Title&lt;/b&gt;\" caption=\"&lt;img src=x onerror=alert(1)&gt;\"></action-text-attachment>");
+    let html = presentation(
+        "<action-text-attachment content-type=\"application/vnd.actiontext.opengraph-embed\" href=\"https://example.com/page\" url=\"https://example.com/image.png\" filename=\"&lt;b&gt;Title&lt;/b&gt;\" caption=\"&lt;img src=x onerror=alert(1)&gt;\"></action-text-attachment>",
+    );
     assert!(!html.contains("<b>"));
     assert!(!html.contains("<img src=x"));
     assert!(html.contains("&lt;b&gt;Title&lt;/b&gt;"));

@@ -7,11 +7,12 @@ use askama::Template;
 use campfire_db::{Boost, Message, Room};
 use campfire_kit::{Ctx, Error, Result, StatusCode, format, permit_keys};
 use campfire_views::messages as views;
+use ruby_compat::integer_cast;
 
 use super::present;
 use crate::app::AppCtx;
-use crate::concerns::{Before, before_actions, cast_integer, require_current_user};
-use crate::controllers::presenters::page::{self, Rendered, db_error};
+use crate::concerns::{Before, before_actions, require_current_user};
+use crate::controllers::presenters::page::{self, Rendered};
 use crate::controllers::presenters::user_view;
 
 pub async fn index(c: &mut Ctx) -> Result {
@@ -54,16 +55,16 @@ pub async fn destroy(c: &mut Ctx) -> Result {
 /// `Current.user.reachable_messages.find(params[:message_id])`
 async fn set_message(c: &mut Ctx) -> Result<Message> {
     let user_id = require_current_user(c)?.id;
-    let Some(id) = c.param_str("message_id").and_then(cast_integer) else { return Err(Error::NotFound) };
-    c.app().db.read(move |conn| Message::find_reachable(conn, user_id, id)).await.map_err(db_error)
+    let Some(id) = c.param_str("message_id").and_then(integer_cast) else { return Err(Error::NotFound) };
+    c.app().read(move |conn| Message::find_reachable(conn, user_id, id)).await
 }
 
 /// `@message.boosts.find_by!(id: params[:id], booster: Current.user)`
 pub(crate) async fn set_boost(c: &mut Ctx, message: &Message) -> Result<Boost> {
     let user_id = require_current_user(c)?.id;
-    let Some(id) = c.param_str("id").and_then(cast_integer) else { return Err(Error::NotFound) };
+    let Some(id) = c.param_str("id").and_then(integer_cast) else { return Err(Error::NotFound) };
     let message_id = message.id;
-    c.app().db.read(move |conn| Boost::find_by_message_and_booster(conn, message_id, id, user_id)).await.map_err(db_error)
+    c.app().read(move |conn| Boost::find_by_message_and_booster(conn, message_id, id, user_id)).await
 }
 
 /// `@message.boosts.create!(content:)`, boosted by `Current.user`.
@@ -72,15 +73,15 @@ pub(crate) async fn create_boost(c: &Ctx, message: &Message, content: Option<Str
     let message_id = message.id;
     // A nil content violates the column's NOT NULL (ActiveRecord::NotNullViolation, a 500).
     let content = content.ok_or_else(|| Error::internal(anyhow::anyhow!("NOT NULL constraint failed: boosts.content")))?;
-    c.app().db.write(move |tx| Boost::create(tx, message_id, booster_id, &content)).await.map_err(db_error)
+    c.app().write(move |tx| Boost::create(tx, message_id, booster_id, &content)).await
 }
 
 /// `@boost.destroy!` then `broadcast_remove`.
 pub(crate) async fn destroy_boost(c: &Ctx, message: &Message, boost: Boost) -> Result<()> {
     let destroyed = boost.clone();
-    c.app().db.write(move |tx| destroyed.destroy(tx)).await.map_err(db_error)?;
+    c.app().write(move |tx| destroyed.destroy(tx)).await?;
     let room_id = message.room_id;
-    let room = c.app().db.read(move |conn| Room::find(conn, room_id)).await.map_err(db_error)?;
+    let room = c.app().read(move |conn| Room::find(conn, room_id)).await?;
     c.app().broadcasts.boost_remove(&room, &boost);
     Ok(())
 }
@@ -89,18 +90,17 @@ pub(crate) async fn destroy_boost(c: &Ctx, message: &Message, boost: Boost) -> R
 pub(crate) async fn broadcast_create(c: &Ctx, message: &Message, boost: &Boost) -> Result<()> {
     let (app, message, boost) = (c.app().clone(), message.clone(), boost.clone());
     let base_url = page::renderer_base_url(c);
+    let renderer = page::DetachedRenderer::new(&app);
     c.app()
-        .db
         .read(move |conn| {
             let presenter = crate::controllers::presenters::Presenter::new(conn, &app, None);
             let view = presenter.boost(&boost)?;
             let account = campfire_db::Account::first(conn)?;
-            let html = page::render_detached_at(&app, account.as_ref(), &base_url, |ctx| views::boost(ctx, &view));
+            let html = renderer.render_at(&app, account.as_ref(), &base_url, |ctx| views::boost(ctx, &view));
             let room = Room::find(conn, message.room_id)?;
             let partials = Rendered { boost: Some(html), ..Rendered::default() };
             app.broadcasts.boost_create(&room, &message, &boost, &partials);
             Ok(())
         })
         .await
-        .map_err(db_error)
 }

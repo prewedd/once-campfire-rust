@@ -55,19 +55,15 @@ impl BodyError {
 
 /// Read and parse `body`. `original_method` is the method on the wire (Rack's `form_data?`
 /// treats a content-type-less POST as a form).
-pub async fn parse(
-    original_method: &Method,
-    headers: &HeaderMap,
-    body: Body,
-    limit: Option<usize>,
-) -> Result<ParsedBody, BodyError> {
+pub async fn parse(original_method: &Method, headers: &HeaderMap, body: Body, limit: Option<usize>) -> Result<ParsedBody, BodyError> {
     let content_type = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).filter(|ct| !ct.is_empty());
     let media = media_type(content_type);
 
     if matches!(media.as_deref(), Some("multipart/form-data" | "multipart/related" | "multipart/mixed"))
-        && let Some(boundary) = content_type.and_then(|ct| multer::parse_boundary(ct).ok()) {
-            return parse_multipart(body, boundary, limit).await;
-        }
+        && let Some(boundary) = content_type.and_then(|ct| multer::parse_boundary(ct).ok())
+    {
+        return parse_multipart(body, boundary, limit).await;
+    }
 
     // Everything but multipart (whose files spool to disk) is read into memory, so it's bounded
     // while it's read, whatever the configured limit.
@@ -136,10 +132,7 @@ async fn parse_multipart(body: Body, boundary: String, limit: Option<usize>) -> 
                         }
                         value.extend_from_slice(&chunk);
                     }
-                    pairs.push(RawPair {
-                        key: part.name().into_bytes(),
-                        value: Some(params::PairValue::Bytes(value)),
-                    });
+                    pairs.push(RawPair { key: part.name().into_bytes(), value: Some(params::PairValue::Bytes(value)) });
                 }
             }
         }
@@ -207,17 +200,11 @@ struct Part {
 
 impl Part {
     fn from_headers(headers: &HeaderMap) -> Self {
-        let head: String = headers
-            .iter()
-            .map(|(k, v)| format!("{}: {}\r\n", k.as_str(), String::from_utf8_lossy(v.as_bytes())))
-            .collect();
+        let head: String = headers.iter().map(|(k, v)| format!("{}: {}\r\n", k.as_str(), String::from_utf8_lossy(v.as_bytes()))).collect();
         let content_type = headers.get(header::CONTENT_TYPE).map(|v| String::from_utf8_lossy(v.as_bytes()).into_owned());
         let mut part = match headers.get(header::CONTENT_DISPOSITION) {
             Some(disposition) => parse_disposition(&String::from_utf8_lossy(disposition.as_bytes())),
-            None => Part {
-                name: headers.get("content-id").map(|v| String::from_utf8_lossy(v.as_bytes()).into_owned()),
-                ..Part::default()
-            },
+            None => Part { name: headers.get("content-id").map(|v| String::from_utf8_lossy(v.as_bytes()).into_owned()), ..Part::default() },
         };
         part.content_type = content_type;
         part.head = head;
@@ -228,10 +215,7 @@ impl Part {
     fn name(&self) -> String {
         match self.name.as_deref() {
             Some(name) if !name.is_empty() => name.to_string(),
-            _ => self
-                .filename
-                .clone()
-                .unwrap_or_else(|| format!("{}[]", self.content_type.as_deref().unwrap_or("text/plain"))),
+            _ => self.filename.clone().unwrap_or_else(|| format!("{}[]", self.content_type.as_deref().unwrap_or("text/plain"))),
         }
     }
 }
@@ -349,10 +333,7 @@ mod tests {
             &[
                 (r#"Content-Disposition: form-data; name="_method""#, "patch"),
                 (r#"Content-Disposition: form-data; name="user[name]""#, "Jo"),
-                (
-                    "Content-Disposition: form-data; name=\"user[avatar]\"; filename=\"me.png\"\r\nContent-Type: image/png",
-                    "PNGDATA",
-                ),
+                ("Content-Disposition: form-data; name=\"user[avatar]\"; filename=\"me.png\"\r\nContent-Type: image/png", "PNGDATA"),
                 (r#"Content-Disposition: form-data; name="user[empty]"; filename="""#, ""),
                 (r#"Content-Disposition: form-data; name="tags[]""#, "a"),
                 (r#"Content-Disposition: form-data; name="tags[]""#, "b"),

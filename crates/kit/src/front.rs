@@ -36,6 +36,7 @@ use axum::extract::ConnectInfo;
 use tower::ServiceExt;
 
 pub use acme::{AcmeOptions, CertManager};
+pub use cache::{CachedResponse, MemoryCache};
 pub use config::{FrontConfig, LETS_ENCRYPT_URL};
 pub use conn::{Options, Protocol, Service, Shutdown, bind};
 pub use handler::{ConnInfo, Handler};
@@ -101,7 +102,12 @@ pub async fn serve_with(
 /// TARGET_PORT for it): HTTP/1.1, no `Date`, no cache or compression. Unlike Puma it listens on
 /// TARGET_BIND (loopback) and keeps to the front's timeouts and body limit, since whoever reaches
 /// it can claim any `X-Forwarded-*`.
-async fn serve_upstream(config: &FrontConfig, app: Router, options: Options, shutdown: Shutdown) -> std::io::Result<tokio::task::JoinHandle<()>> {
+async fn serve_upstream(
+    config: &FrontConfig,
+    app: Router,
+    options: Options,
+    shutdown: Shutdown,
+) -> std::io::Result<tokio::task::JoinHandle<()>> {
     if config.target_port == config.http_port || (config.has_tls() && config.target_port == config.https_port) {
         tracing::warn!(port = config.target_port, "TARGET_PORT is the front server's port; not listening on it separately");
         return Ok(tokio::spawn(async {}));

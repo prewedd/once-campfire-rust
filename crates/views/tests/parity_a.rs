@@ -6,8 +6,8 @@
 mod support;
 
 use askama::Template;
-use campfire_views::*;
 use campfire_views::helpers as h;
+use campfire_views::*;
 use support::dom::{diff, normalize_html};
 use support::facts::*;
 
@@ -105,7 +105,19 @@ fn sessions_transfer() {
     let html = with_context(name, Request::default(), |ctx| {
         sessions::TransferShow { ctx, action: case(name)["path"].as_str().unwrap().into() }.render().unwrap()
     });
-    assert_parity(name, "html", html);
+    assert_eq!(html.matches("<form ").count(), html.matches("</form>").count());
+    let controller = "data-controller=\"auto-submit\"";
+    assert_eq!(html.matches(controller).count(), 1);
+    let start = html.find(controller).unwrap();
+    let end = start + html[start..].find("</form>").unwrap();
+    let form = &html[start..end];
+    assert!(form.contains("name=\"_method\" value=\"put\""));
+    assert!(!form.contains("<form "));
+    // The pinned reference omits this closing tag. Require the complete form above,
+    // then compare the rest of the page without changing historical fixtures.
+    let mut legacy = html;
+    legacy.replace_range(end..end + "</form>".len(), "");
+    assert_parity(name, "html", legacy);
 }
 
 fn user_summary(value: &serde_json::Value) -> users::UserSummary {
@@ -191,9 +203,7 @@ fn bots(name: &str) -> Vec<accounts::Bot> {
                 .unwrap()
                 .iter()
                 .filter(|m| m["user_id"].as_i64() == Some(user.id))
-                .filter_map(|m| {
-                    facts["rooms"].as_object().unwrap().values().find(|room| room["id"] == m["room_id"])
-                })
+                .filter_map(|m| facts["rooms"].as_object().unwrap().values().find(|room| room["id"] == m["room_id"]))
                 .filter(|room| room["type"] != "Rooms::Direct")
                 .map(|room| accounts::BotRoom { id: room["id"].as_i64().unwrap(), name: room["name"].as_str().unwrap().into() })
                 .collect();
@@ -347,7 +357,10 @@ fn profile_memberships(list: &serde_json::Value) -> Vec<users::ProfileMembership
 /// The profile is laid out as Slack's "Edit profile" (plans/redesign.md).
 #[test]
 fn users_profiles_show() {
-    for ua in ["chrome_mac", "chrome_windows", "safari_mac", "safari_ios", "chrome_android", "firefox_mac", "firefox_android", "edge_windows", "kevin", "with_avatar"] {
+    for ua in [
+        "chrome_mac", "chrome_windows", "safari_mac", "safari_ios", "chrome_android", "firefox_mac", "firefox_android", "edge_windows",
+        "kevin", "with_avatar",
+    ] {
         let name = format!("profile_{ua}");
         let name = name.as_str();
         let html = with_context(name, Request::default(), |ctx| {
@@ -451,7 +464,7 @@ fn users_sidebars_show() {
     let name = "sidebar_frame";
     let html = with_context(name, Request::default(), |ctx| {
         let page = sidebar(name, ctx);
-        layouts::frame(ctx, page.as_head(), page.as_content()).unwrap()
+        layouts::frame(ctx, page.as_head(), page.as_content()).unwrap().to_string()
     });
     assert_parity(name, "html", html);
 }
@@ -503,7 +516,9 @@ fn autocompletable_users() {
 fn users_avatars_show() {
     for (name, shown) in [("avatar_david", "David"), ("avatar_three_initials", "Anna Bea Cole")] {
         let user = user(name, shown);
-        let svg = users::AvatarSvg { user_id: user["id"].as_i64().unwrap(), initials: user["initials"].as_str().unwrap().into() }.render().unwrap();
+        let svg = users::AvatarSvg { user_id: user["id"].as_i64().unwrap(), initials: user["initials"].as_str().unwrap().into() }
+            .render()
+            .unwrap();
         assert_parity(name, "svg", svg.clone());
         assert_eq!(svg, golden(name, "svg"), "{name}: bytes differ");
     }
@@ -593,7 +608,9 @@ fn users_partials() {
     assert_parity(name, "html", html);
 
     let name = "ban_button_banned";
-    let html = with_context(name, Request { partial: true, ..Default::default() }, |ctx| users::BanButton { ctx, user: named(name, "Spam Ham") }.render().unwrap());
+    let html = with_context(name, Request { partial: true, ..Default::default() }, |ctx| {
+        users::BanButton { ctx, user: named(name, "Spam Ham") }.render().unwrap()
+    });
     assert_parity(name, "html", html);
 
     for (name, room_name, unread) in [("shared_room_unread", "HQ", true), ("shared_room", "All Talk", false)] {
@@ -614,7 +631,7 @@ fn users_partials() {
 
     let name = "user_json";
     let jz = user(name, "JZ");
-    let json = h::to_rails_json(&campfire_views::messages::json::UserJson {
+    let json = rails_compat::json::encode(&campfire_views::messages::json::UserJson {
         id: jz["id"].as_i64().unwrap(),
         name: "JZ".into(),
         role: jz["role"].as_str().unwrap().into(),

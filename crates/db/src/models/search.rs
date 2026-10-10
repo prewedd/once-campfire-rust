@@ -45,11 +45,7 @@ impl Search {
     }
 
     pub fn count_for_user(conn: &Connection, user_id: i64) -> Result<i64> {
-        sql::count(
-            conn,
-            r#"SELECT COUNT(*) FROM "searches" WHERE "searches"."user_id" = ?"#,
-            [user_id],
-        )
+        sql::count(conn, r#"SELECT COUNT(*) FROM "searches" WHERE "searches"."user_id" = ?"#, [user_id])
     }
 
     /// `user.searches.record(query)`: `find_or_create_by(query:).touch`. Creating trims the
@@ -66,10 +62,7 @@ impl Search {
             None => Self::create(tx, user_id, query)?,
         };
         let now = tx.now();
-        tx.conn().execute_cached(
-            r#"UPDATE "searches" SET "updated_at" = ? WHERE "searches"."id" = ?"#,
-            params![now, search.id],
-        )?;
+        tx.conn().execute_cached(r#"UPDATE "searches" SET "updated_at" = ? WHERE "searches"."id" = ?"#, params![now, search.id])?;
         search.updated_at = now;
         Ok(search)
     }
@@ -82,26 +75,15 @@ impl Search {
             |r| r.get(0),
         )?;
         trim_recent_searches(tx, user_id)?;
-        Ok(Self {
-            id,
-            user_id,
-            query: query.into(),
-            created_at: now,
-            updated_at: now,
-        })
+        Ok(Self { id, user_id, query: query.into(), created_at: now, updated_at: now })
     }
 
     /// `user.searches.destroy_all`
     pub fn destroy_all_for_user(tx: &mut Tx<'_>, user_id: i64) -> Result<()> {
-        let ids: Vec<i64> = query_all(
-            tx.conn(),
-            r#"SELECT "searches"."id" FROM "searches" WHERE "searches"."user_id" = ?"#,
-            [user_id],
-            |r| r.get(0),
-        )?;
+        let ids: Vec<i64> =
+            query_all(tx.conn(), r#"SELECT "searches"."id" FROM "searches" WHERE "searches"."user_id" = ?"#, [user_id], |r| r.get(0))?;
         for id in ids {
-            tx.conn()
-                .execute_cached(r#"DELETE FROM "searches" WHERE "searches"."id" = ?"#, [id])?;
+            tx.conn().execute_cached(r#"DELETE FROM "searches" WHERE "searches"."id" = ?"#, [id])?;
         }
         Ok(())
     }
@@ -125,12 +107,9 @@ fn trim_recent_searches(tx: &Tx<'_>, user_id: i64) -> Result<()> {
     } else {
         values.extend(keep);
     }
-    let doomed: Vec<i64> = query_all(tx.conn(), &sql, rusqlite::params_from_iter(values), |r| {
-        r.get(0)
-    })?;
+    let doomed: Vec<i64> = query_all(tx.conn(), &sql, rusqlite::params_from_iter(values), |r| r.get(0))?;
     for id in doomed {
-        tx.conn()
-            .execute_cached(r#"DELETE FROM "searches" WHERE "searches"."id" = ?"#, [id])?;
+        tx.conn().execute_cached(r#"DELETE FROM "searches" WHERE "searches"."id" = ?"#, [id])?;
     }
     Ok(())
 }

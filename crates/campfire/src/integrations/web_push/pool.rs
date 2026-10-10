@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use campfire_db::{Connection, PushPayload, PushSubscription};
-use tokio::sync::{Notify, Semaphore};
+use tokio::sync::Semaphore;
 
 use super::{Notification, VapidConfig};
 use crate::integrations::net::Network;
@@ -17,6 +17,8 @@ use crate::integrations::net::Network;
 /// `Concurrent::ThreadPoolExecutor.new(max_threads: 50, max_queue: 10000)`
 const MAX_THREADS: usize = 50;
 const MAX_QUEUE: usize = 10_000;
+/// Deliveries running or waiting.
+const QUEUE_SLOTS: usize = MAX_THREADS + MAX_QUEUE;
 
 type Handler = Box<dyn Fn(i64) -> Result<(), String> + Send>;
 
@@ -30,10 +32,10 @@ struct Inner {
     vapid: VapidConfig,
     runtime: tokio::runtime::Handle,
     running: Semaphore,
-    pending: AtomicUsize,
+    /// A delivery holds one of these until it finishes, or unwinds.
+    slots: Arc<Semaphore>,
     /// Deliveries dropped since the queue was last accepting them.
     dropped: AtomicUsize,
-    idle: Notify,
     shut_down: AtomicBool,
     invalidations: Mutex<Option<mpsc::Sender<i64>>>,
     invalidator: Mutex<Option<std::thread::JoinHandle<()>>>,
@@ -72,9 +74,8 @@ impl Pool {
                 vapid,
                 runtime: tokio::runtime::Handle::current(),
                 running: Semaphore::new(MAX_THREADS),
-                pending: AtomicUsize::new(0),
+                slots: Arc::new(Semaphore::new(QUEUE_SLOTS)),
                 dropped: AtomicUsize::new(0),
-                idle: Notify::new(),
                 shut_down: AtomicBool::new(false),
                 invalidations: Mutex::new(Some(sender)),
                 invalidator: Mutex::new(Some(invalidator)),
@@ -98,24 +99,22 @@ impl Pool {
             tracing::warn!("WebPush::Pool is shut down, dropping a notification");
             return;
         }
-        if inner.pending.fetch_add(1, Ordering::SeqCst) >= MAX_THREADS + MAX_QUEUE {
-            inner.pending.fetch_sub(1, Ordering::SeqCst);
+        let Ok(slot) = inner.slots.clone().try_acquire_owned() else {
             if inner.dropped.fetch_add(1, Ordering::SeqCst) == 0 {
                 tracing::error!("WebPush::Pool is full, dropping notifications");
             }
             return;
-        }
+        };
         let dropped = inner.dropped.swap(0, Ordering::SeqCst);
         if dropped > 0 {
             tracing::error!("WebPush::Pool dropped {dropped} notifications while it was full");
         }
         let pool = self.inner.clone();
         inner.runtime.spawn(async move {
-            if let Ok(_permit) = pool.running.acquire().await {
+            // Released when the delivery finishes, or when Tokio drops the task after a panic.
+            let _slot = slot;
+            if let Ok(_running) = pool.running.acquire().await {
                 pool.deliver(&notification).await;
-            }
-            if pool.pending.fetch_sub(1, Ordering::SeqCst) == 1 {
-                pool.idle.notify_waiters();
             }
         });
     }
@@ -125,16 +124,8 @@ impl Pool {
     pub async fn shutdown(&self) {
         let inner = &self.inner;
         inner.shut_down.store(true, Ordering::SeqCst);
-        let drained = async {
-            loop {
-                let idle = inner.idle.notified();
-                if inner.pending.load(Ordering::SeqCst) == 0 {
-                    break;
-                }
-                idle.await;
-            }
-        };
-        let _ = tokio::time::timeout(Duration::from_secs(1), drained).await;
+        // Every slot free means nothing is queued or running.
+        let _ = tokio::time::timeout(Duration::from_secs(1), inner.slots.acquire_many(QUEUE_SLOTS as u32)).await;
         inner.invalidations.lock().unwrap().take();
         let worker = inner.invalidator.lock().unwrap().take();
         if let Some(worker) = worker {
@@ -149,7 +140,7 @@ impl Pool {
     /// Queued or running deliveries.
     #[cfg(test)]
     pub fn pending(&self) -> usize {
-        self.inner.pending.load(Ordering::SeqCst)
+        QUEUE_SLOTS - self.inner.slots.available_permits()
     }
 }
 

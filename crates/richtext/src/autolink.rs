@@ -8,12 +8,13 @@
 //! closed the attribute and turned the rest of its value into markup. With them escaped, every `<`
 //! and `>` in the text is a tag's, so auto_link only ever inserts links between tags.
 
-
 use regex::Regex;
+use ruby_compat::erb::html_escape;
+use ruby_compat::url_encode;
 use std::sync::LazyLock;
 
 use crate::dom::ParseError;
-use crate::ruby::{html_escape, is_blank, url_encode};
+use crate::ruby::is_blank;
 use crate::sanitizer::{SafeList, sanitize, sanitize_with_escaped_attribute_brackets};
 
 /// `AUTO_LINK_RE`. Ruby's `\s` and `\w` are ASCII-only.
@@ -25,9 +26,8 @@ static AUTO_LINK_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// `AUTO_EMAIL_RE` without its lookbehind, which is checked separately.
-static AUTO_EMAIL_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\A[a-zA-Z0-9_.!#$%+-]\.?[a-zA-Z0-9_.!#$%&'*/=?^`{|}~+-]*@[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)+").unwrap()
-});
+static AUTO_EMAIL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\A[a-zA-Z0-9_.!#$%+-]\.?[a-zA-Z0-9_.!#$%&'*/=?^`{|}~+-]*@[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)+").unwrap());
 
 fn is_email_local_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || "_.!#$%&'*/=?^`{|}~+-".contains(c)
@@ -57,8 +57,13 @@ struct TagIndex {
 impl TagIndex {
     fn new(text: &str) -> Self {
         let bytes = text.as_bytes();
-        let mut index =
-            TagIndex { lts: Vec::new(), gts: Vec::new(), first_dangling_newline: None, open_anchors: Vec::new(), close_anchors: Vec::new() };
+        let mut index = TagIndex {
+            lts: Vec::new(),
+            gts: Vec::new(),
+            first_dangling_newline: None,
+            open_anchors: Vec::new(),
+            close_anchors: Vec::new(),
+        };
         // The first `<` since the last `>`
         let mut unclosed_lt: Option<usize> = None;
         for (i, &b) in bytes.iter().enumerate() {
@@ -195,10 +200,11 @@ fn auto_link_urls(text: &str) -> Result<String, ParseError> {
             punctuation.push(c);
             brackets.remove(c);
             if let Some(opening) = opening_bracket(c)
-                && brackets.count(opening) > brackets.count(c) {
-                    href.push(punctuation.pop().unwrap());
-                    break;
-                }
+                && brackets.count(opening) > brackets.count(c)
+            {
+                href.push(punctuation.pop().unwrap());
+                break;
+            }
         }
         let mut trailing_gt = "";
         if let Some(stripped) = href.strip_suffix("&gt;") {
@@ -209,8 +215,8 @@ fn auto_link_urls(text: &str) -> Result<String, ParseError> {
         if scheme.is_none() {
             href = format!("http://{href}");
         }
-        let link_text = sanitize(&link_text, &SafeList::defaults())?;
-        let href = sanitize(&href, &SafeList::defaults())?;
+        let link_text = sanitize(&link_text, SafeList::defaults())?;
+        let href = sanitize(&href, SafeList::defaults())?;
         // content_tag(:a, link_text, attrs, false): nothing escaped but double quotes in attributes
         out.push_str(&format!("<a target=\"_blank\" href=\"{}\">{}</a>", href.replace('"', "&quot;"), link_text));
         // SafeBuffer#+ escapes the (unsafe) punctuation string
@@ -240,9 +246,9 @@ fn auto_link_email_addresses(text: &str) -> Result<String, ParseError> {
         if tags.auto_linked(start, end) {
             out.push_str(email);
         } else {
-            let sanitized = sanitize(email, &SafeList::defaults())?;
+            let sanitized = sanitize(email, SafeList::defaults())?;
             // display_text is only sanitized (and so marked safe) when sanitizing changed the address
-            let display = if sanitized == email { html_escape(email) } else { sanitize(email, &SafeList::defaults())? };
+            let display = if sanitized == email { html_escape(email) } else { sanitized.clone() };
             let href = format!("mailto:{}", url_encode(&sanitized).replace("%40", "@"));
             out.push_str(&format!("<a target=\"_blank\" href=\"{}\">{}</a>", html_escape(&href), display));
         }

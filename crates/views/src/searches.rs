@@ -3,10 +3,10 @@
 use askama::Template;
 use serde::Deserialize;
 
+use crate::ViewContext;
 use crate::helpers as h;
 use crate::layouts::Page;
 use crate::messages::MessageItem;
-use crate::ViewContext;
 
 /// What `searches/index` shows.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -43,7 +43,7 @@ impl Page for Index<'_> {
 
 /// `searches_path(q: query)`.
 pub fn search_path(query: &str) -> String {
-    format!("{}?q={}", campfire_routes::searches(), h::url::cgi_escape(query))
+    format!("{}?q={}", campfire_routes::searches(), ruby_compat::cgi_escape(query))
 }
 
 #[cfg(test)]

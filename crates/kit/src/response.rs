@@ -2,10 +2,13 @@
 //! ETags, conditional GET, HEAD) and hands them to hyper.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use axum::body::Bytes;
 use axum::http::header::{self, HeaderName, HeaderValue};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{Extensions, HeaderMap, StatusCode};
+
+use crate::deflater::splice::PageParts;
 
 pub const HTML_UTF8: &str = "text/html; charset=utf-8";
 pub const JSON_UTF8: &str = "application/json; charset=utf-8";
@@ -16,19 +19,36 @@ pub struct Response {
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub body: Body,
-    /// Cached fragments in the body, in order: the ETag and gzip reuse their digests and
-    /// compressed pieces instead of working through the whole body.
-    pub cached_fragments: Vec<std::sync::Arc<String>>,
-    /// The body split at `cached_fragments`, once the kit has finished the response.
-    pub(crate) page_parts: Option<std::sync::Arc<crate::deflater::splice::PageParts>>,
+    /// App middleware state carried through response finalization.
+    pub extensions: Extensions,
+    /// The body's SHA-256, when `Rack::ETag` digested it.
+    pub(crate) body_digest: Option<crate::deflater::BodyDigest>,
 }
 
 pub enum Body {
     Empty,
     Bytes(Bytes),
+    /// A page with cached fragments, in parts: the ETag and gzip reuse the fragments' digests and
+    /// compressed pieces instead of working through the whole body, which is never joined.
+    Parts(Arc<PageParts>),
     File(FileBody),
     /// A streaming body (e.g. a proxied blob); never ETagged.
     Stream(axum::body::Body),
+}
+
+impl Body {
+    /// The body `text` makes with each of `fragments` (cached HTML, in order) spliced in at its
+    /// byte offset in `text`, as a template recorded them while it rendered.
+    ///
+    /// # Panics
+    ///
+    /// If an offset is past the end of `text` or before the previous one.
+    pub fn spliced(text: impl Into<Bytes>, fragments: Vec<(usize, Arc<String>)>) -> Self {
+        match PageParts::splice(&text.into(), fragments) {
+            Ok(parts) => Body::Parts(Arc::new(parts)),
+            Err(whole) => Body::Bytes(whole),
+        }
+    }
 }
 
 impl std::fmt::Debug for Body {
@@ -36,6 +56,7 @@ impl std::fmt::Debug for Body {
         match self {
             Body::Empty => f.write_str("Empty"),
             Body::Bytes(bytes) => write!(f, "Bytes({} bytes)", bytes.len()),
+            Body::Parts(parts) => write!(f, "Parts({} bytes)", parts.body_len()),
             Body::File(file) => write!(f, "File({:?})", file),
             Body::Stream(_) => f.write_str("Stream"),
         }
@@ -52,17 +73,11 @@ pub struct FileBody {
 
 impl Response {
     pub fn new(status: StatusCode) -> Self {
-        Self { status, headers: HeaderMap::new(), body: Body::Empty, cached_fragments: Vec::new(), page_parts: None }
+        Self { status, headers: HeaderMap::new(), body: Body::Empty, extensions: Extensions::new(), body_digest: None }
     }
 
     pub fn with_body(status: StatusCode, content_type: &str, body: impl Into<Bytes>) -> Self {
         Self::new(status).content_type(content_type).body(body)
-    }
-
-    /// Marks `fragments` (cached HTML, in body order) as appearing in the body as they are.
-    pub fn with_cached_fragments(mut self, fragments: Vec<std::sync::Arc<String>>) -> Self {
-        self.cached_fragments = fragments;
-        self
     }
 
     pub fn body(mut self, body: impl Into<Bytes>) -> Self {
@@ -74,10 +89,11 @@ impl Response {
         self.header(header::CONTENT_TYPE, content_type)
     }
 
-    /// Set (replace) a header. Panics on an invalid header value, which is a programming error.
+    /// Set (replace) a header, as Puma would write the value (see `set_header_value`). Panics on
+    /// an invalid header name, which is a programming error.
     pub fn header(mut self, name: impl TryInto<HeaderName>, value: &str) -> Self {
         let name = name.try_into().unwrap_or_else(|_| panic!("invalid header name"));
-        self.headers.insert(name, HeaderValue::from_str(value).expect("invalid header value"));
+        set_header_value(&mut self.headers, name, value);
         self
     }
 
@@ -98,69 +114,30 @@ impl Response {
     }
 }
 
-/// `Content-Disposition` as `ActionDispatch::Http::ContentDisposition.format` builds it.
-pub fn content_disposition(disposition: &str, filename: Option<&str>) -> String {
-    match filename {
-        Some(filename) => format!(
-            "{disposition}; filename=\"{}\"; filename*=UTF-8''{}",
-            percent_escape(&transliterate(filename), |b| {
-                b == b' ' || b.is_ascii_alphanumeric() || b"!#$+.^_`|~-".contains(&b)
-            }),
-            percent_escape(filename, |b| b.is_ascii_alphanumeric() || b"!#$&+.^_`|~-".contains(&b)),
-        ),
-        None => disposition.to_string(),
+/// Replaces `name` with `value` the way Puma writes a Rack header (puma 7.2.1,
+/// `Puma::Request#str_headers`). A value with a line break goes out one line per header line
+/// (`split("\n")`, which drops trailing empty lines), and a line holding any other control
+/// character (`ILLEGAL_HEADER_VALUE_REGEX`) is left out. Values come from the request at times,
+/// like `?disposition=` on a proxied blob. Puma writes a DEL, which Thruster then refuses with a
+/// 502; that line is left out too.
+pub(crate) fn set_header_value(headers: &mut HeaderMap, name: HeaderName, value: &str) {
+    if let Ok(value) = HeaderValue::from_str(value) {
+        headers.insert(name, value);
+        return;
+    }
+    headers.remove(&name);
+    let mut lines: Vec<&str> = value.split('\n').collect();
+    while lines.last() == Some(&"") {
+        lines.pop();
+    }
+    for line in lines.into_iter().filter_map(|line| HeaderValue::from_str(line).ok()) {
+        headers.append(name.clone(), line);
     }
 }
 
-fn percent_escape(s: &str, keep: impl Fn(u8) -> bool) -> String {
-    let mut out = String::with_capacity(s.len());
-    for byte in s.bytes() {
-        if keep(byte) {
-            out.push(byte as char);
-        } else {
-            out.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    out
-}
-
-/// `I18n.transliterate` with the default rules: Latin letters lose their accents, anything else
-/// non-ASCII becomes `?`.
-fn transliterate(s: &str) -> String {
-    s.chars()
-        .map(|c| {
-            if c.is_ascii() {
-                return c.to_string();
-            }
-            let base = match c {
-                'À'..='Å' => "A",
-                'Æ' => "AE",
-                'Ç' => "C",
-                'È'..='Ë' => "E",
-                'Ì'..='Ï' => "I",
-                'Ð' => "D",
-                'Ñ' => "N",
-                'Ò'..='Ö' | 'Ø' => "O",
-                'Ù'..='Ü' => "U",
-                'Ý' => "Y",
-                'Þ' => "Th",
-                'ß' => "ss",
-                'à'..='å' => "a",
-                'æ' => "ae",
-                'ç' => "c",
-                'è'..='ë' => "e",
-                'ì'..='ï' => "i",
-                'ð' => "d",
-                'ñ' => "n",
-                'ò'..='ö' | 'ø' => "o",
-                'ù'..='ü' => "u",
-                'ý' | 'ÿ' => "y",
-                'þ' => "th",
-                _ => "?",
-            };
-            base.to_string()
-        })
-        .collect()
+/// `Content-Disposition` as `ActionDispatch::Http::ContentDisposition#to_s` builds it.
+fn content_disposition(disposition: &str, filename: Option<&str>) -> String {
+    filename.map_or_else(|| disposition.to_string(), |filename| rails_compat::content_disposition::format(disposition, filename))
 }
 
 /// Options for `send_file` / `send_data`.
@@ -172,19 +149,11 @@ pub struct SendOptions {
     /// `disposition:`; `None` omits the header. Defaults to `attachment`.
     pub disposition: Option<String>,
     pub status: StatusCode,
-    /// Honor `Range` requests (206/416). Rails' `send_file` doesn't; Active Storage's proxy does.
-    pub ranges: bool,
 }
 
 impl Default for SendOptions {
     fn default() -> Self {
-        Self {
-            filename: None,
-            content_type: None,
-            disposition: Some("attachment".into()),
-            status: StatusCode::OK,
-            ranges: false,
-        }
+        Self { filename: None, content_type: None, disposition: Some("attachment".into()), status: StatusCode::OK }
     }
 }
 
@@ -194,8 +163,9 @@ impl SendOptions {
     }
 }
 
-/// `send_file_headers!` then the body: file or bytes.
-pub(crate) fn send(options: &SendOptions, range_header: Option<&str>, body: SendBody) -> Response {
+/// `send_file_headers!` then the body: file or bytes, whole, whatever the `Range` header asks for
+/// (as Rails' `send_file` and `send_data` do).
+pub(crate) fn send(options: &SendOptions, body: SendBody) -> Response {
     let content_type = options.content_type.clone().unwrap_or_else(|| {
         options
             .filename
@@ -210,91 +180,16 @@ pub(crate) fn send(options: &SendOptions, range_header: Option<&str>, body: Send
         response = response.header(header::CONTENT_DISPOSITION, &content_disposition(disposition, options.filename.as_deref()));
     }
     response = response.header("content-transfer-encoding", "binary");
-
-    let total = body.len();
-    let range = if options.ranges {
-        response = response.header(header::ACCEPT_RANGES, "bytes");
-        range_header.map(|h| parse_range(h, total))
-    } else {
-        None
+    response.body = match body {
+        SendBody::File(path, len) => Body::File(FileBody { path, offset: 0, len }),
+        SendBody::Bytes(bytes) => Body::Bytes(bytes),
     };
-
-    match range {
-        Some(RangeResult::Unsatisfiable) => {
-            let mut response = Response::new(StatusCode::RANGE_NOT_SATISFIABLE)
-                .header(header::CONTENT_RANGE, &format!("bytes */{total}"));
-            response.body = Body::Empty;
-            response
-        }
-        Some(RangeResult::Range(start, end)) => {
-            response.status = StatusCode::PARTIAL_CONTENT;
-            response = response.header(header::CONTENT_RANGE, &format!("bytes {start}-{end}/{total}"));
-            response.body = body.slice(start, end - start + 1);
-            response
-        }
-        None | Some(RangeResult::Ignore) => {
-            response.body = body.slice(0, total);
-            response
-        }
-    }
+    response
 }
 
 pub(crate) enum SendBody {
     File(PathBuf, u64),
     Bytes(Bytes),
-}
-
-impl SendBody {
-    fn len(&self) -> u64 {
-        match self {
-            SendBody::File(_, len) => *len,
-            SendBody::Bytes(bytes) => bytes.len() as u64,
-        }
-    }
-
-    fn slice(self, offset: u64, len: u64) -> Body {
-        match self {
-            SendBody::File(path, _) => Body::File(FileBody { path, offset, len }),
-            SendBody::Bytes(bytes) => Body::Bytes(bytes.slice(offset as usize..(offset + len) as usize)),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-enum RangeResult {
-    Range(u64, u64),
-    Unsatisfiable,
-    /// Malformed or multi-range: serve the whole thing.
-    Ignore,
-}
-
-/// `Rack::Utils.get_byte_ranges`, for the single-range case.
-fn parse_range(header: &str, size: u64) -> RangeResult {
-    let Some(spec) = header.trim().strip_prefix("bytes=") else { return RangeResult::Ignore };
-    let ranges: Vec<&str> = spec.split(',').map(str::trim).collect();
-    if ranges.len() != 1 {
-        return RangeResult::Ignore;
-    }
-    let Some((first, last)) = ranges[0].split_once('-') else { return RangeResult::Ignore };
-    let parse = |s: &str| if s.is_empty() { Some(None) } else { s.parse::<u64>().ok().map(Some) };
-    let (Some(first), Some(last)) = (parse(first.trim()), parse(last.trim())) else { return RangeResult::Ignore };
-    let (start, end) = match (first, last) {
-        (None, None) => return RangeResult::Ignore,
-        (None, Some(suffix)) => {
-            if suffix == 0 {
-                return RangeResult::Unsatisfiable;
-            }
-            (size.saturating_sub(suffix), size.saturating_sub(1))
-        }
-        (Some(start), None) => (start, size.saturating_sub(1)),
-        (Some(start), Some(end)) => {
-            if end < start {
-                return RangeResult::Ignore;
-            }
-            (start, end.min(size.saturating_sub(1)))
-        }
-    };
-    if size == 0 || start >= size { RangeResult::Unsatisfiable } else { RangeResult::Range(start, end) }
 }
 
 /// `Cache-Control` directives set by `expires_in`, `fresh_when(public:)`, `no_store` and friends,
@@ -376,12 +271,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn header_values_with_control_characters_go_out_as_puma_writes_them() {
+        let values = |value: &str| {
+            let response = Response::new(StatusCode::OK).header("x-test", "replaced").header("x-test", value);
+            response.headers.get_all("x-test").iter().map(|v| v.as_bytes().to_vec()).collect::<Vec<_>>()
+        };
+        assert_eq!(values("a\tb"), [b"a\tb".to_vec()]);
+        assert_eq!(values("é"), ["é".as_bytes().to_vec()]);
+        assert_eq!(values(""), [b"".to_vec()]);
+        // Each line on its own, and a line with a control character left out.
+        assert_eq!(values("x\ny; z"), [b"x".to_vec(), b"y; z".to_vec()]);
+        assert_eq!(values("\na\n\n"), [b"".to_vec(), b"a".to_vec()]);
+        assert_eq!(values("x\r\ny"), [b"y".to_vec()]);
+        assert!(values("x\ry").is_empty());
+        assert!(values("x\u{1}y").is_empty());
+        assert!(values("x\u{7f}y").is_empty());
+        assert!(values("\n").is_empty());
+    }
+
+    #[test]
     fn content_disposition_like_rails() {
         assert_eq!(content_disposition("inline", None), "inline");
-        assert_eq!(
-            content_disposition("attachment", Some("logo.png")),
-            "attachment; filename=\"logo.png\"; filename*=UTF-8''logo.png"
-        );
+        assert_eq!(content_disposition("attachment", Some("logo.png")), "attachment; filename=\"logo.png\"; filename*=UTF-8''logo.png");
         assert_eq!(
             content_disposition("inline", Some("résumé 1.pdf")),
             "inline; filename=\"resume 1.pdf\"; filename*=UTF-8''r%C3%A9sum%C3%A9%201.pdf"
@@ -390,17 +301,11 @@ mod tests {
             content_disposition("inline", Some("日本\"x\".txt")),
             "inline; filename=\"%3F%3F%22x%22.txt\"; filename*=UTF-8''%E6%97%A5%E6%9C%AC%22x%22.txt"
         );
-    }
-
-    #[test]
-    fn ranges() {
-        assert_eq!(parse_range("bytes=0-9", 100), RangeResult::Range(0, 9));
-        assert_eq!(parse_range("bytes=90-", 100), RangeResult::Range(90, 99));
-        assert_eq!(parse_range("bytes=-10", 100), RangeResult::Range(90, 99));
-        assert_eq!(parse_range("bytes=95-200", 100), RangeResult::Range(95, 99));
-        assert_eq!(parse_range("bytes=100-", 100), RangeResult::Unsatisfiable);
-        assert_eq!(parse_range("bytes=0-1,5-6", 100), RangeResult::Ignore);
-        assert_eq!(parse_range("items=0-1", 100), RangeResult::Ignore);
+        // I18n's whole table, not just Latin-1 letters.
+        assert_eq!(
+            content_disposition("attachment", Some("Łódź ×.pdf")),
+            "attachment; filename=\"Lodz x.pdf\"; filename*=UTF-8''%C5%81%C3%B3d%C5%BA%20%C3%97.pdf"
+        );
     }
 
     #[test]

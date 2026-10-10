@@ -18,7 +18,8 @@ faster or better.
 
 | Path | Package | What |
 |---|---|---|
-| `crates/rails_compat` | `rails_compat` | Rails signing/encryption/serialization contracts, verified by `vectors/` |
+| `crates/ruby` | `ruby_compat` | Ruby's own string behaviour the other crates share (ERB escaping, `String#to_i`/`#to_f`/`#strip`, `Float#to_s`, `CGI.escape`, `ERB::Util.url_encode`, Active Record's integer binding, Rack's byte ranges), checked against Ruby by `vectors/ruby_core.json`; no dependencies |
+| `crates/rails_compat` | `rails_compat` | Rails signing/encryption/serialization contracts and the Rails formats several crates write (`ActiveSupport::JSON`, `Content-Disposition`), verified by `vectors/`, and the app's `Clock` (`Time.current`, and time travel for tests) |
 | `crates/kit` | `campfire_kit` | Axum adapter, `Ctx`, params, cookies, session, forgery protection, flash, formats, responses, gzip, and the front server (TLS, ACME, HTTP/2, response cache) |
 | `crates/routes` | `campfire_routes` | Path helpers mirroring `config/routes.rb` |
 | `crates/db` | `campfire_db` | rusqlite over the existing schema, models, queries, fixtures loader |
@@ -37,10 +38,19 @@ faster or better.
 - Rust comes from mise if it isn't on the PATH: `mise exec rust@1.98.1 -- cargo ...` (the version
   in `Dockerfile`). The `reference/` submodule must be checked out for `crates/assets` to build.
 - `cargo test --workspace --exclude html5ever` runs everything. The app's integration tests need the
-  seed data (`parity/bin/seed build`, which needs Docker); without it they skip silently, so say so
-  when reporting results.
+  seed data (`parity/bin/seed build`, which needs Docker); without it they pass without running,
+  with only a note on stderr, so say so when reporting results. `CAMPFIRE_REQUIRE_SEED=1` makes a
+  missing seed fail them instead.
 - `cargo clippy --workspace --exclude html5ever --all-targets` should stay clean. (`html5ever` is a
-  vendored copy with one backported fix, kept identical to upstream otherwise.)
+  vendored copy with one backported fix and two small additions for Gumbo's parse limits, all
+  recorded in its `Cargo.toml`, and identical to upstream otherwise.)
+- Format with `cargo fmt --all` (`rustfmt.toml`) before committing. Shared benchmark and browser
+  gates live in the public `once-campfire-verification` repository; CI pins its revision. The
+  vendored html5ever has its own `rustfmt.toml` that turns formatting off, and generated tables are
+  marked `#[rustfmt::skip]`.
+- CI also runs `cargo shear` for dependencies declared but not used. When it can't see a real use
+  (a build script's `#[path]` modules, a self dev-dependency), list the crate under
+  `[package.metadata.cargo-shear] ignored` in that manifest, with the reason.
 - Put shared dependency versions in the root `[workspace.dependencies]`, and reference them with
   `foo.workspace = true`.
 - When matching existing behavior, read the reference's source. When it depends on Rails or gem
@@ -50,7 +60,8 @@ faster or better.
   only where the behavior is non-obvious. Cite the reference file (`reference/app/...`) when
   matching Rails, and say why when deliberately diverging from it.
 - Tests live beside the code. Golden-vector tests read `vectors/*.json`.
-- Performance changes come with before-and-after measurements, recorded under `bench/results/`.
+- Performance changes need before-and-after measurements. Keep raw results in ignored `tmp/bench/`
+  and document the verified current figures and material limitations; do not commit result JSON.
 
 ## Reference container
 

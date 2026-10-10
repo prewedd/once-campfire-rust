@@ -60,9 +60,7 @@ impl AttachableResolver for DbResolver<'_> {
                 Some(user) => GidLookup::User(self.mention_user(&user)),
                 None => GidLookup::NotFound,
             },
-            "Message" | "Room" | "Rooms::Open" | "Rooms::Closed" | "Rooms::Direct" | "Boost" | "Account" => {
-                GidLookup::OtherModel
-            }
+            "Message" | "Room" | "Rooms::Open" | "Rooms::Closed" | "Rooms::Direct" | "Boost" | "Account" => GidLookup::OtherModel,
             _ => GidLookup::Raises,
         }
     }

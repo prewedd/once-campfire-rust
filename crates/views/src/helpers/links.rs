@@ -1,13 +1,18 @@
 //! `link_to`, `link_to_if` and `mail_to` (`UrlHelper`).
 
-use super::html::{Html, Safe, escape};
-use super::tag::{Attrs, attrs, content_tag};
-use super::url::cgi_escape;
+use ruby_compat::url_encode;
 
-/// `link_to(url, options) { content }`: `href` goes after the given options.
+use super::html::{Html, Safe, escape};
+use super::tag::{Attrs, AttrsView, attrs, content_tag};
+
+/// `link_to(url, options) { content }`.
 pub fn link_to(url: &str, options: Attrs, content: &str) -> Html {
-    let options = options.attr("href", url);
-    content_tag("a", &options, content)
+    content_tag("a", link_options(url, options.view()), content)
+}
+
+/// `link_to`'s attributes: `href` goes after the given options.
+pub fn link_options<'a>(url: &'a str, options: AttrsView<'a>) -> AttrsView<'a> {
+    options.attr("href", url)
 }
 
 /// `link_to(text, url, options)` with a plain-text name.
@@ -25,9 +30,4 @@ pub fn link_to_if(condition: bool, text: &str, url: &str, options: Attrs) -> Htm
 pub fn mail_to(email: &str) -> Html {
     let encoded = url_encode(email).replace("%40", "@");
     content_tag("a", attrs().attr("href", format!("mailto:{encoded}")), &escape(email))
-}
-
-/// `ERB::Util.url_encode`: like `CGI.escape` but spaces become `%20`.
-fn url_encode(text: &str) -> String {
-    cgi_escape(text).replace('+', "%20")
 }

@@ -322,7 +322,8 @@ impl CertManager {
             None => match &self.options.external_account {
                 Some((kid, hmac)) => {
                     let new_account = NewAccount { contact: &[], terms_of_service_agreed: true, only_return_existing: false };
-                    let (account, credentials) = builder()?.create(&new_account, directory, Some(&ExternalAccountKey::new(kid.clone(), hmac))).await?;
+                    let (account, credentials) =
+                        builder()?.create(&new_account, directory, Some(&ExternalAccountKey::new(kid.clone(), hmac))).await?;
                     self.write_cache_file(ACCOUNT_KEY, private_key_pem(credentials.private_key().secret_pkcs8_der())?.into_bytes()).await?;
                     account
                 }

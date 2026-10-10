@@ -1,12 +1,14 @@
 //! `ContentFilters::TextMessagePresentationFilters` (reference/app/helpers/content_filters/*.rb):
 //! RemoveSoloUnfurledLinkText, SanitizeTags, SanitizeAttributes, applied in that order.
 
+use ruby_compat::strip;
+
+use crate::Error;
 use crate::attachables::{OPENGRAPH_EMBED_CONTENT_TYPE, RenderContext, opengraph_embed_from_node};
 use crate::content::{ATTACHMENT_TAG, Content};
-use crate::ruby::{is_blank, strip};
+use crate::ruby::is_blank;
 use crate::sanitizer::{self, SafeList, sanitize_tags_allowed_tags};
 use crate::uri::{self, UriError};
-use crate::Error;
 
 pub fn apply(content: Content, ctx: &RenderContext) -> Result<Content, Error> {
     let content = remove_solo_unfurled_link_text(content, ctx)?;
@@ -22,7 +24,9 @@ pub fn remove_solo_unfurled_link_text(content: Content, ctx: &RenderContext) -> 
         .dom
         .descendants(content.root)
         .into_iter()
-        .filter(|&n| content.dom.local_name(n) == Some(ATTACHMENT_TAG) && content.dom.attr(n, "content-type") == Some(OPENGRAPH_EMBED_CONTENT_TYPE))
+        .filter(|&n| {
+            content.dom.local_name(n) == Some(ATTACHMENT_TAG) && content.dom.attr(n, "content-type") == Some(OPENGRAPH_EMBED_CONTENT_TYPE)
+        })
         .collect();
     let solo_unfurled_url = if unfurled_links.len() == 1 {
         opengraph_embed_from_node(&content.dom, unfurled_links[0], ctx)?.and_then(|embed| embed.href)
@@ -81,11 +85,8 @@ fn normalize_tweet_url(url: Option<&str>) -> Result<Option<String>, Error> {
 pub fn sanitize_tags(content: Content) -> Content {
     let Content { mut dom, root } = content;
     let allowed = sanitize_tags_allowed_tags();
-    let disallowed: Vec<_> = dom
-        .descendants(root)
-        .into_iter()
-        .filter(|&n| dom.local_name(n).is_some_and(|name| !allowed.contains(&name)))
-        .collect();
+    let disallowed: Vec<_> =
+        dom.descendants(root).into_iter().filter(|&n| dom.local_name(n).is_some_and(|name| !allowed.contains(&name))).collect();
     for node in disallowed {
         dom.detach(node);
     }
@@ -96,6 +97,24 @@ pub fn sanitize_tags(content: Content) -> Content {
 
 /// Scrubs attributes with Rails' safe-list sanitizer over SanitizeTags' own tags.
 pub fn sanitize_attributes(content: Content) -> Result<Content, Error> {
-    let html = sanitizer::sanitize(&content.to_html(), &SafeList::content_filter()).map_err(Error::Parse)?;
+    let html = sanitizer::sanitize(&content.to_html(), SafeList::content_filter()).map_err(Error::Parse)?;
     Content::wrap(&html)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_tweet_urls_like_rails() {
+        // `RemoveSoloUnfurledLinkText#normalize_tweet_url` in the reference.
+        for (url, normalized) in [
+            ("HTTPS://x.com/dhh/status/1?s=20", "https://twitter.com/dhh/status/1"),
+            ("https://x.com/dhh/status/1?s=20", "https://twitter.com/dhh/status/1"),
+            ("HTTP://twitter.com/a", "http://twitter.com/a"),
+            ("Https://X.com/dhh/status/1", "Https://X.com/dhh/status/1"),
+        ] {
+            assert_eq!(normalize_tweet_url(Some(url)).unwrap().as_deref(), Some(normalized), "{url}");
+        }
+    }
 }

@@ -7,8 +7,8 @@ use std::cell::RefCell;
 
 use html5ever::tendril::StrTendril;
 use html5ever::tokenizer::{
-    BufferQueue, CharacterTokens, CommentToken, DoctypeToken, EndTag, NullCharacterToken, StartTag, TagToken, Token,
-    TokenSink, TokenSinkResult, Tokenizer, TokenizerOpts,
+    BufferQueue, CharacterTokens, CommentToken, DoctypeToken, EndTag, NullCharacterToken, StartTag, TagToken, Token, TokenSink,
+    TokenSinkResult, Tokenizer, TokenizerOpts,
 };
 
 #[derive(Default)]

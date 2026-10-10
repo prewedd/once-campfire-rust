@@ -16,6 +16,10 @@ pub struct Show<'a> {
 }
 
 impl Page for Show<'_> {
-    fn page_title(&self) -> Option<String> { Some("No rooms yet".into()) }
-    fn body_class(&self) -> Option<&str> { Some("sidebar") }
+    fn page_title(&self) -> Option<String> {
+        Some("No rooms yet".into())
+    }
+    fn body_class(&self) -> Option<&str> {
+        Some("sidebar")
+    }
 }

@@ -190,9 +190,10 @@ impl Variant {
             .map(str::to_string)
             .or_else(|| uri.authority().map(|a| a.to_string()))
             .unwrap_or_default();
-        // The raw path, as the router sees it: Thruster keys on the decoded one, which would give
-        // `/a%2Fb` and `/a/b` one entry.
-        let query = encode_query(uri.query().unwrap_or(""));
+        // The raw path and query, as the router and the params parser see them. Thruster keys on the
+        // decoded path, which would give `/a%2Fb` and `/a/b` one entry, and on the query re-encoded
+        // by Go's `url.Values.Encode`, which drops any pair containing `;` that Rack keeps.
+        let query = uri.query().unwrap_or("");
         let base = format!("{}\n{}\n{query}\n{host}", request.method(), uri.path());
         Self { base, request_headers: request.headers().clone(), names: Vec::new() }
     }
@@ -237,75 +238,6 @@ impl Variant {
     }
 }
 
-/// `url.Values.Encode()` of `URL.Query()`: parameters sorted by key and re-escaped, so the same
-/// parameters in another order or spelling share a cache entry.
-fn encode_query(query: &str) -> String {
-    let mut values: Vec<(String, Vec<String>)> = Vec::new();
-    for pair in query.split('&') {
-        if pair.is_empty() || pair.contains(';') {
-            continue;
-        }
-        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-        let (Some(key), Some(value)) = (query_unescape(key), query_unescape(value)) else { continue };
-        match values.iter_mut().find(|(k, _)| *k == key) {
-            Some((_, list)) => list.push(value),
-            None => values.push((key, vec![value])),
-        }
-    }
-    values.sort_by(|(a, _), (b, _)| a.cmp(b));
-    let mut encoded = String::new();
-    for (key, list) in &values {
-        for value in list {
-            if !encoded.is_empty() {
-                encoded.push('&');
-            }
-            encoded.push_str(&query_escape(key));
-            encoded.push('=');
-            encoded.push_str(&query_escape(value));
-        }
-    }
-    encoded
-}
-
-/// `url.QueryUnescape`: `+` is a space; a malformed escape is an error.
-fn query_unescape(s: &str) -> Option<String> {
-    let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'%' => {
-                let hex = bytes.get(i + 1..i + 3)?;
-                let hex = std::str::from_utf8(hex).ok()?;
-                out.push(u8::from_str_radix(hex, 16).ok()?);
-                i += 3;
-            }
-            b'+' => {
-                out.push(b' ');
-                i += 1;
-            }
-            b => {
-                out.push(b);
-                i += 1;
-            }
-        }
-    }
-    Some(String::from_utf8_lossy(&out).into_owned())
-}
-
-/// `url.QueryEscape`
-fn query_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for &b in s.as_bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
-            b' ' => out.push('+'),
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
-}
-
 /// `wasNotModified`: the request's `If-None-Match` names the cached `ETag`.
 pub fn was_not_modified<B>(cached: &CachedResponse, request: &Request<B>) -> bool {
     let etag = first(&cached.headers, &header::ETAG);
@@ -336,7 +268,10 @@ mod tests {
     fn lifetime_needs_public_and_a_max_age() {
         let ok = StatusCode::OK;
         assert_eq!(cache_lifetime(ok, &headers(&[("cache-control", "public, max-age=2592000")])), Some(Duration::from_secs(2592000)));
-        assert_eq!(cache_lifetime(ok, &headers(&[("cache-control", "max-age=300, public, stale-while-revalidate=604800")])), Some(Duration::from_secs(300)));
+        assert_eq!(
+            cache_lifetime(ok, &headers(&[("cache-control", "max-age=300, public, stale-while-revalidate=604800")])),
+            Some(Duration::from_secs(300))
+        );
         assert_eq!(cache_lifetime(ok, &headers(&[("cache-control", "public, s-max-age=10, max-age=99")])), Some(Duration::from_secs(10)));
         assert_eq!(cache_lifetime(ok, &headers(&[("cache-control", "max-age=0, private, must-revalidate")])), None);
         assert_eq!(cache_lifetime(ok, &headers(&[("cache-control", "public")])), None);
@@ -369,13 +304,17 @@ mod tests {
     }
 
     #[test]
-    fn keys_normalize_the_query_and_include_varying_headers() {
+    fn keys_use_the_raw_path_and_query_and_include_varying_headers() {
         let request = |uri: &str, ae: &str| Request::get(uri).header("host", "chat.test").header("accept-encoding", ae).body(()).unwrap();
         let key = |uri: &str| Variant::new(&request(uri, "gzip")).cache_key();
-        assert_eq!(key("/a?b=2&a=1"), key("/a?a=1&b=2"));
-        assert_eq!(key("/a?q=a+b"), key("/a?q=a%20b"));
         assert_ne!(key("/a?a=1"), key("/a?a=2"));
         assert_ne!(key("/a%2Fb"), key("/a/b"));
+        assert_ne!(key("/a?b=2&a=1"), key("/a?a=1&b=2"));
+        assert_ne!(key("/a?q=a+b"), key("/a?q=a%20b"));
+        // Rack reads `disposition=attachment;` where Go's query parser dropped the pair.
+        assert_ne!(key("/a?disposition=attachment;"), key("/a"));
+        assert_ne!(key("/a?disposition=inline&disposition=x;"), key("/a?disposition=inline"));
+        assert_eq!(key("/a?"), key("/a"));
 
         let mut gzip = Variant::new(&request("/a", "gzip"));
         let mut plain = Variant::new(&request("/a", ""));

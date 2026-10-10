@@ -16,10 +16,12 @@ pub mod refreshes;
 use askama::Template;
 use campfire_db::{Account, Message, Room, RoomType, User};
 use campfire_kit::{Ctx, Error, Redirect, Result, StatusCode, halt};
+use ruby_compat::integer_cast;
 
 use crate::app::AppCtx;
-use crate::concerns::{self, Before, before_actions, cast_integer, require_current_user};
-use crate::controllers::presenters::page::{self, Rendered, db_error};
+use crate::app::db_error;
+use crate::concerns::{self, Before, before_actions, require_current_user};
+use crate::controllers::presenters::page::{self, Rendered};
 use crate::controllers::presenters::{Presenter, user_view};
 
 /// `room_scope`: which of `Current.user.rooms` a controller may act on.
@@ -50,7 +52,7 @@ impl Scope {
 pub async fn index(c: &mut Ctx) -> Result {
     before_actions(c, Before::default()).await?;
     let user_id = require_current_user(c)?.id;
-    let room = c.app().db.read(move |conn| Room::last_for_user(conn, user_id)).await.map_err(db_error)?;
+    let room = c.app().read(move |conn| Room::last_for_user(conn, user_id)).await?;
     let Some(room) = room else {
         return Err(Error::internal(anyhow::anyhow!("No route matches room_url(nil)")));
     };
@@ -67,12 +69,15 @@ pub async fn show(c: &mut Ctx) -> Result {
         return c.redirect_to(&url);
     }
     concerns::remember_last_room_visited(c, room.id);
+    if let Some(response) = crate::response_cache::lookup(c) {
+        return Ok(response);
+    }
     render_show(c, room).await
 }
 
 /// Where `params[:message_id]` really is, when it's a reply in this room.
 async fn reply_permalink(c: &Ctx, room: &Room) -> Result<Option<String>> {
-    let Some(message_id) = c.param_str("message_id").and_then(cast_integer) else { return Ok(None) };
+    let Some(message_id) = c.param_str("message_id").and_then(integer_cast) else { return Ok(None) };
     let room_id = room.id;
     let message = c.app().db.read(move |conn| Message::find_by_id(conn, message_id)).await.map_err(db_error)?;
     Ok(message
@@ -98,7 +103,7 @@ pub async fn destroy_without_room(c: &mut Ctx) -> Result {
 
 pub(crate) async fn destroy_room(c: &mut Ctx, room: Room) -> Result {
     let destroyed = room.clone();
-    c.app().db.write(move |tx| destroyed.destroy(tx)).await.map_err(db_error)?;
+    c.app().write(move |tx| destroyed.destroy(tx)).await?;
     // broadcast_remove_to :rooms, target: [ @room, :list ]
     c.app().broadcasts.room_remove(&room);
     redirect_to_root(c)
@@ -110,9 +115,9 @@ pub(crate) async fn destroy_room(c: &mut Ctx, room: Room) -> Result {
 /// an alert.
 pub async fn set_room(c: &mut Ctx, scope: Scope) -> Result<Room> {
     let user_id = require_current_user(c)?.id;
-    let id = c.param_str("room_id").or_else(|| c.param_str("id")).and_then(cast_integer);
+    let id = c.param_str("room_id").or_else(|| c.param_str("id")).and_then(integer_cast);
     let room = match id {
-        Some(id) => c.app().db.read(move |conn| Room::find_for_user(conn, user_id, id)).await.map_err(db_error)?,
+        Some(id) => c.app().read(move |conn| Room::find_for_user(conn, user_id, id)).await?,
         None => None,
     };
     match room.filter(|room| scope.includes(room)) {
@@ -137,7 +142,7 @@ pub fn ensure_can_administer(c: &mut Ctx, room: &Room) -> Result<()> {
 /// `ensure_permission_to_create_rooms`
 pub async fn ensure_permission_to_create_rooms(c: &mut Ctx) -> Result<()> {
     let administrator = require_current_user(c)?.is_administrator();
-    let account = c.app().db.read(Account::first).await.map_err(db_error)?;
+    let account = c.app().read(Account::first).await?;
     let restricted = account.is_some_and(|account| account.settings().restrict_room_creation_to_administrators());
     if restricted && !administrator {
         return halt(concerns::head(StatusCode::FORBIDDEN));
@@ -173,8 +178,8 @@ pub(crate) fn room_topic_param(c: &Ctx) -> Option<String> {
 /// `params.fetch(:user_ids, [])` as ids `User.where(id:)` can match.
 pub(crate) fn user_ids_param(c: &Ctx) -> Vec<i64> {
     match c.param("user_ids") {
-        Some(campfire_kit::Param::Array(values)) => values.iter().filter_map(|v| v.as_str()).filter_map(cast_integer).collect(),
-        Some(value) => value.as_str().and_then(cast_integer).into_iter().collect(),
+        Some(campfire_kit::Param::Array(values)) => values.iter().filter_map(|v| v.as_str()).filter_map(integer_cast).collect(),
+        Some(value) => value.as_str().and_then(integer_cast).into_iter().collect(),
         None => Vec::new(),
     }
 }
@@ -188,20 +193,19 @@ pub(crate) fn existing_user_ids(conn: &campfire_db::Connection, ids: &[i64]) -> 
 pub(crate) async fn render_shared_room(c: &Ctx, room: &Room) -> Result<Rendered> {
     let app = c.app().clone();
     let base_url = page::renderer_base_url(c);
+    let renderer = page::DetachedRenderer::new(&app);
     let room = room.clone();
     let html = c
         .app()
-        .db
         .read(move |conn| {
             let presenter = Presenter::new(conn, &app, None);
             let sidebar_room = presenter.sidebar_room(&room);
             let account = Account::first(conn)?;
-            Ok(page::render_detached_at(&app, account.as_ref(), &base_url, |_| {
+            Ok(renderer.render_at(&app, account.as_ref(), &base_url, |_| {
                 campfire_views::users::SidebarSharedPartial { room: sidebar_room }.render()
             }))
         })
-        .await
-        .map_err(db_error)?
+        .await?
         .map_err(Error::internal)?;
     Ok(Rendered { shared_room: Some(html), ..Rendered::default() })
 }
@@ -209,12 +213,12 @@ pub(crate) async fn render_shared_room(c: &Ctx, room: &Room) -> Result<Rendered>
 /// `rooms/show` with `find_messages`: the page around `params[:message_id]`, else the last page.
 async fn render_show(c: &mut Ctx, room: Room) -> Result {
     let app = c.app().clone();
+    let fragments = crate::response_cache::fragments(c);
     let user = require_current_user(c)?.clone();
-    let message_id = c.param_str("message_id").and_then(cast_integer);
+    let message_id = c.param_str("message_id").and_then(integer_cast);
     let request_host = Some(c.request.host());
     let show = c
         .app()
-        .db
         .read(move |conn| {
             let messages = match message_id.map(|id| Message::find_by_id(conn, id)).transpose()?.flatten() {
                 Some(message) if message.room_id == room.id => Message::page_around(conn, room.id, &message)?,
@@ -228,7 +232,7 @@ async fn render_show(c: &mut Ctx, room: Room) -> Result {
                 updated_at: room.updated_at.jiff(),
                 user: user_view(&app.secrets, &user),
                 // The page's message fragments come from the store the render then uses.
-                messages: campfire_views::fragment_cache::with(&app.fragment_cache, || presenter.messages(&messages))?,
+                messages: campfire_views::fragment_cache::with(&fragments, || presenter.messages(&messages))?,
                 invitation: original && !Message::paged(conn, room.id)?,
                 join_code: Account::first(conn)?.map(|account| account.join_code).unwrap_or_default(),
                 messages_stream_name: rails_compat::turbo::signed_stream_name(&app.secrets, &[&room_gid, "messages"]),
@@ -237,11 +241,8 @@ async fn render_show(c: &mut Ctx, room: Room) -> Result {
                 last_seen_ms: campfire_db::Membership::last_read_at(conn, room.id, user.id)?.map(|at| at.jiff().as_millisecond()),
             })
         })
-        .await
-        .map_err(db_error)?;
-    let response = page::framed_page!(c, StatusCode::OK, |ctx| campfire_views::rooms::Show { ctx, show: &show }).await?;
-    let fragments = campfire_views::messages::MessageItem::cached_fragments(&c.app().fragment_cache, &show.messages);
-    Ok(response.with_cached_fragments(fragments))
+        .await?;
+    page::framed_page!(c, StatusCode::OK, |ctx| campfire_views::rooms::Show { ctx, show: &show }).await
 }
 
 #[cfg(test)]
