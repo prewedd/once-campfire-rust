@@ -304,6 +304,23 @@ const openModal = (p, path) => p.evaluate(path => { const a = document.createEle
     check("opening it draws the New line above what you missed", next.includes(`ping one ${t}`), next.trim().slice(0, 80))
   })
 
+  await step("mentions", async () => {
+    globalThis.pages = [ ben, ana ]
+    await ben.goto(`${BASE}/rooms/1`); await ben.waitForLoadState("networkidle")
+    await ben.locator("#composer [contenteditable]").first().click()
+    await ben.keyboard.type(`heads up @Ana${t}`)
+    const item = ben.locator(".lexxy-prompt-menu__item", { hasText: `Ana${t}` }).first()
+    await item.waitFor({ timeout: 8000 })
+    await ben.keyboard.press("Enter")
+    await ben.keyboard.type(` look ${t}`)
+    await ben.keyboard.press("Enter")
+    await ben.locator(".message", { hasText: `look ${t}` }).waitFor({ timeout: 8000 })
+    await ana.locator('#sidebar a.sidebar__shortcut[href="/mentions"]').click()
+    await ana.waitForURL(/\/mentions$/)
+    await ana.locator(".message", { hasText: `look ${t}` }).waitFor({ timeout: 8000 })
+    check("Mentions lists messages that @mention you", true)
+  })
+
   check("no page errors", errors.length === 0, errors.join(" | "))
   await b.close()
   console.log(`\n${results.filter(Boolean).length}/${results.length} checks passed`)

@@ -1,0 +1,24 @@
+{#- "Mentions", this app's own (plans/redesign.md): the search page's list, of messages that @mention you -#}
+{% extends "layouts/application.html" %}
+{%- block head %}{% endblock %}
+
+{%- block nav %}
+  <span class="btn btn--reversed btn--faux room--current thread--current"><h1 class="room__contents txt-medium overflow-ellipsis">Mentions</h1></span>
+{%- endblock %}
+
+{%- block sidebar %}{{ h::sidebar_turbo_frame_tag(Some(h::routes::user_sidebar().as_str()), "") }}{% endblock %}
+
+{%- block content %}
+<div id="message-area" class="message-area ws-search-page">
+  <header class="ws-search__summary">
+    <h1>Mentions</h1>
+    <span class="ws-hint">{% if messages.is_empty() %}Nobody has @mentioned you lately. When someone does, it shows up here.{% else %}The latest {{ messages.len() }} {% if messages.len() == 1 %}message{% else %}messages{% endif %} that @mention you, newest first{% endif %}</span>
+  </header>
+
+  <div id="search-results" class="messages searches__results" data-controller="search-results" data-search-results-target="messages" data-search-results-me-class="message--me" data-search-results-threaded-class="message--threaded" data-search-results-mentioned-class="message--mentioned" data-search-results-formatted-class="message--formatted">
+    {%- for message in messages %}
+    {{ crate::messages::cached_message_item(ctx, message) }}
+    {%- endfor %}
+  </div>
+</div>
+{%- endblock %}

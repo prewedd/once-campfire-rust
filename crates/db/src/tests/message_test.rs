@@ -296,3 +296,17 @@ fn pagination() {
     let updated = t.read(|c| Message::page_updated_since(c, watercooler, since, &created_ids));
     assert!(updated.iter().all(|m| !created_ids.contains(&m.id)));
 }
+
+#[test]
+fn mentioning_finds_the_messages_that_mention_you_newest_first() {
+    let t = TestDb::new();
+    let david = id("david");
+    let older = create(&t, "pets", "jason", &format!("<div>Hey {}</div>", mention_attachment_for(david)), "mention-1");
+    create(&t, "pets", "jason", "<div>No mention here</div>", "mention-2");
+    let newer = create(&t, "pets", "jason", &format!("<div>Again {}</div>", mention_attachment_for(david)), "mention-3");
+    create(&t, "pets", "david", &format!("<div>Me {}</div>", mention_attachment_for(david)), "mention-4");
+    let found = t.read(move |c| Message::mentioning(c, &BasicRichText, david, 10));
+    let ids: Vec<i64> = found.iter().map(|m| m.id).collect();
+    assert!(ids.starts_with(&[newer.id, older.id]), "newest first, not your own: {ids:?}");
+    assert_eq!(t.read(move |c| Message::mentioning(c, &BasicRichText, david, 1)).len(), 1, "up to the limit");
+}

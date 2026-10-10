@@ -91,3 +91,21 @@ impl Page for Pinned<'_> {
         Some("searches pinned")
     }
 }
+
+/// "Mentions" (plans/redesign.md), this app's own: the latest messages that @mention you.
+#[derive(Template)]
+#[template(path = "searches/mentions.html", blocks = ["head", "content"])]
+pub struct Mentions<'a> {
+    pub ctx: &'a ViewContext<'a>,
+    pub messages: &'a [MessageItem],
+}
+
+impl Page for Mentions<'_> {
+    fn page_title(&self) -> Option<String> {
+        Some("Mentions".into())
+    }
+
+    fn body_class(&self) -> Option<&str> {
+        Some("sidebar searches mentions")
+    }
+}

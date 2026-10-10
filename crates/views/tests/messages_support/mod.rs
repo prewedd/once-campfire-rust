@@ -20,7 +20,7 @@ pub struct Golden {
 
 /// Assets this app adds (the workspace redesign), which the reference's asset map doesn't have.
 fn added_asset(logical: &str) -> Option<String> {
-    ["emoji.svg", "emoji/prompt.html", "palette.svg", "headphones.svg", "clock.svg", "threads.svg", "bookmark.svg", "pin.svg"].contains(&logical).then(|| format!("/assets/{logical}"))
+    ["emoji.svg", "emoji/prompt.html", "palette.svg", "headphones.svg", "clock.svg", "threads.svg", "bookmark.svg", "pin.svg", "at.svg"].contains(&logical).then(|| format!("/assets/{logical}"))
 }
 
 pub fn golden(name: &str) -> Golden {

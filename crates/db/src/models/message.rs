@@ -655,6 +655,28 @@ impl Message {
         Ok(sound_in(&self.plain_text_body(conn, rich_text)?))
     }
 
+    /// The latest messages that @mention someone, in rooms they're in, newest first (this app's
+    /// own "Mentions", plans/redesign.md). Mentions aren't indexed: the most recent bodies with a
+    /// mention in them are read, and their mentions checked, up to `limit` found.
+    pub fn mentioning(conn: &Connection, rich_text: &dyn RichText, user_id: i64, limit: usize) -> Result<Vec<Self>> {
+        let candidates = query_all(
+            conn,
+            r#"SELECT "messages".*, "action_text_rich_texts"."body" AS "mention_body" FROM "messages"
+               INNER JOIN "memberships" ON "memberships"."room_id" = "messages"."room_id" AND "memberships"."user_id" = ?
+               INNER JOIN "action_text_rich_texts" ON "action_text_rich_texts"."record_type" = 'Message' AND "action_text_rich_texts"."record_id" = "messages"."id" AND "action_text_rich_texts"."name" = 'body'
+               WHERE "messages"."creator_id" != ? AND "action_text_rich_texts"."body" LIKE '%vnd.campfire.mention%'
+               ORDER BY "messages"."created_at" DESC LIMIT 500"#,
+            params![user_id, user_id],
+            |row| Ok((Self::from_row(row)?, row.get::<_, Option<String>>("mention_body")?)),
+        )?;
+        Ok(candidates
+            .into_iter()
+            .filter(|(_, html)| html.as_deref().is_some_and(|html| rich_text.mentioned_user_ids(conn, html).contains(&user_id)))
+            .map(|(message, _)| message)
+            .take(limit)
+            .collect())
+    }
+
     /// `mentionees`: mentioned users who are members of the room.
     pub fn mentionees(&self, conn: &Connection, rich_text: &dyn RichText) -> Result<Vec<User>> {
         let ids = match self.body_html(conn)? {

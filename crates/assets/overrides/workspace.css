@@ -3477,7 +3477,7 @@ body:not(.sidebar) > #main-content .ws-new-dm { max-inline-size: 640px; margin: 
 .message__save-btn[data-saved] img { filter: none; opacity: 1; }
 .saved .message__actions { display: flex !important; visibility: visible !important; }
 #sidebar a.sidebar__shortcut { text-decoration: none; }
-body.saved #sidebar a.sidebar__shortcut[href="/saved"] { background: var(--ws-side-active); color: var(--ws-on-accent); }
+body.mentions #sidebar a.sidebar__shortcut[href="/mentions"], body.saved #sidebar a.sidebar__shortcut[href="/saved"] { background: var(--ws-side-active); color: var(--ws-on-accent); }
 .ws-toast { position: fixed; inset: auto auto 88px 50%; z-index: 80; transform: translateX(-50%); padding: 8px 14px; border-radius: var(--ws-radius); background: var(--ws-ink); color: var(--ws-bg); font-family: var(--ws-font); font-size: 14px; font-weight: 600; box-shadow: var(--ws-shadow-lg); animation: huddle-invite-in 120ms ease-out; }
 
 /* Pinned messages (lib/workspace/pins.js) */

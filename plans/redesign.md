@@ -161,3 +161,4 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
   dark. The two remaining "translate" globes (the welcome message, the incompatible-browser page) are
   hidden. `e2e/tour/more.js` screenshots the less-visited screens.
 - **Editing a message**: labelled "Save changes" (blue) and "Cancel", with "Delete message" as a red link, in place of ✓, ✕ and a trash icon (CSS over the parity-pinned markup).
+- **Mentions** (`/mentions`, `controllers/mentions.rs`, `Message::mentioning`): "Mentions" under Threads in the sidebar lists the latest 50 messages that @mention you, newest first. Mentions are not indexed: the latest 500 bodies with a mention attachment in your rooms are checked.

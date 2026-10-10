@@ -122,3 +122,6 @@ path!(channel_membership(room_id), "/channels/{room_id}/membership");
 // Saved for later (plans/redesign.md).
 path!(saved, "/saved");
 path!(message_save(message_id), "/messages/{message_id}/save");
+
+// Mentions (plans/redesign.md).
+path!(mentions, "/mentions");
