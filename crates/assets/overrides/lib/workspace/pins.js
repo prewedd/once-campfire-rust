@@ -1,7 +1,8 @@
 // Pinned messages (plans/redesign.md): a "📌 N" in the channel's header (opening its pins in the
 // modal), a "Pinned" label on pinned messages, and "Pin to channel" / "Unpin from channel" in the
 // "⋯" menu. Messages are cached and shared, so the channel's pins come from /rooms/:id/pins/ids:
-// when it opens, every 30 seconds after that, and right after you change one.
+// when it opens, every 30 seconds while it's in view, on coming back to it, and right after you
+// change one.
 import { toast } from "lib/workspace/saved"
 
 let room = null
@@ -31,7 +32,7 @@ function paint() {
     message.classList.toggle("message--pinned", pinned.has(Number(message.dataset.messageId)))
   })
   const nav = document.querySelector("#nav")
-  if (!nav?.querySelector(":scope > .room--current")) return
+  if (!nav?.querySelector(":scope > .room--current:not(.thread--current)")) return
   let button = nav.querySelector(":scope > .ws-pins-btn")
   if (!pinned.size) return button?.remove()
   if (!button) {
@@ -86,3 +87,6 @@ document.addEventListener("click", async event => {
   label(button)
   toast(unpinning ? "Unpinned from the channel" : "Pinned to the channel")
 })
+
+setInterval(() => { if (document.visibilityState === "visible") showPins() }, 30_000)
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { loadedAt = 0; showPins() } })

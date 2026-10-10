@@ -288,7 +288,11 @@ fn mention_user(name: &str, user_name: &str) -> users::MentionUser {
 fn first_runs_show() {
     let name = "first_run";
     let html = with_context(name, Request::default(), |ctx| first_runs::Show { ctx }.render().unwrap());
-    assert_parity(name, "html", html);
+    // Laid out as the join page (plans/redesign.md): checked for what it offers.
+    for field in ["user[name]", "user[email_address]", "user[password]", "user[avatar]"] {
+        assert!(html.contains(&format!(r#"name="{field}""#)), "no {field}: {html}");
+    }
+    assert!(html.contains(r#"action="/first_run""#) && html.contains("Create workspace"), "{html}");
 }
 
 #[test]

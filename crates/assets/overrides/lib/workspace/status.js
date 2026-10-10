@@ -90,3 +90,7 @@ document.addEventListener("submit", event => {
   }
   if (form.matches?.(".ws-status__form, form[action$='/users/me/status']")) fetchedAt = 0
 }, true)
+
+// While the page is in view, and on coming back to it.
+setInterval(() => { if (document.visibilityState === "visible") showStatuses() }, MAX_AGE)
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { fetchedAt = 0; showStatuses() } })

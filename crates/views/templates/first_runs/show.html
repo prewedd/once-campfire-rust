@@ -1,57 +1,35 @@
 {% extends "layouts/application.html" %}
 {%- block head %}{% endblock %}
 
-{% block content %}{% let form = h::form_with(h::routes::first_run()).model("user").class("center max-width") %}{% filter form_with(form) %}
-  <section class="nametag u-relative">
-    <div class="flex justify-center align-center pad-block">
-      {{ h::image_tag(ctx, "lanyard.svg", h::attrs().class("nametag__lanyard").aria_hidden()) }}
-    </div>
+{% block content %}<section class="ws-auth">
+{% let form = h::form_with(h::routes::first_run()).model("user").class("ws-auth__card ws-auth__form") %}{% filter form_with(form) %}
+  <h1 class="ws-auth__title">{{ self.page_title().unwrap_or_default() }}</h1>
+  <p class="ws-hint ws-auth__lede">Create the first account: you'll be the workspace's administrator.</p>
 
-    <div class="nametag__inner flex flex-column gap">
-      <fieldset class="flex flex-column center-block">
-        <legend class="txt-large txt-align-center"><strong>{{ self.page_title().unwrap_or_default() }}</strong></legend>
+  <label class="ws-auth__photo" data-controller="upload-preview">
+    {{ h::image_tag(ctx, "default-avatar.svg", h::attrs().class("ws-auth__avatar").aria_hidden().data("upload_preview_target", "image").alt("Add your avatar")) }}
+    <span class="ws-btn input--file">
+      Add a photo
+      {{ form.file_field("avatar", h::attrs().class("input").accept("image/*").data("upload_preview_target", "input").data("action", "upload-preview#previewImage")) }}
+    </span>
+    <span class="ws-hint">(optional)</span>
+  </label>
 
-        <label class="align-center center avatar__form gap" data-controller="upload-preview">
-          <div class="btn input--file">
-            {{ h::image_tag(ctx, "camera.svg", h::attrs().aria_hidden()) }}
-            {{ form.file_field("avatar", h::attrs().class("input").accept("image/*").data("upload_preview_target", "input").data("action", "upload-preview#previewImage")) }}
-            <span class="for-screen-reader">Add your avatar</span>
-          </div>
+  <label class="ws-field">
+    <span class="ws-field__label">Full name</span>
+    {{ form.text_field("name", None, h::attrs().class("ws-input").autocomplete("name").placeholder("Your name").autofocus().required(true).data("1p-ignore", true)) }}
+  </label>
 
-          <div class="btn avatar input--file txt-xx-large">
-            {{ h::image_tag(ctx, "default-avatar.svg", h::attrs().aria_hidden().data("upload_preview_target", "image").alt("Add your avatar")) }}
-            <span class="for-screen-reader">Avatar</span>
-          </div>
-        </label>
-      </fieldset>
+  <label class="ws-field">
+    <span class="ws-field__label">Email</span>
+    {{ form.email_field("email_address", None, h::attrs().class("ws-input").autocomplete("username").placeholder("name@work-email.com").required(true)) }}
+  </label>
 
-      <div class="flex align-center gap">
-        {{ h::translation_button(ctx, "user_name") }}
-        <label class="flex align-center gap flex-item-grow txt-large input input--actor">
-          {{ form.text_field("name", None, h::attrs().class("input").autocomplete("name").placeholder("Name").autofocus().required(true).data("1p-ignore", true)) }}
-          {{ h::image_tag(ctx, "person.svg", h::attrs().aria_hidden().size(24).class("colorize--black")) }}
-        </label>
-      </div>
+  <label class="ws-field">
+    <span class="ws-field__label">Password</span>
+    {{ form.password_field("password", h::attrs().class("ws-input").autocomplete("new-password").placeholder("Choose a password").required(true).maxlength(72)) }}
+  </label>
 
-      <div class="flex align-center gap">
-        {{ h::translation_button(ctx, "email_address") }}
-        <label class="flex align-center gap flex-item-grow txt-large input input--actor">
-          {{ form.email_field("email_address", None, h::attrs().class("input").autocomplete("username").placeholder("Email address").required(true)) }}
-          {{ h::image_tag(ctx, "email.svg", h::attrs().aria_hidden().size(24).class("colorize--black")) }}
-        </label>
-      </div>
-
-      <div class="flex align-center gap">
-        {{ h::translation_button(ctx, "password") }}
-        <label class="flex align-center gap flex-item-grow txt-large input input--actor">
-          {{ form.password_field("password", h::attrs().class("input").autocomplete("new-password").placeholder("Password").required(true).maxlength(72)) }}
-          {{ h::image_tag(ctx, "password.svg", h::attrs().aria_hidden().size(24).class("colorize--black")) }}
-        </label>
-      </div>
-
-      {% filter button(h::attrs().class("btn btn--reversed center txt-large").type_("submit")) %}
-        {{ h::image_tag(ctx, "arrow-right.svg", h::attrs().aria_hidden()) }}
-        <span class="for-screen-reader">Save</span>
-{% endfilter %}    </div>
-  </section>
-{% endfilter %}{% endblock %}
+  {% filter button(h::attrs().class("ws-btn ws-btn--primary ws-btn--block ws-auth__submit").type_("submit")) %}Create workspace{% endfilter %}
+{% endfilter %}</section>
+{% endblock %}

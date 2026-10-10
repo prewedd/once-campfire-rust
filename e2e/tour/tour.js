@@ -7,7 +7,7 @@ const shots = [
   ["settings", "/account/edit"],
   ["profile", "/users/me/profile"],
   ["new-room", "/rooms/opens/new"],
-  ["new-dm", "/rooms/directs/new"], ["user", "/users/3"],
+  ["new-dm", "/rooms/directs/new"], ["thread-page", "/rooms/1/threads/1514"], ["user", "/users/3"],
 ]
 ;(async () => {
   const b = await chromium.launch()
