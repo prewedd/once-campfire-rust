@@ -97,7 +97,7 @@
         <button type="submit" class="ws-btn">Pause</button>
       </form>
 {% endif %}    </div>
-    <p class="ws-hint">What each conversation notifies you about.</p>
+    <p class="ws-hint">What each conversation notifies you about. <a href="{{ h::routes::user_push_subscriptions() }}">Notification devices</a> lists where they go, and sends a test.</p>
     <menu class="ws-rows">
       {% for membership in shared_memberships %}{% include "users/profiles/_membership.html" %}{% endfor %}
       {% for membership in direct_memberships %}{% include "users/profiles/_membership.html" %}{% endfor %}    </menu>

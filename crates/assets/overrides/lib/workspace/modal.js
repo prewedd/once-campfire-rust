@@ -5,9 +5,10 @@ import { Turbo } from "@hotwired/turbo-rails"
 // page's own content, fetched as usual, so every screen keeps working: its forms are submitted from
 // here, a redirect to another such screen stays in the modal, and anything else navigates.
 // A modified click (new tab) still opens the real page.
-const MODAL_PATH = /^\/(channels|rooms\/\d+\/pins|account(\/.*)?|users\/me\/profile(\/.*)?|rooms\/\d+\/settings|rooms\/(opens|closeds|directs)\/(new|\d+\/edit)|qr_code\/[^/]+)$/
+const MODAL_PATH = /^\/(users\/me\/push_subscriptions|channels|rooms\/\d+\/pins|account(\/.*)?|users\/me\/profile(\/.*)?|rooms\/\d+\/settings|rooms\/(opens|closeds|directs)\/(new|\d+\/edit)|qr_code\/[^/]+)$/
 const TITLES = [
   [ /^\/channels/, "Browse channels" ],
+  [ /^\/users\/me\/push_subscriptions/, "Notification devices" ],
   [ /^\/rooms\/\d+\/pins/, "Pinned messages" ],
   [ /^\/users\/me\/profile/, "Your profile" ],
   [ /^\/account\/edit/, "Workspace settings" ],

@@ -3213,6 +3213,7 @@ body:has(.thread-list) .sidebar__shortcut[data-open-threads] img { filter: inver
 
 .ws-settings__title { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
 .ws-modal .ws-settings { gap: 24px; inline-size: 100%; }
+.panel.ws-settings { box-shadow: none; }
 .panel.ws-settings > *, .panel.ws-settings form > * { max-inline-size: none; margin-inline: 0; }
 .ws-modal .ws-settings__title { display: none; }
 
@@ -3599,3 +3600,8 @@ details:has(> summary > img[src*="/globe-"]) { display: none; }
 .ws-pause__state { font-weight: 600; white-space: nowrap; }
 .ws-pause__for { flex: 0 1 180px; min-height: 34px; padding-block: 4px; }
 .ws-pause form .ws-pause__state { margin-inline-end: auto; }
+
+/* Any of Campfire's own cards left (someone's profile page): the settings card's look, not its layered shadow */
+@media (min-width: 100ch) {
+  #main-content > .panel:not(.ws-settings) { inline-size: min(560px, 100% - 32px); border: 1px solid var(--ws-border); border-radius: var(--ws-radius-lg); background: var(--ws-bg-raised); box-shadow: none; }
+}

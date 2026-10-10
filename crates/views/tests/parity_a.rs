@@ -395,7 +395,11 @@ fn users_push_subscriptions() {
             .collect();
         users::PushSubscriptionsIndex { ctx, push_subscriptions }.render().unwrap()
     });
-    assert_parity(name, "html", html);
+    // "Notification devices", Slack's way (plans/redesign.md): a row per device, each with a test.
+    let devices = data(name)["push_subscriptions"].as_array().unwrap().len();
+    assert!(html.contains("Notification devices"), "{html}");
+    assert_eq!(html.matches("Send a test").count(), devices, "{html}");
+    assert_eq!(html.matches(">Remove<").count(), devices, "{html}");
 }
 
 fn sidebar<'a>(name: &str, ctx: &'a campfire_views::ViewContext<'a>) -> users::SidebarShow<'a> {

@@ -5,11 +5,11 @@
     {{ h::link_back_to_last_room_visited(ctx) }}
   </div>
 {% endblock %}
-{% block content %}<section class="panel panel--wide flex flex-column gap">
-  <h1 class="txt-align-center txt-large margin-none">Push Notification Subscriptions</h1>
-  <div class="pad-inline fill-shade border-radius" id="push_subscriptions">
-    <menu class="pad flex flex-column gap">
-      {% for push_subscription in push_subscriptions %}{% include "users/push_subscriptions/_push_subscription.html" %}{% endfor %}    </menu>
-  </div>
-</section>
+{% block content %}<section class="panel ws-settings">
+  <h1 class="ws-settings__title">Notification devices</h1>
+  <p class="ws-hint">The browsers and phones that get your notifications. Send one a test to check it works.</p>
+{% if push_subscriptions.is_empty() %}  <p class="ws-hint"><strong>None yet.</strong> Allow notifications when Campfire asks (the bell in a channel's header) on each device you use.</p>
+{% else %}  <menu class="ws-rows" id="push_subscriptions">
+    {% for push_subscription in push_subscriptions %}{% include "users/push_subscriptions/_push_subscription.html" %}{% endfor %}  </menu>
+{% endif %}</section>
 {% endblock %}
