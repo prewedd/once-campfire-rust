@@ -97,7 +97,8 @@ export default class extends Controller {
   }
 
   #refresh(reason) {
-    get(this.urlValue, { query: { since: this.#lastLoadedAt, reason: reason }, responseKind: "turbo-stream" })
+    // An interrupted refresh (leaving the page) isn't an error: the next one catches up.
+    get(this.urlValue, { query: { since: this.#lastLoadedAt, reason: reason }, responseKind: "turbo-stream" }).catch(() => {})
   }
 
   #hiddenForTooLong() {

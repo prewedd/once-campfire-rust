@@ -22,9 +22,12 @@ async function step(name, fn) { try { await fn() } catch (e) { check(name, false
 async function join(b, name, options) {
   const context = await b.newContext({ viewport: { width: 1280, height: 860 }, ...options })
   const p = await context.newPage()
-  p.on("pageerror", e => e.name !== "AbortError" && errors.push(`${name}: ${e.message}`))
-  // WebKit reports a fetch cancelled by navigating away as an "access control" error.
-  p.on("console", m => m.type() === "error" && !/access control checks|Failed to load resource|interactive-widget/.test(m.text()) && errors.push(`${name}: ${m.text()}`))
+  // WebKit reports a request cut off by leaving the page ("… due to access control checks") as a
+  // page error too, not only on the console (filtered below): it isn't one of ours.
+  p.on("pageerror", e => e.name !== "AbortError" && !/access control checks/.test(e.message) && errors.push(`${name}: ${e.message}`))
+  // WebKit reports a fetch cancelled by navigating away as an "access control" error, and Turbo
+  // logs a frame's interrupted request as WebKit's "Load failed": neither is one of ours.
+  p.on("console", m => m.type() === "error" && !/access control checks|Failed to load resource|interactive-widget/.test(m.text()) && !(/Load failed/.test(m.text()) && /\/turbo-/.test(m.location().url)) && errors.push(`${name}: ${m.text()}`))
   await p.goto(`${BASE}/join/${CODE}`)
   await p.fill('input[name="user[name]"]', name)
   await p.fill('input[name="user[email_address]"]', `${name.toLowerCase()}${t}@x.test`)
