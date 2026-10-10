@@ -1335,6 +1335,31 @@ body {
   }
 }
 
+/* …as Slack's "More actions": a list of named actions (each button's own title) */
+.message__actions-menu { min-inline-size: 220px; }
+.message__actions-menu .message__actions-grid { flex-direction: column; flex-wrap: nowrap; gap: 1px; }
+.message__actions-menu .message__actions-grid > .message__action-btn {
+  --btn-border-radius: var(--ws-radius-sm);
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: auto;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 7px 10px;
+  color: var(--ws-ink);
+  font-size: 14px;
+  font-weight: 500;
+}
+.message__actions-menu .message__actions-grid > .message__action-btn img { inline-size: 16px; block-size: 16px; }
+.message__actions-menu .message__actions-grid > .message__action-btn::after { content: attr(title); }
+.message__actions-menu .message__actions-grid > .message__edit-btn::after { content: "Edit message"; }
+.message__actions-menu .message__actions-grid > [title="Reply"]::after { content: "Quote in reply"; }
+@media (min-width: 100ch) and (hover: hover) {
+  /* The hover toolbar has the reactions */
+  .message__actions-menu .quick-boosts { display: none; }
+  .message__actions-menu .message__actions-grid { margin: 0; padding: 0; border: 0; }
+}
+
 /* ==========================================================================
    Reactions: one pill per emoji, with a count; yours in rose
    ========================================================================== */

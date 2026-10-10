@@ -207,7 +207,10 @@ async function openActions(page, text) {
 
   await step("Alice boosts Bob's reply", async () => {
     const message = await openActions(aliceThread, `Second reply ${stamp}`)
-    await message.locator('.quick-boosts button[data-emoji="👍"]').click()
+    // The hover toolbar's reactions (the "…" menu keeps them only on phones)
+    await aliceThread.keyboard.press("Escape")
+    await message.hover()
+    await message.locator('.message__react-btn[data-emoji-content-param="👍"]').first().click()
     await bob.page.locator(`#boosts_${secondReply.domId} .boost`).first().waitFor({ timeout: 10000 })
     check("Alice boosts Bob's reply, Bob sees it live", true)
   })

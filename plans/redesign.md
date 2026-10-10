@@ -118,3 +118,4 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
 - **Channel topics**: `rooms.topic` (nullable, added on boot; `schema::ADDED_COLUMNS`), set in
   Create a channel / Channel settings (trimmed, 250 characters at most, blank clears it; a form
   without the field leaves it), shown beside the name in the header on wider screens.
+- **Message "⋯" menu**: a list of named actions (Reply in thread, Quote in reply, Copy link, Edit message, Download/Share for files) from each button's title; its emoji row stays only on phones, where there is no hover toolbar.

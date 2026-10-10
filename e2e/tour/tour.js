@@ -34,6 +34,19 @@ const shots = [
       await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {})
       await p.screenshot({ path: `${OUT}/tour-${tag}-${name}.png` })
     }
+    if (tag !== "phone") {
+      await p.goto(BASE + "/rooms/1"); await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {})
+      const row = p.locator(".message:not(.message--me)").last()
+      await row.hover().catch(() => {})
+      await p.screenshot({ path: `${OUT}/tour-${tag}-hover.png` })
+      await row.locator(".message__options-btn, [aria-label*='More'], .message__toolbar summary, .message__toolbar button:last-child").last().click().catch(e => console.log("menu", e.message))
+      await p.waitForTimeout(500)
+      await p.screenshot({ path: `${OUT}/tour-${tag}-menu.png` })
+      await p.keyboard.press("Escape")
+      await p.locator(".message__thread a, .message__thread-summary a, a[href*='/threads/']").first().click().catch(e => console.log("thread", e.message))
+      await p.waitForTimeout(1500)
+      await p.screenshot({ path: `${OUT}/tour-${tag}-thread.png` })
+    }
     for (const [name, path] of [["m-settings", "/account/edit"], ["m-profile", "/users/me/profile"], ["m-edit", "/rooms/opens/1/edit"], ["m-newroom", "/rooms/opens/new"], ["m-private", "/rooms/closeds/new"], ["m-bots", "/account/bots"], ["m-styles", "/account/custom_styles/edit"], ["m-newbot", "/account/bots/new"]]) {
       await p.goto(BASE + "/rooms/1"); await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {})
       await p.evaluate(path => { const a = document.createElement("a"); a.href = path; document.body.append(a); a.click() }, path)
