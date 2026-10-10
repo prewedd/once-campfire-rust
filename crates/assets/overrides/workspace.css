@@ -3562,3 +3562,7 @@ dialog[data-notifications-target="notAllowedNotice"] form[method="dialog"] { pos
 dialog[data-notifications-target="notAllowedNotice"] .dialog__close { --btn-background: transparent; --btn-border-color: transparent; --btn-size: 32px; }
 dialog[data-notifications-target="notAllowedNotice"] .dialog__close img { inline-size: 14px; filter: var(--ws-ink-filter); opacity: 0.6; }
 dialog[data-notifications-target="notAllowedNotice"] details > summary.btn { --btn-border-radius: var(--ws-radius); --btn-background: var(--ws-bg-subtle); --btn-border-color: var(--ws-border); font-size: 14px; }
+
+/* Unread counts on direct messages (lib/workspace/sidebar.js), as Slack's red badges */
+#sidebar a.direct > .ws-count { margin-inline-start: auto; min-inline-size: 18px; padding: 0 6px; border-radius: 999px; background: #e5484d; color: #fff; font-size: 12px; font-weight: 700; line-height: 18px; text-align: center; }
+#sidebar a.direct:has(> .ws-count)::after { display: none; }

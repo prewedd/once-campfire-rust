@@ -187,3 +187,28 @@ fn reading_is_a_noop_when_already_read() {
     let m = run(&t, m, |m, tx| m.read(tx));
     assert_eq!(t.read(|c| Membership::find(c, m.id)).updated_at, before);
 }
+
+#[test]
+fn unread_direct_rooms_count_others_messages_since_they_were_last_there() {
+    let t = TestDb::new();
+    let david = id("david");
+    assert!(t.read(move |c| Membership::unread_direct_counts(c, david)).is_empty(), "nothing unread");
+    let room_id: i64 = t.read(move |c| {
+        Ok(c.query_row(
+            r#"SELECT "memberships"."room_id" FROM "memberships" INNER JOIN "rooms" ON "rooms"."id" = "memberships"."room_id" WHERE "rooms"."type" = 'Rooms::Direct' AND "memberships"."user_id" = ? LIMIT 1"#,
+            [david],
+            |row| row.get(0),
+        )?)
+    });
+    t.write(move |tx| {
+        tx.conn().execute(r#"UPDATE "memberships" SET "unread_at" = '2030-01-01 00:00:00.000000', "connected_at" = NULL WHERE "room_id" = ? AND "user_id" = ?"#, [room_id, david])?;
+        Ok(())
+    });
+    let expected: i64 = t.read(move |c| Ok(c.query_row(r#"SELECT COUNT(*) FROM "messages" WHERE "room_id" = ? AND "creator_id" != ?"#, [room_id, david], |row| row.get(0))?));
+    let counts = t.read(move |c| Membership::unread_direct_counts(c, david));
+    if expected > 0 {
+        assert_eq!(counts, vec![(room_id, expected)]);
+    } else {
+        assert!(counts.is_empty());
+    }
+}

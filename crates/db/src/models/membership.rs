@@ -223,6 +223,23 @@ impl Membership {
         Ok(())
     }
 
+    /// For the sidebar's badges (plans/redesign.md): how many messages from others each of
+    /// someone's unread direct rooms has had since they were last in it (`connected_at`;
+    /// `unread_at` is the latest message's time, not the first unread's), as (room id, count).
+    pub fn unread_direct_counts(conn: &Connection, user_id: i64) -> Result<Vec<(i64, i64)>> {
+        crate::sql::query_all(
+            conn,
+            r#"SELECT "memberships"."room_id", COUNT("messages"."id") FROM "memberships"
+               INNER JOIN "rooms" ON "rooms"."id" = "memberships"."room_id" AND "rooms"."type" = 'Rooms::Direct'
+               INNER JOIN "messages" ON "messages"."room_id" = "memberships"."room_id" AND "messages"."created_at" > COALESCE("memberships"."connected_at", '')
+                 AND "messages"."creator_id" != "memberships"."user_id"
+               WHERE "memberships"."user_id" = ? AND "memberships"."unread_at" IS NOT NULL
+               GROUP BY "memberships"."room_id""#,
+            [user_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+    }
+
     /// `read`: `update!(unread_at: nil)`
     pub fn read(&mut self, tx: &mut Tx<'_>) -> Result<()> {
         if self.unread_at.is_none() {

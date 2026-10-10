@@ -278,6 +278,24 @@ const openModal = (p, path) => p.evaluate(path => { const a = document.createEle
     check("…and Alt+↑ back", true)
   })
 
+  await step("unread badges on direct messages", async () => {
+    await ana.goto(`${BASE}/rooms/1`); await ana.waitForLoadState("networkidle")
+    const anaId = await ana.evaluate(() => Current.user.id)
+    const dm = await ben.evaluate(async id => (await fetch(`/rooms/directs?user_ids[]=${id}`, { method: "POST", headers: { Accept: "text/html" } })).url, anaId)
+    await ben.goto(dm); await ben.waitForLoadState("networkidle")
+    for (const text of [`ping one ${t}`, `ping two ${t}`]) {
+      await ben.locator("#composer [contenteditable]").first().click()
+      await ben.keyboard.type(text)
+      await ben.keyboard.press("Enter")
+      await ben.locator(".message", { hasText: text }).waitFor({ timeout: 8000 })
+    }
+    await ana.waitForTimeout(1000)
+    await ana.evaluate(() => document.dispatchEvent(new Event("visibilitychange")))
+    const badge = ana.locator(`#sidebar a.direct[href$="${new URL(dm).pathname}"] .ws-count`)
+    await badge.waitFor({ timeout: 10000 })
+    check("a direct message counts its unread messages", Number(await badge.innerText()) >= 2, await badge.innerText())
+  })
+
   check("no page errors", errors.length === 0, errors.join(" | "))
   await b.close()
   console.log(`\n${results.filter(Boolean).length}/${results.length} checks passed`)

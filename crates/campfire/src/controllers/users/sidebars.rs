@@ -87,3 +87,28 @@ pub async fn reorder(c: &mut Ctx) -> Result {
         .map_err(Error::internal)?;
     Ok(concerns::head(StatusCode::NO_CONTENT))
 }
+
+/// `GET /users/me/sidebar/unread_counts`: unread messages per unread direct room, as
+/// `{"room id": count}`, for the sidebar's red badges (plans/redesign.md).
+pub async fn unread_counts(c: &mut Ctx) -> Result {
+    concerns::before_actions(c, Before::default()).await?;
+    let user_id = concerns::require_current_user(c)?.id;
+    let counts = c.app().db.read(move |conn| campfire_db::Membership::unread_direct_counts(conn, user_id)).await.map_err(Error::internal)?;
+    let json: serde_json::Map<String, serde_json::Value> = counts.into_iter().map(|(room, count)| (room.to_string(), count.into())).collect();
+    Ok(c.render(StatusCode::OK, &format::JSON, serde_json::Value::Object(json).to_string()))
+}
+
+#[cfg(test)]
+mod unread_counts_tests {
+    use crate::controllers::presenters::test_support::*;
+
+    #[tokio::test]
+    async fn unread_counts_are_json_by_room() {
+        let Some(app) = TestApp::boot().await else { return };
+        let mut david = app.david();
+        let reply = david.get("/users/me/sidebar/unread_counts").await;
+        assert_eq!(reply.status, axum::http::StatusCode::OK);
+        let counts: serde_json::Value = serde_json::from_str(&reply.text()).unwrap();
+        assert!(counts.is_object(), "{counts}");
+    }
+}

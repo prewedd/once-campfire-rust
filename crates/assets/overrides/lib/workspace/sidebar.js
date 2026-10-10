@@ -8,6 +8,7 @@
 // - "Add channel" offers Create a channel and Browse channels; Browse channels filters as you type.
 // - Alt+↑ / Alt+↓ go to the previous / next channel or conversation (as Slack's), unless a channel
 //   in the sidebar has the focus, where they move it (lib/workspace/reorder.js).
+// - Direct messages show how many unread messages they have, in a red badge, as Slack's.
 // - Ctrl/⌘+K jumps to any channel or conversation in the sidebar by name, as Slack's switcher does.
 // It uses the notifications menu's look and closing (lib/workspace/involvement.js).
 
@@ -145,6 +146,7 @@ document.addEventListener("keydown", event => {
 export function enhanceSidebar() {
   addSectionToggles()
   enableWorkspaceMenu()
+  showUnreadCounts()
 }
 
 // The quick switcher: the sidebar's own links, filtered as you type.
@@ -241,3 +243,29 @@ window.addEventListener("keydown", event => {
   event.preventDefault()
   Turbo.visit(next.href)
 })
+
+// Unread counts on direct messages: on load, every 20 seconds in view, and on coming back.
+let countsAt = 0
+async function showUnreadCounts(force = false) {
+  if (!window.Current?.user || !document.querySelector("#sidebar a.direct")) return
+  if (!force && Date.now() - countsAt < 15_000) return
+  countsAt = Date.now()
+  let counts = {}
+  try {
+    const response = await fetch("/users/me/sidebar/unread_counts", { headers: { Accept: "application/json" } })
+    if (response.ok) counts = await response.json()
+  } catch { return }
+  document.querySelectorAll("#sidebar a.direct[id^='list_rooms_direct_']").forEach(link => {
+    const count = link.classList.contains("unread") ? counts[link.id.replace("list_rooms_direct_", "")] : 0
+    let badge = link.querySelector(":scope > .ws-count")
+    if (!count) return badge?.remove()
+    badge ??= link.appendChild(Object.assign(document.createElement("span"), { className: "ws-count" }))
+    const text = count > 99 ? "99+" : String(count)
+    if (badge.textContent !== text) badge.textContent = text
+  })
+}
+
+document.addEventListener("turbo:load", () => showUnreadCounts(true))
+setInterval(() => { if (document.visibilityState === "visible") showUnreadCounts(true) }, 20_000)
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") showUnreadCounts(true) })
+export { showUnreadCounts }

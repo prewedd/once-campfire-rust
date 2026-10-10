@@ -209,6 +209,7 @@ static ROUTES: LazyLock<Vec<Route>> = LazyLock::new(|| {
         post("/users/:user_id/ban(.:format)", "users/bans#create", users::bans::create),
         get("/users/:user_id/sidebar(.:format)", "users/sidebars#show", users::sidebars::show).defaults(ME_DEFAULTS),
         post("/users/:user_id/sidebar/positions(.:format)", "sidebar_positions#update", users::sidebars::reorder).defaults(ME_DEFAULTS),
+        get("/users/:user_id/sidebar/unread_counts(.:format)", "sidebar_positions#unread_counts", users::sidebars::unread_counts).defaults(ME_DEFAULTS),
         get("/users/:user_id/profile/new(.:format)", "users/profiles#new", action_not_found).defaults(ME_DEFAULTS),
         get("/users/:user_id/profile/edit(.:format)", "users/profiles#edit", action_not_found).defaults(ME_DEFAULTS),
         get("/users/:user_id/profile(.:format)", "users/profiles#show", users::profiles::show).defaults(ME_DEFAULTS),
