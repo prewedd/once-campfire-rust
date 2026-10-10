@@ -54,7 +54,7 @@ function paint() {
 }
 
 export function showStatuses() {
-  if (!document.querySelector("#sidebar")) return // signed out: nobody's to show
+  if (!window.Current?.user) return // signed out: nobody's to show
   paint()
   load().then(paint)
 }
