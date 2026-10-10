@@ -34,7 +34,7 @@ const shots = [
       await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {})
       await p.screenshot({ path: `${OUT}/tour-${tag}-${name}.png` })
     }
-    for (const [name, path] of [["m-settings", "/account/edit"], ["m-profile", "/users/me/profile"], ["m-edit", "/rooms/opens/1/edit"], ["m-newroom", "/rooms/opens/new"], ["m-private", "/rooms/closeds/new"]]) {
+    for (const [name, path] of [["m-settings", "/account/edit"], ["m-profile", "/users/me/profile"], ["m-edit", "/rooms/opens/1/edit"], ["m-newroom", "/rooms/opens/new"], ["m-private", "/rooms/closeds/new"], ["m-bots", "/account/bots"], ["m-styles", "/account/custom_styles/edit"], ["m-newbot", "/account/bots/new"]]) {
       await p.goto(BASE + "/rooms/1"); await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {})
       await p.evaluate(path => { const a = document.createElement("a"); a.href = path; document.body.append(a); a.click() }, path)
       await p.waitForTimeout(1500)

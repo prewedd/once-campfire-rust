@@ -9,6 +9,8 @@ const MODAL_PATH = /^\/(account(\/.*)?|users\/me\/profile(\/.*)?|rooms\/\d+\/set
 const TITLES = [
   [ /^\/users\/me\/profile/, "Your profile" ],
   [ /^\/account\/edit/, "Workspace settings" ],
+  [ /^\/account\/bots\/new/, "Add a bot" ],
+  [ /^\/account\/bots\/\d+\/edit/, "Edit bot" ],
   [ /^\/account\/bots/, "Bots" ],
   [ /^\/account\/custom_styles/, "Custom styles" ],
   [ /^\/account\/users/, "People" ],

@@ -5,27 +5,16 @@
     {{ h::link_back_to(ctx, h::routes::edit_account()) }}
   </div>
 {% endblock %}
-{% block content %}<section class="panel panel--wide txt-align-center flex flex-column position-relative" style="view-transition-name: custom-styles">
-{% let form = h::form_with(ctx.url(h::routes::account_custom_styles().as_str())).model("account").method("patch").class("flex flex-column gap").data("controller", "form").data("action", "keydown.ctrl+enter->form#submit keydown.meta+enter->form#submit") %}  {% filter form_with(form) %}
-    <div class="panel__button">
-      {{ h::translation_button(ctx, "custom_styles") }}
-    </div>
-
-    <div class="pad-inline-double margin-inline">
-      <h1 class="margin-none">Custom CSS</h1>
-      <p class="flex flex-wrap align-center justify-center gap margin-none-block-start" style="--column-gap: 0.5ch; --row-gap: 0">
-        <span>Add custom CSS styles.</span>
-        {{ h::image_tag(ctx, "alert.svg", h::attrs().class("flex-inline colorize--black").size(16).aria_hidden()) }}
-        <span>Use Caution: you could break things.</span>
-      </p>
-    </div>
-
-    <label class="flex align-start gap flex-item-grow">
-      {{ form.text_area("custom_styles", custom_styles.as_deref(), h::attrs().class("input input--code txt--small").placeholder("Add CSS styles…").autocomplete("off").attr("spellcheck", "false").attr("autocorrect", "off").attr("autocapitalize", "off").rows(16).required(false)) }}
+{% block content %}<section class="panel ws-settings" style="view-transition-name: custom-styles">
+  <h1 class="ws-settings__title">Custom styles</h1>
+{% let form = h::form_with(ctx.url(h::routes::account_custom_styles().as_str())).model("account").method("patch").class("ws-settings__form").data("controller", "form").data("action", "keydown.ctrl+enter->form#submit keydown.meta+enter->form#submit") %}  {% filter form_with(form) %}
+    <label class="ws-field">
+      <span class="ws-field__label">CSS for everyone in the workspace</span>
+      <span class="ws-hint">Added after Campfire's own styles. ⚠ Use caution: you could break things. Ctrl+Enter saves.</span>
+      {{ form.text_area("custom_styles", custom_styles.as_deref(), h::attrs().class("ws-input ws-input--code").placeholder("/* e.g. */ :root { --ws-accent: #f63d68; }").autocomplete("off").attr("spellcheck", "false").attr("autocorrect", "off").attr("autocapitalize", "off").rows(16).required(false)) }}
     </label>
-
-    {% filter button(h::attrs().class("btn btn--reversed center txt-large").type_("submit")) %}
-      {{ h::image_tag(ctx, "check.svg", h::attrs().aria_hidden().size(20)) }}
-      <span class="for-screen-reader">Save changes</span>
-{% endfilter %}{% endfilter %}</section>
+    <div class="ws-actions">
+      <button type="submit" class="ws-btn ws-btn--primary">Save changes</button>
+    </div>
+{% endfilter %}</section>
 {% endblock %}

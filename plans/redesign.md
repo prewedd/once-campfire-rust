@@ -114,3 +114,4 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
   with the people autocomplete, then Start. **Conversation settings** list who's in it and offer
   "Delete conversation". Labels and tooltips say "channel" and "conversation", not "room" and "Ping".
 - **Jump to** (Ctrl/⌘+K, `lib/workspace/sidebar.js`): channels (🔒 for private) and people from the sidebar, filtered by name as you type (names that start with it first), ↑↓ and Enter.
+- **Bots and Custom styles** (`accounts/bots`, `accounts/custom_styles`): "Add a bot", each bot with its per-channel commands (Copy message command / Copy file command), the bot form as the profile form (Picture, Name, Webhook URL with what it does), Reset key and Remove bot as labelled sections; custom CSS as a labelled code field with Save changes.

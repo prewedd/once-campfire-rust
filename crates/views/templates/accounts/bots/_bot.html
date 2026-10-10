@@ -1,50 +1,23 @@
-<li class="flex flex-column gap flush fill-shade border-radius pad-block pad-inline-double">
-  <div class="flex align-center gap">
-    <figure class="avatar flex-item--no-shrink" style="--avatar-size: 2.65em;">
-      {{ h::avatar_tag(ctx, bot.user.avatar(), h::attrs().loading("lazy")) }}
-    </figure>
-
-    <div class="min-width">
-      <div class="overflow-ellipsis txt-large"><strong>{{ bot.user.name }}</strong></div>
+<li class="ws-bot">
+  <div class="ws-row">
+    <span class="ws-row__main">
+      {{ h::image_tag(ctx, bot.user.avatar_path.as_str(), h::attrs().class("ws-row__avatar").aria_hidden().loading("lazy").size(32)) }}
+      <span class="ws-row__name">{{ bot.user.name }}</span>
+      <span class="ws-badge">Bot</span>
+    </span>
+    <span class="ws-row__actions">
+      {% filter link_to(h::routes::edit_account_bot(bot.user.id), h::attrs().class("ws-btn").style("view-transition-name: chat-bot-" ~ bot.user.id)) %}Edit<span class="for-screen-reader"> {{ bot.user.name }}</span>{% endfilter %}
+    </span>
+  </div>
+{% for room in bot.rooms %}  <fieldset class="ws-bot__room">
+    <legend class="ws-row__name"><span class="ws-row__hash">#</span>{{ room.name }}</legend>
+{% let curl_text_line = h::curl_text_line(ctx.url(h::routes::room_bot_messages(room.id, bot.bot_key.as_str()).as_str())) %}    <div class="ws-inline">
+      <input type="text" class="ws-input ws-input--code" value="{{ curl_text_line }}" aria-label="curl command for posting messages" readonly>
+      {% filter button_to_copy_to_clipboard(curl_text_line) %}Copy message command{% endfilter %}
     </div>
-
-    {% filter link_to(h::routes::edit_account_bot(bot.user.id), h::attrs().class("btn flex-item-justify-end").style("view-transition-name: chat-bot-" ~ bot.user.id)) %}
-      {{ h::image_tag(ctx, "pencil.svg", h::attrs().aria_hidden().size(20)) }}
-      <span class="for-screen-reader">Edit {{ bot.user.name }}</span>
-{% endfilter %}  </div>
-
-{% for room in bot.rooms %}    <fieldset class="gap max-width pad border border-radius">
-      <legend class="min-width txt-align-start pad-inline">
-        <strong class="overflow-ellipsis">{{ room.name }}</strong>
-      </legend>
-
-{% let curl_text_line = h::curl_text_line(ctx.url(h::routes::room_bot_messages(room.id, bot.bot_key.as_str()).as_str())) %}      <div class="flex align-center gap">
-        {{ h::image_tag(ctx, "messages-outlined.svg", h::attrs().aria_hidden().size(24).class("colorize--black")) }}
-
-        <div class="flex-item-grow">
-          <input type="text" class="input full-width fill-white" value="{{ curl_text_line }}" aria-label="curl command for posting messages" readonly>
-        </div>
-
-        <div class="txt-small">
-          {% filter button_to_copy_to_clipboard(curl_text_line) %}
-            {{ h::image_tag(ctx, "copy-paste.svg", h::attrs().aria_hidden().size(20)) }}
-            <span class="for-screen-reader">Copy message command</span>
-{% endfilter %}        </div>
-      </div>
-
-{% let curl_upload_line = h::curl_upload_line(ctx.url(h::routes::room_bot_messages(room.id, bot.bot_key.as_str()).as_str())) %}      <div class="flex align-center gap">
-        {{ h::image_tag(ctx, "attachment.svg", h::attrs().aria_hidden().size(24).class("colorize--black")) }}
-
-        <div class="flex-item-grow">
-          <input type="text" class="input full-width fill-white" value="{{ curl_upload_line }}" aria-label="curl command for posting attachments" readonly>
-        </div>
-
-        <div class="txt-small">
-          {% filter button_to_copy_to_clipboard(curl_upload_line) %}
-            {{ h::image_tag(ctx, "copy-paste.svg", h::attrs().aria_hidden().size(20)) }}
-            <span class="for-screen-reader">Copy attachment command</span>
-{% endfilter %}        </div>
-      </div>
-    </fieldset>
+{% let curl_upload_line = h::curl_upload_line(ctx.url(h::routes::room_bot_messages(room.id, bot.bot_key.as_str()).as_str())) %}    <div class="ws-inline">
+      <input type="text" class="ws-input ws-input--code" value="{{ curl_upload_line }}" aria-label="curl command for posting attachments" readonly>
+      {% filter button_to_copy_to_clipboard(curl_upload_line) %}Copy file command{% endfilter %}
+    </div>
+  </fieldset>
 {% endfor %}</li>
-

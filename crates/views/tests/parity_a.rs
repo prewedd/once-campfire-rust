@@ -203,17 +203,25 @@ fn user_by_email_or_name(case_name: &str, name: &str) -> &'static serde_json::Va
     user(case_name, name)
 }
 
+/// Bots and custom styles are laid out as Slack's settings (plans/redesign.md), so they're checked
+/// for what they offer rather than against the reference's markup.
 #[test]
 fn accounts_bots() {
     let name = "bots_index";
-    let html = with_context(name, Request::default(), |ctx| accounts::BotsIndex { ctx, bots: bots(name) }.render().unwrap());
-    assert_parity(name, "html", html);
+    let bots = bots(name);
+    let html = with_context(name, Request::default(), |ctx| accounts::BotsIndex { ctx, bots: bots.clone() }.render().unwrap());
+    assert!(html.contains("Add a bot"), "{html}");
+    assert_eq!(html.matches(r#"<li class="ws-bot">"#).count(), bots.len(), "{html}");
+    let rooms: usize = bots.iter().map(|bot| bot.rooms.len()).sum();
+    assert_eq!(html.matches("Copy message command").count(), rooms, "a command per bot and channel");
+    assert_eq!(html.matches("Copy file command").count(), rooms);
 
     let name = "bots_new";
     let html = with_context(name, Request::default(), |ctx| {
         accounts::BotsNew { ctx, bot: accounts::BotForm::default() }.render().unwrap()
     });
-    assert_parity(name, "html", html);
+    assert!(html.contains("Add a bot") && html.contains(r#"name="user[name]""#) && html.contains(r#"name="user[webhook_url]""#) && html.contains(r#"name="user[avatar]""#), "{html}");
+    assert!(!html.contains("Reset key"), "{html}");
 
     let name = "bots_edit";
     let bender = user(name, "Bender Bot");
@@ -230,7 +238,7 @@ fn accounts_bots() {
         .render()
         .unwrap()
     });
-    assert_parity(name, "html", html);
+    assert!(html.contains("Edit bot") && html.contains("Reset key") && html.contains("Remove bot") && html.contains("Bender Bot"), "{name}: {html}");
 
     let name = "bots_edit_with_avatar";
     let bender = user(name, "Bender Bot");
@@ -247,7 +255,7 @@ fn accounts_bots() {
         .render()
         .unwrap()
     });
-    assert_parity(name, "html", html);
+    assert!(html.contains("Edit bot") && html.contains("Reset key") && html.contains("Remove bot") && html.contains("Bender Bot"), "{name}: {html}");
 }
 
 #[test]
@@ -256,7 +264,7 @@ fn accounts_custom_styles() {
         let html = with_context(name, Request::default(), |ctx| {
             accounts::CustomStylesEdit { ctx, custom_styles: str_of(&account_fact(name, "custom_styles")) }.render().unwrap()
         });
-        assert_parity(name, "html", html);
+        assert!(html.contains(r#"name="account[custom_styles]""#) && html.contains("Save changes"), "{name}: {html}");
     }
 }
 

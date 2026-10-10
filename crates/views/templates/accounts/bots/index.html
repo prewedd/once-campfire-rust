@@ -5,24 +5,13 @@
     {{ h::link_back_to(ctx, h::routes::edit_account()) }}
   </div>
 {% endblock %}
-{% block content %}<section class="panel panel--wide txt-align-center flex flex-column position-relative" style="view-transition-name: chat-bots">
-  <div class="flex align-center gap">
-    <div class="panel__button">
-      {{ h::translation_button(ctx, "chat_bots") }}
-    </div>
-    <div class="pad-inline-double center">
-      <h1 class="margin-none">Chat bots</h1>
-      <p class="margin-none-block-start">With Chat bots, other sites and services can post updates directly to Campfire.</p>
-
-      {% filter link_to(h::routes::new_account_bot(), h::attrs().class("btn btn--reversed txt-large").aria("label", "Add a chat bot")) %}
-        {{ h::image_tag(ctx, "bot.svg", h::attrs().aria_hidden().size(20)) }}
-        {{ h::image_tag(ctx, "add.svg", h::attrs().aria_hidden().size(20)) }}
-{% endfilter %}    </div>
+{% block content %}<section class="panel ws-settings" style="view-transition-name: chat-bots">
+  <h1 class="ws-settings__title">Bots</h1>
+  <div class="ws-section--split ws-section ws-section--first">
+    <p class="ws-hint">Bots let other sites and services post to channels. Each bot gets a command per channel it's in, for messages and for files.</p>
+    {% filter link_to(h::routes::new_account_bot(), h::attrs().class("ws-btn ws-btn--primary")) %}Add a bot{% endfilter %}
   </div>
-
-  <div class="pad-inline pad-block-start ">
-    <menu class="flex flex-column gap margin-none pad">
-      {% for bot in bots %}{% include "accounts/bots/_bot.html" %}{% endfor %}    </menu>
-  </div>
-</section>
+{% if !bots.is_empty() %}  <menu class="ws-bots">
+    {% for bot in bots %}{% include "accounts/bots/_bot.html" %}{% endfor %}  </menu>
+{% endif %}</section>
 {% endblock %}

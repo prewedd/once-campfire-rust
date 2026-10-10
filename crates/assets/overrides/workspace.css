@@ -3265,7 +3265,7 @@ textarea.ws-input { resize: vertical; }
 
 /* Profile: fields on the left, the photo on the right */
 .ws-profile { display: grid; grid-template-columns: 1fr 176px; gap: 28px; align-items: start; }
-.ws-profile > form { grid-column: 1; grid-row: 1; }
+.ws-profile > :not(.ws-profile__photo) { grid-column: 1; grid-row: 1; }
 .ws-profile__fields { display: grid; gap: 18px; }
 .ws-profile__photo { grid-column: 2; display: grid; gap: 8px; }
 .ws-profile__image { display: block; width: 176px; height: 176px; border-radius: var(--ws-radius-lg); object-fit: cover; background: var(--ws-bg-subtle); }
@@ -3364,7 +3364,7 @@ textarea.ws-input { resize: vertical; }
   .ws-settings { inline-size: 100%; margin: var(--navbar-height, 48px) 0 0; padding: 12px 16px 32px; border: 0; border-radius: 0; box-shadow: none; }
   .ws-modal .ws-settings { margin: 0; padding: 0; }
   .ws-profile { grid-template-columns: 1fr; }
-  .ws-profile > form, .ws-profile__photo { grid-column: 1; grid-row: auto; }
+  .ws-profile > *, .ws-profile > :not(.ws-profile__photo) { grid-column: 1; grid-row: auto; }
   .ws-profile__photo { grid-template-columns: 96px 1fr; align-items: center; }
   .ws-profile__photo .ws-field__label { grid-column: 1 / -1; }
   .ws-profile__image { width: 96px; height: 96px; grid-row: span 2; }
@@ -3400,3 +3400,15 @@ body:not(.sidebar) > #main-content .ws-new-dm { max-inline-size: 640px; margin: 
 .ws-switcher__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-switcher__empty { padding: 12px 10px; color: var(--ws-muted); }
 .ws-switcher__hint { margin: 0; padding: 8px 16px; border-top: 1px solid var(--ws-border); color: var(--ws-muted); font-size: 12px; }
+
+/* Bots and custom styles (accounts/bots, accounts/custom_styles) */
+.ws-settings__form { display: grid; gap: 22px; }
+.ws-section--first { padding-top: 0; border-top: 0; }
+.ws-input--code { font-family: var(--ws-mono); font-size: 13px; }
+.ws-profile__image--small { width: 96px; height: 96px; }
+.ws-bots { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.ws-bot { display: grid; gap: 8px; padding: 4px 4px 12px; border: 1px solid var(--ws-border); border-radius: var(--ws-radius); }
+.ws-bot > .ws-row:hover { background: none; }
+.ws-bot__room { display: grid; gap: 6px; margin: 0 12px; padding: 8px 0 0; border: 0; border-top: 1px solid var(--ws-border); max-inline-size: none; }
+.ws-bot__room legend { float: left; padding: 0 0 4px; font-size: 14px; }
+.ws-bot__room .ws-inline .btn { min-inline-size: 170px; }

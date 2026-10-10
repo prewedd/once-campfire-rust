@@ -1,31 +1,28 @@
-<h1 class="for-screen-reader">Chat Bot Setup</h1>
-<label class="align-center center avatar__form gap" data-controller="upload-preview">
-  <div class="btn input--file">
-    {{ h::image_tag(ctx, "camera.svg", h::attrs().aria_hidden().size(20)) }}
-    {{ form.file_field("avatar", h::attrs().class("input").accept("image/*").data("upload_preview_target", "input").data("action", "upload-preview#previewImage")) }}
-    <span class="for-screen-reader">Upload bot avatar</span>
-  </div>
-
-  <div class="avatar input--file txt-xx-large" style="--avatar-size: var(--btn-size);">
-    {{ h::image_tag(ctx, bot.avatar_attachment_url.as_deref().unwrap_or("default-bot-avatar.svg"), h::attrs().alt("Bot avatar").size(48).data("upload_preview_target", "image")) }}
-  </div>
-</label>
-
-<div class="flex align-center gap">
-  {{ h::translation_button(ctx, "bot_name") }}
-  <label class="flex align-center gap flex-item-grow txt-large input input--actor">
-    {{ form.text_field("name", bot.name.as_deref(), h::attrs().class("input").autocomplete("name").placeholder("Name the bot").autofocus().required(true).data("1p-ignore", true)) }}
-    {{ h::image_tag(ctx, "bot.svg", h::attrs().aria_hidden().size(24).class("colorize--black")) }}
+<h1 class="ws-settings__title">{% if bot.name.is_some() %}Edit bot{% else %}Add a bot{% endif %}</h1>
+<div class="ws-profile">
+  <label class="ws-profile__photo" data-controller="upload-preview">
+    <span class="ws-field__label">Picture</span>
+    {{ h::image_tag(ctx, bot.avatar_attachment_url.as_deref().unwrap_or("default-bot-avatar.svg"), h::attrs().class("ws-profile__image ws-profile__image--small").alt("Bot avatar").size(96).data("upload_preview_target", "image")) }}
+    <span class="ws-btn ws-btn--block input--file">
+      Upload picture
+      {{ form.file_field("avatar", h::attrs().class("input").accept("image/*").data("upload_preview_target", "input").data("action", "upload-preview#previewImage")) }}
+    </span>
   </label>
+
+  <div class="ws-profile__fields">
+    <label class="ws-field">
+      <span class="ws-field__label">Name</span>
+      {{ form.text_field("name", bot.name.as_deref(), h::attrs().class("ws-input").autocomplete("name").placeholder("e.g. Deploys").autofocus().required(true).data("1p-ignore", true)) }}
+    </label>
+
+    <label class="ws-field">
+      <span class="ws-field__label">Webhook URL <span class="ws-hint">(optional)</span></span>
+      {{ form.url_field("webhook_url", bot.webhook_url.as_deref(), h::attrs().class("ws-input").placeholder("https://…")) }}
+      <span class="ws-hint">Messages that @mention the bot, or are sent to it directly, are posted here; its reply goes back to the channel.</span>
+    </label>
+
+    <div class="ws-actions">
+      <button type="submit" class="ws-btn ws-btn--primary">Save</button>
+    </div>
+  </div>
 </div>
-
-<div class="flex align-center gap">
-  {{ h::translation_button(ctx, "webhook_url") }}
-  <label class="flex align-center gap flex-item-grow txt-large input input--actor">
-    {{ form.url_field("webhook_url", bot.webhook_url.as_deref(), h::attrs().class("input").placeholder("Webhook URL")) }}
-    {{ h::image_tag(ctx, "web.svg", h::attrs().aria_hidden().size(24).class("colorize--black")) }}
-  </label>
-</div>
-
-{{ h::profile_form_submit_button(ctx) }}
-

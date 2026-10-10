@@ -5,20 +5,24 @@
     {{ h::link_back_to(ctx, h::routes::account_bots()) }}
   </div>
 {% endblock %}
-{% block content %}<section class="panel" style="view-transition-name: chat-bot-{{ bot_id }}">
-{% let form = h::form_with(h::routes::account_bot(bot_id)).model("user").method("patch").class("flex flex-column gap") %}  {% filter form_with(form) %}
+{% block content %}<section class="panel ws-settings" style="view-transition-name: chat-bot-{{ bot_id }}">
+{% let form = h::form_with(h::routes::account_bot(bot_id)).model("user").method("patch").class("ws-settings__form") %}  {% filter form_with(form) %}
     {% include "accounts/bots/_form.html" %}
 {% endfilter %}
-  <hr class="separator full-width margin-block-double">
+  <section class="ws-section ws-section--split">
+    <div>
+      <h2 class="ws-section__title">Reset the bot's key</h2>
+      <p class="ws-hint">Every command using the old key stops working: update them with the new ones.</p>
+    </div>
+    {% filter button_to(h::routes::account_bot_key(bot_id), h::attrs().method("put").class("ws-btn").data("turbo_confirm", "Are you sure you want to change the bot key? All usage of this bot must be updated.")) %}Reset key{% endfilter %}
+  </section>
 
-  <div class="flex align-center gap justify-space-between">
-    {% filter button_to(h::routes::account_bot(bot_id), h::attrs().method("delete").class("btn txt--small btn--negative").aria("label", "Delete this chat bot").data("turbo_confirm", "Are you sure you want to permanently remove this bot from the account? This can’t be undone.")) %}
-      {{ h::image_tag(ctx, "trash.svg", h::attrs().aria_hidden().size(20)) }}
-      {{ h::image_tag(ctx, "bot.svg", h::attrs().aria_hidden().size(20)) }}
-{% endfilter %}
-    {% filter button_to(h::routes::account_bot_key(bot_id), h::attrs().method("put").class("btn full-width txt--small btn--negative").aria("label", "Generate a new key").data("turbo_confirm", "Are you sure you want to change the bot key? All usage of this bot must be updated.")) %}
-      {{ h::image_tag(ctx, "refresh.svg", h::attrs().aria_hidden().size(20)) }}
-      {{ h::image_tag(ctx, "key.svg", h::attrs().aria_hidden().size(20)) }}
-{% endfilter %}  </div>
+  <section class="ws-section ws-section--split">
+    <div>
+      <h2 class="ws-section__title">Remove this bot</h2>
+      <p class="ws-hint">It stops posting, and its commands stop working. This can't be undone.</p>
+    </div>
+    {% filter button_to(h::routes::account_bot(bot_id), h::attrs().method("delete").class("ws-btn ws-btn--danger").data("turbo_confirm", "Are you sure you want to permanently remove this bot from the account? This can’t be undone.")) %}Remove bot{% endfilter %}
+  </section>
 </section>
 {% endblock %}
