@@ -20,7 +20,7 @@ pub struct Golden {
 
 /// Assets this app adds (the workspace redesign), which the reference's asset map doesn't have.
 fn added_asset(logical: &str) -> Option<String> {
-    ["emoji.svg", "emoji/prompt.html", "palette.svg", "headphones.svg", "clock.svg", "threads.svg", "bookmark.svg", "pin.svg", "at.svg"].contains(&logical).then(|| format!("/assets/{logical}"))
+    ["emoji.svg", "emoji/prompt.html", "palette.svg", "headphones.svg", "clock.svg", "threads.svg", "bookmark.svg", "pin.svg", "at.svg", "unread.svg"].contains(&logical).then(|| format!("/assets/{logical}"))
 }
 
 pub fn golden(name: &str) -> Golden {
@@ -152,6 +152,7 @@ fn without_port_markup(actual: Vec<String>) -> Vec<String> {
         "ws-nav-search",
         "message__save-btn",
         "message__pin-btn",
+        "message__unread-btn",
         r#"<span class="ws-topic""#,
         r#"<a class="ws-members-btn""#,
         r#"<span id="ws-last-seen""#,

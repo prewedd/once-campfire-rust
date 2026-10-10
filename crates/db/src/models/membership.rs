@@ -317,10 +317,24 @@ impl Membership {
         Self::mark_read_at(tx, id, tx.now())
     }
 
-    /// This app's own `last_read_at` (schema::ADDED_COLUMNS), beside Rails' own updates.
+    /// This app's own `last_read_at` (schema::ADDED_COLUMNS), beside Rails' own updates. Not while
+    /// the room is unread: one marked unread keeps its place until it's read (connecting clears
+    /// `unread_at` first).
     fn mark_read_at(tx: &Tx<'_>, id: i64, at: Timestamp) -> Result<()> {
-        tx.conn().execute_cached(r#"UPDATE "memberships" SET "last_read_at" = ? WHERE "memberships"."id" = ?"#, params![at, id])?;
+        tx.conn().execute_cached(r#"UPDATE "memberships" SET "last_read_at" = ? WHERE "memberships"."id" = ? AND "memberships"."unread_at" IS NULL"#, params![at, id])?;
         Ok(())
+    }
+
+    /// Slack's "Mark unread" (plans/redesign.md): unread from `message` on, for this person.
+    /// `false` when they aren't in its room.
+    pub fn mark_unread_from(tx: &mut Tx<'_>, user_id: i64, message: &crate::Message) -> Result<bool> {
+        let changed = tx.conn().execute_cached(
+            r#"UPDATE "memberships" SET "unread_at" = ?1,
+                 "last_read_at" = strftime('%Y-%m-%d %H:%M:%f', ?1, '-0.001 seconds')
+               WHERE "memberships"."room_id" = ?2 AND "memberships"."user_id" = ?3"#,
+            params![message.created_at, message.room_id, user_id],
+        )?;
+        Ok(changed > 0)
     }
 
     /// When they last had it open or read it, if this app has seen them do so.

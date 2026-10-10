@@ -167,3 +167,4 @@ leaders. They now read as Slack's, with shared classes in `workspace.css` (`.ws-
   "Until next week" (9 am, your time); while paused the push job skips your devices
   (`integrations/web_push.rs`), rooms still go unread. "Paused until …" in your clock, and Resume.
   Also in the workspace menu.
+- **Mark unread** (`POST /messages/:id/unread`, `Membership::mark_unread_from`): in the ⋯ menu; the room is unread from that message (badge, bold row, the New line above it) until you come back to it. `last_read_at` no longer moves while a room is unread, so being in it or leaving it keeps the mark.

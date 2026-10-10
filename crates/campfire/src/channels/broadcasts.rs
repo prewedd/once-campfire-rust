@@ -109,6 +109,11 @@ impl Broadcasts {
         Ok(())
     }
 
+    /// One person's sidebar shows the room unread (this app's "Mark unread", plans/redesign.md).
+    pub fn unread_room_for_user(&self, user_id: i64, room: &Room) {
+        self.unread_room_for(user_id, room)
+    }
+
     fn unread_room_for(&self, user_id: i64, room: &Room) {
         #[derive(Serialize)]
         struct UnreadRoom {

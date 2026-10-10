@@ -59,3 +59,19 @@ document.addEventListener("click", async event => {
   toast(removing ? "Removed from saved" : "Saved for later")
   if (removing && document.body.classList.contains("saved")) button.closest(".message")?.remove()
 })
+
+// "Mark unread" (plans/redesign.md): the room is unread from this message on, until you're back.
+document.addEventListener("click", async event => {
+  const button = event.target.closest(".message__unread-btn")
+  if (!button) return
+  event.preventDefault()
+  const response = await fetch(`/messages/${button.dataset.messageId}/unread`, {
+    method: "POST",
+    headers: { "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content ?? "" },
+  }).catch(() => null)
+  button.closest("details")?.removeAttribute("open")
+  // The sidebar ignores "unread" for the room you're in; this one you asked for.
+  const room = button.closest(".message")?.querySelector("a.message__permalink")?.getAttribute("href")?.match(/^\/rooms\/\d+/)?.[0]
+  if (response?.ok && room) document.querySelector(`#sidebar :is(a.room, a.direct)[href="${room}"]`)?.classList.add("unread")
+  toast(response?.ok ? "Marked unread" : "Couldn't mark that unread")
+})

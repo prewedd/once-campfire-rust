@@ -198,6 +198,7 @@ static ROUTES: LazyLock<Vec<Route>> = LazyLock::new(|| {
         get("/saved(.:format)", "saved#index", saved::index),
         get("/saved/ids(.:format)", "saved#ids", saved::ids),
         post("/messages/:message_id/save(.:format)", "saved#create", saved::create),
+        post("/messages/:message_id/unread(.:format)", "saved#unread", saved::unread),
         delete("/messages/:message_id/save(.:format)", "saved#destroy", saved::destroy),
         get("/channels(.:format)", "channels#index", channels::index),
         post("/channels/:room_id/membership(.:format)", "channels#join", channels::join),

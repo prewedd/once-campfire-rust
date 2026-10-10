@@ -62,6 +62,9 @@
         <button type="button" class="btn message__action-btn center full-width message__pin-btn" title="Pin to channel" aria-label="Pin to channel" data-message-id="{{ message.id }}">
           <img class="colorize--black" aria-hidden="true" src="{{ ctx.asset("pin.svg") }}" width="20" height="20" />
 </button>
+        <button type="button" class="btn message__action-btn center full-width message__unread-btn" title="Mark unread" aria-label="Mark unread" data-message-id="{{ message.id }}">
+          <img class="colorize--black" aria-hidden="true" src="{{ ctx.asset("unread.svg") }}" width="20" height="20" />
+</button>
         <button type="button" class="btn message__action-btn center full-width message__save-btn" title="Save for later" aria-label="Save for later" data-message-id="{{ message.id }}">
           <img class="colorize--black" aria-hidden="true" src="{{ ctx.asset("bookmark.svg") }}" width="20" height="20" />
 </button>

@@ -221,3 +221,37 @@ fn unread_direct_rooms_count_others_messages_since_they_last_read_them() {
         assert_eq!(t.read(move |c| Membership::unread_direct_counts(c, david)), vec![(room_id, 1)]);
     }
 }
+
+#[test]
+fn marking_unread_counts_from_that_message_and_stays_until_read() {
+    use crate::{Message, NewMessage};
+    let t = TestDb::new();
+    let david = id("david");
+    let (room_id, other): (i64, i64) = t.read(move |c| {
+        Ok(c.query_row(
+            r#"SELECT "mine"."room_id", "theirs"."user_id" FROM "memberships" AS "mine" INNER JOIN "rooms" ON "rooms"."id" = "mine"."room_id"
+               INNER JOIN "memberships" AS "theirs" ON "theirs"."room_id" = "mine"."room_id" AND "theirs"."user_id" != "mine"."user_id"
+               WHERE "rooms"."type" = 'Rooms::Direct' AND "mine"."user_id" = ? LIMIT 1"#,
+            [david],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?)
+    });
+    for n in 0..2 {
+        let attributes = NewMessage { room_id, creator_id: other, client_message_id: Some(format!("unread-{n}")), body: Some(format!("<div>Unread {n}</div>")), attachment_blob_id: None, thread_parent_id: None };
+        t.write(move |tx| Message::create(tx, attributes));
+    }
+    let others: Vec<Message> = t.read(move |c| Ok(Message::last_page(c, room_id)?.into_iter().filter(|m| m.creator_id == other).collect()));
+    let others: Vec<Message> = others[others.len() - 2..].to_vec();
+    let from = others[0].clone();
+    assert!(t.write(move |tx| Membership::mark_unread_from(tx, david, &from)));
+    let counts = t.read(move |c| Membership::unread_direct_counts(c, david));
+    assert_eq!(counts, vec![(room_id, others.len() as i64)], "from that message on");
+
+    // Being in the room (refreshing the connection) doesn't move it; reading does.
+    let mut membership = t.read(move |c| Membership::find_by_room_and_user(c, room_id, david)).unwrap();
+    let mut refreshed = membership.clone();
+    t.write(move |tx| refreshed.refresh_connection(tx));
+    assert_eq!(t.read(move |c| Membership::unread_direct_counts(c, david)).len(), 1);
+    t.write(move |tx| membership.read(tx));
+    assert!(t.read(move |c| Membership::unread_direct_counts(c, david)).is_empty());
+}
